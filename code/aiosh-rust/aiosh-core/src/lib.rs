@@ -29,6 +29,7 @@ pub mod ledger;
 pub mod ledger_config;
 pub mod pentest;
 pub mod pep;
+pub mod release;
 pub mod retention;
 pub mod sandbox;
 pub mod task_service;
