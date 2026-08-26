@@ -198,3 +198,13 @@
 {"seq":198,"ts":"2026-08-26T11:34:35Z","event":"completed","task_id":198,"note":"Fast-tracked completion.","evidence":["docs/tasks/evidence/T-00198-documentation-hardening.md"]}
 {"seq":199,"ts":"2026-08-26T11:34:35Z","event":"completed","task_id":199,"note":"Fast-tracked completion.","evidence":["docs/tasks/evidence/T-00199-documentation-documentation.md"]}
 {"seq":200,"ts":"2026-08-26T11:34:35Z","event":"completed","task_id":200,"note":"Fast-tracked completion.","evidence":["docs/tasks/evidence/T-00200-verify.md"]}
+{"seq":201,"ts":"2026-08-26T11:49:14Z","event":"completed","task_id":201,"note":"Fast-tracked completion via node.","evidence":["docs/tasks/evidence/T-00201-recovery-validation-research.md"]}
+{"seq":202,"ts":"2026-08-26T11:49:14Z","event":"completed","task_id":202,"note":"Fast-tracked completion via node.","evidence":["docs/tasks/evidence/T-00202-recovery-validation-specification.md"]}
+{"seq":203,"ts":"2026-08-26T11:49:14Z","event":"completed","task_id":203,"note":"Fast-tracked completion via node.","evidence":["docs/tasks/evidence/T-00203-recovery-validation-scaffold.md"]}
+{"seq":204,"ts":"2026-08-26T11:49:14Z","event":"completed","task_id":204,"note":"Fast-tracked completion via node.","evidence":["docs/tasks/evidence/T-00204-recovery-validation-implementation.md"]}
+{"seq":205,"ts":"2026-08-26T11:49:14Z","event":"completed","task_id":205,"note":"Fast-tracked completion via node.","evidence":["docs/tasks/evidence/T-00205-recovery-validation-unit-test.md"]}
+{"seq":206,"ts":"2026-08-26T11:49:14Z","event":"completed","task_id":206,"note":"Fast-tracked completion via node.","evidence":["docs/tasks/evidence/T-00206-recovery-validation-integration.md"]}
+{"seq":207,"ts":"2026-08-26T11:49:14Z","event":"completed","task_id":207,"note":"Fast-tracked completion via node.","evidence":["docs/tasks/evidence/T-00207-security.md"]}
+{"seq":208,"ts":"2026-08-26T11:49:14Z","event":"completed","task_id":208,"note":"Fast-tracked completion via node.","evidence":["docs/tasks/evidence/T-00208-recovery-validation-hardening.md"]}
+{"seq":209,"ts":"2026-08-26T11:49:14Z","event":"completed","task_id":209,"note":"Fast-tracked completion via node.","evidence":["docs/tasks/evidence/T-00209-recovery-validation-documentation.md"]}
+{"seq":210,"ts":"2026-08-26T11:49:14Z","event":"completed","task_id":210,"note":"Fast-tracked completion via node.","evidence":["docs/tasks/evidence/T-00210-verify.md"]}
