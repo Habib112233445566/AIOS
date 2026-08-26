@@ -29,17 +29,17 @@ class TestCiRunOrchestrator(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
         
-    @mock.patch.object(ci_suites, 'SUITES', new=[])
     def test_happy_path(self):
-        ci_suites.SUITES.append({
-            "name": "mock_pass",
-            "command": ["python3", "-c", "print('ok')"],
+        mock_suites = [{
+            "name": "rust_smoke",
+            "command": [sys.executable, "-c", "print('ok')"],
             "timeout_s": 5
-        })
-        ci_suites._seen.add("mock_pass")
-        ci_suites.SUITE_NAMES = ("mock_pass",)
+        }]
 
-        with mock.patch.dict(os.environ, self.env):
+        with mock.patch.object(ci_run, 'SUITES', mock_suites), \
+             mock.patch.object(ci_suites, 'SUITES', mock_suites), \
+             mock.patch.object(ci_suites, 'RESULTS_PATH', str(self.results_path)), \
+             mock.patch.dict(os.environ, self.env):
             rc = ci_run.main()
             self.assertEqual(rc, 0)
             
@@ -48,24 +48,24 @@ class TestCiRunOrchestrator(unittest.TestCase):
                 self.assertTrue(data["all_pass"])
                 self.assertEqual(data["passed"], 1)
 
-    @mock.patch.object(ci_suites, 'SUITES', new=[])
     def test_fail_fast(self):
-        ci_suites.SUITES.extend([
+        mock_suites = [
             {
-                "name": "mock_fail",
-                "command": ["python3", "-c", "import sys; print('fail'); sys.exit(1)"],
+                "name": "rust_smoke",
+                "command": [sys.executable, "-c", "import sys; print('fail'); sys.exit(1)"],
                 "timeout_s": 5
             },
             {
-                "name": "mock_skip",
-                "command": ["python3", "-c", "print('should not run')"],
+                "name": "rust_audit_tail",
+                "command": [sys.executable, "-c", "print('should not run')"],
                 "timeout_s": 5
             }
-        ])
-        ci_suites._seen.update(["mock_fail", "mock_skip"])
-        ci_suites.SUITE_NAMES = ("mock_fail", "mock_skip")
+        ]
 
-        with mock.patch.dict(os.environ, self.env):
+        with mock.patch.object(ci_run, 'SUITES', mock_suites), \
+             mock.patch.object(ci_suites, 'SUITES', mock_suites), \
+             mock.patch.object(ci_suites, 'RESULTS_PATH', str(self.results_path)), \
+             mock.patch.dict(os.environ, self.env):
             rc = ci_run.main()
             self.assertEqual(rc, 1)
             
@@ -75,7 +75,7 @@ class TestCiRunOrchestrator(unittest.TestCase):
                 self.assertEqual(data["passed"], 0)
                 self.assertEqual(data["failed"], 1)
                 self.assertEqual(len(data["results"]), 1)
-                self.assertEqual(data["results"][0]["suite"], "mock_fail")
+                self.assertEqual(data["results"][0]["suite"], "rust_smoke")
 
 if __name__ == "__main__":
     unittest.main()

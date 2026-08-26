@@ -187,7 +187,7 @@ def main() -> int:
     }
     # Summary persistence must NEVER mask the run verdict.
     try:
-        write_summary(summary)
+        write_summary(summary, path=os.environ.get("AIOSH_CI_RESULTS"))
     except OSError as e:
         print(f"(warning: could not write CI summary artifact: {e})", file=sys.stderr)
 
