@@ -1,0 +1,1537 @@
+{
+  "status_types": [
+    "BLOCKED",
+    "COMPLETED",
+    "IMPLEMENTING",
+    "NOT_STARTED",
+    "ON_HOLD",
+    "OPEN"
+  ],
+  "priority_levels": [
+    "P0",
+    "P1",
+    "P2",
+    "P3"
+  ],
+  "tasks": [
+    {
+      "task_id": "AIOS-0001",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "Cross-cutting (Security)",
+      "title": "Define AI-Native Threat Model",
+      "dependencies": [],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0002",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "Kernel / AI Runtime",
+      "title": "Research AI Privilege Model",
+      "dependencies": [
+        "AIOS-0001"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0003",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "Cross-cutting",
+      "title": "Research: Operating System Theory (First Principles)",
+      "dependencies": [],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0004",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "Cross-cutting",
+      "title": "Research: Systems Theory",
+      "dependencies": [],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0005",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "Hardware Abstraction",
+      "title": "Research: Computer Architecture",
+      "dependencies": [],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0006",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "Security",
+      "title": "Research: Security Principles",
+      "dependencies": [],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0007",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "AI Runtime",
+      "title": "Research: AI Theory & Machine Learning",
+      "dependencies": [],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0008",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "Kernel",
+      "title": "Phase 2: Kernel Architecture Specification",
+      "dependencies": [
+        "AIOS-0003",
+        "AIOS-0004",
+        "AIOS-0005",
+        "AIOS-0006",
+        "AIOS-0007"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0009",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "All",
+      "title": "Phase 3-18: Full Architecture Specifications",
+      "dependencies": [
+        "AIOS-0008"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0010",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "All",
+      "title": "Research Refresh: Verify Architecture Specs Against Latest Research",
+      "dependencies": [
+        "AIOS-0009"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0011",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "Kernel",
+      "title": "Phase 1: Formal Specifications (TLA+/Coq/Isabelle)",
+      "dependencies": [
+        "AIOS-0008",
+        "AIOS-0010"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0012",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "All",
+      "title": "RFC Generation: All Subsystems",
+      "dependencies": [
+        "AIOS-0009",
+        "AIOS-0010"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0013",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "AI Runtime",
+      "title": "Threat Model: AI-Specific Attack Surface",
+      "dependencies": [
+        "AIOS-0001",
+        "AIOS-0007"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0014",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "Kernel",
+      "title": "Pre-Existing Code Reconciliation",
+      "dependencies": [
+        "AIOS-0008"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0015",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "Security Architecture",
+      "title": "Update Security Architecture with Threat Model Findings",
+      "dependencies": [
+        "AIOS-0001",
+        "AIOS-0009"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0016",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "Kernel / AI Runtime",
+      "title": "Evaluate ProbeLogits-Style Kernel Safety Primitives",
+      "dependencies": [
+        "AIOS-0001",
+        "AIOS-0008"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0022",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "Kernel / Security",
+      "title": "MVP-M2: Capability System Implementation (32-slot CNode,\n  CloudCaps guards)",
+      "dependencies": [
+        "AIOS-F01",
+        "AIOS-F06"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0023",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "Kernel / Memory",
+      "title": "MVP-M3: Memory Management Implementation (frame allocator,\n  page tables,\n  VMO stub)",
+      "dependencies": [
+        "AIOS-0022"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0024",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "Kernel / IPC",
+      "title": "MVP-M4: IPC Implementation (endpoints,\n  message registers,\n  capability transfer)",
+      "dependencies": [
+        "AIOS-0023",
+        "AIOS-F05"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0025",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "Kernel / Scheduling",
+      "title": "MVP-M5: Scheduling Implementation (TCBs,\n  round-robin,\n  call/reply,\n  nbsend/nbrecv)",
+      "dependencies": [
+        "AIOS-0024"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0026",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "Kernel / User Space",
+      "title": "MVP-M6: User Space (root task,\n  ELF loader,\n  context switch,\n  syscall ABI)",
+      "dependencies": [
+        "AIOS-0025"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0027",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "Kernel / Scheduling",
+      "title": "Update V4.02 Scheduler Spec (ML-predictive,\n  KV-aware,\n  agent-policy verification)",
+      "dependencies": [
+        "AIOS-0010"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0028",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "Kernel / IPC",
+      "title": "Update V5.02 IPC Spec (Stateless MCP,\n  PEP runtime enforcement layer)",
+      "dependencies": [
+        "AIOS-0010"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0029",
+      "status": "COMPLETED",
+      "priority": "P2",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "Kernel / Memory",
+      "title": "Update V3.02 Memory Protection Spec (KV cache memory tiering)",
+      "dependencies": [
+        "AIOS-0010"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0030",
+      "status": "COMPLETED",
+      "priority": "P2",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "Kernel / Boot",
+      "title": "Update V2.03 Boot Spec (RVA23 ISA baseline)",
+      "dependencies": [
+        "AIOS-0010"
+      ],
+      "description": "",
+      "history": [
+        {
+          "event": "COMPLETED",
+          "date": "2026-08-15",
+          "note": "Updated V2.03 Boot Spec to RVA23 ISA baseline (v1.2): added ISA Baseline section (RVA23 RV64 profile + extension set), corrected CHERI to deferred per ADR-0006, added RVA23 profile reference."
+        }
+      ],
+      "artifacts": [
+        "docs/architecture/V2-03-boot-initialization.md"
+      ],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0031",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "Kernel / Filesystem",
+      "title": "Ramdisk Filesystem (64KB block store,\n  create/read/write/delete/list)",
+      "dependencies": [
+        "AIOS-0026"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0032",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "Kernel / Drivers",
+      "title": "VirtIO Block Driver — Persistent storage via QEMU virtio-blk",
+      "dependencies": [
+        "AIOS-0031"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0033",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "Kernel / Filesystem",
+      "title": "FAT32 Filesystem Driver — Read/write FAT32 volumes from VirtIO block",
+      "dependencies": [
+        "AIOS-0032"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0034",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "Kernel / Filesystem",
+      "title": "Virtual Filesystem Switch (VFS) — Unified FS interface",
+      "dependencies": [
+        "AIOS-0031",
+        "AIOS-0033"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0035",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "Kernel / Networking",
+      "title": "VirtIO Network Driver + ARP/ICMP — Basic networking",
+      "dependencies": [],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0036",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "Kernel / Networking",
+      "title": "TCP/IP Stack — DHCP,\n  DNS,\n  TCP sockets",
+      "dependencies": [
+        "AIOS-0035"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0037",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "Kernel / AI Runtime",
+      "title": "HTTP Server + MCP Endpoint — Agent communication over TCP",
+      "dependencies": [
+        "AIOS-0036",
+        "AIOS-0028"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0038",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "Kernel / User Space",
+      "title": "Multi-Process User Space — fork/exec,\n  process isolation,\n  PID namespace",
+      "dependencies": [
+        "AIOS-0026"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0039",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "Kernel / User Space",
+      "title": "User-Space Shell — /bin/sh as a ramdisk-loaded process",
+      "dependencies": [
+        "AIOS-0038",
+        "AIOS-0034"
+      ],
+      "description": "User-space shell with sys_read, sys_write, sys_exit syscalls, command dispatch (help, ls, cat), and user-mode launch via scheduler.",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0040",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "Kernel / AI Runtime",
+      "title": "AI Agent Runtime — Agent TCB,\n  inference context,\n  tool binding",
+      "dependencies": [
+        "AIOS-0027",
+        "AIOS-0028",
+        "AIOS-0029"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0041",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "Kernel / AI Runtime",
+      "title": "Inference Engine Integration — llama.cpp or similar in kernel",
+      "dependencies": [
+        "AIOS-0040",
+        "AIOS-0029"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0042",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "Kernel / Security",
+      "title": "Audit Subsystem — Capability invocation logging + anomaly detection",
+      "dependencies": [
+        "AIOS-0028"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0043",
+      "status": "COMPLETED",
+      "priority": "P2",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "Kernel / Security",
+      "title": "Timing-Safe Capability Check — Constant-time PEP enforcement",
+      "dependencies": [
+        "AIOS-0028",
+        "AIOS-0042"
+      ],
+      "description": "",
+      "history": [
+        {
+          "event": "COMPLETED",
+          "date": "2026-08-15",
+          "note": "Closed the PEP timing side-channel: allows_cap now scans the full MANIFEST_MAX_CAPS array with a branchless ct_eq_u64 primitive (no early return). Added timing_safe_cap_check_smoke (source pin + runtime) and the AIOS-0043 dashboard row."
+        }
+      ],
+      "artifacts": [
+        "kernel/src/ipc/pep.rs"
+      ],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0044",
+      "status": "COMPLETED",
+      "priority": "P2",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "Kernel / Boot",
+      "title": "UEFI Bootloader — Replace OpenSBI direct boot with UEFI",
+      "dependencies": [
+        "AIOS-0033"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0045",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "Kernel / Core",
+      "title": "SMP / Multi-HART Support — Parallel kernel on multi-core RISC-V",
+      "dependencies": [
+        "AIOS-0027"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0046",
+      "status": "COMPLETED",
+      "priority": "P2",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "Kernel / Memory",
+      "title": "NUMA-Aware Memory Tiering — Per-node memory pools + migration",
+      "dependencies": [
+        "AIOS-0029",
+        "AIOS-0045"
+      ],
+      "description": "",
+      "history": [
+        {
+          "event": "COMPLETED",
+          "date": "2026-08-15",
+          "note": "Added NUMA-aware memory pools: memory/numa.rs (per-node pool partitioning, node_of, node_distance, node-local allocation, locality accounting), FrameAllocator::allocate_frame_in_range, and Vmo node affinity + migrate_to_node. Added numa_tiering_smoke + dashboard row."
+        }
+      ],
+      "artifacts": [
+        "kernel/src/memory/numa.rs",
+        "kernel/src/memory/vmo.rs",
+        "kernel/src/memory/frame_allocator.rs"
+      ],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0047",
+      "status": "COMPLETED",
+      "priority": "P2",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "Kernel / Drivers",
+      "title": "GPU Driver Framework — VirtIO-GPU + simple framebuffer",
+      "dependencies": [],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0048",
+      "status": "COMPLETED",
+      "priority": "P2",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "Kernel / AI Runtime",
+      "title": "WASM Runtime — Sandboxed compute for untrusted agents",
+      "dependencies": [
+        "AIOS-0040",
+        "AIOS-0028"
+      ],
+      "description": "",
+      "history": [
+        {
+          "event": "COMPLETED",
+          "date": "2026-08-15",
+          "note": "Closed WASM sandboxed-compute task: wasm_sandbox_smoke pins the C5 instruction budget (MAX_STEPS) + hard memory cap (HARD_MAX_MEMORY_PAGES), verifies memory-cap rejection at load (max_pages=2000), and re-verifies the fail-closed PEP bridge (empty snapshot denies, matching snapshot+manifest permits). Interpreter + structural surfaces already covered by wasm_smoke (AIOS-0042) and wasm_runtime_smoke (W1)."
+        }
+      ],
+      "artifacts": [
+        "kernel/src/wasm.rs"
+      ],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0049",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "Cross-cutting",
+      "title": "CI/CD Pipeline — Automated QEMU boot tests + regression suite",
+      "dependencies": [],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0050",
+      "status": "COMPLETED",
+      "priority": "P2",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "Cross-cutting",
+      "title": "Benchmark Suite — Scheduler latency,\n  IPC throughput,\n  FS IOPS",
+      "dependencies": [],
+      "description": "",
+      "history": [
+        {
+          "event": "COMPLETED",
+          "date": "2026-08-15",
+          "note": "Added kernel/src/benchmark.rs with three rdtime-timed micro-benchmarks: scheduler pick_next latency (per-hart run-queue push/pick loop), IPC nbsend throughput (private CNode endpoint + enqueue_receiver handoff), and FS IOPS (VFS open+read+close over a ramdisk file). benchmark_smoke asserts non-zero elapsed for each and prints consolidated rates. Runs before init_timer() for deterministic deltas. ci/smoke.sh green (19/19)."
+        }
+      ],
+      "artifacts": [
+        "kernel/src/benchmark.rs",
+        "kernel/src/main.rs"
+      ],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0051",
+      "status": "COMPLETED",
+      "priority": "P2",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "Kernel / Interrupts",
+      "title": "RISC-V AIA Interrupt Controller — MSI,\n  irqchip virtualization",
+      "dependencies": [
+        "AIOS-0045"
+      ],
+      "description": "",
+      "history": [
+        {
+          "event": "COMPLETED",
+          "date": "2026-08-15",
+          "note": "Added kernel/src/aia.rs: spec-faithful software model of the RISC-V AIA stack (IMSIC per-hart MSI controller with eip/eie/topi, APLIC with domaincfg/sourcecfg/genmsi, AIA MSI address/data encoding per riscv,imsics layout, MSI irq-domain with hart/guest virtualization, and the PLIC-vs-AIA irqchip backend). Added aia_irqchip_smoke (source pin + runtime genmsi/route_msi/topi/domain-allocation verification) + dashboard row; bumped ACTUAL_SMOKE_FNS. QEMU virt boots with aia=none so raw MMIO paths remain hardware-gated (mirroring plic.rs). ci/smoke.sh green (19/19)."
+        }
+      ],
+      "artifacts": [
+        "kernel/src/aia.rs",
+        "kernel/src/main.rs"
+      ],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0055",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "Kernel / Audit",
+      "title": "Audit & PEP Coverage Smoke (12 test pack)",
+      "dependencies": [
+        "AIOS-0028"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0056",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "Kernel / Boot",
+      "title": "Boot Smoke Coverage Dashboard",
+      "dependencies": [
+        "AIOS-0055"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0057",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "audit + syscall",
+      "title": "Syscall Audit Hook (ADR-0014)",
+      "dependencies": [],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0058",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "audit + syscall + shell",
+      "title": "Audit Reader Protocol (ADR-0015)",
+      "dependencies": [
+        "AIOS-0055",
+        "AIOS-0057"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0059",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "pep + audit + main",
+      "title": "Codeguard H1 closure (ADR-0016 AUDIT_LOG_READY flip + ring-proof)",
+      "dependencies": [
+        "AIOS-0058"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0060",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "cap/cnode",
+      "title": "CNode bitmap-backed free-slot lookup (ADR-0017,\n  closes 1 of 4 dashboard gaps)",
+      "dependencies": [
+        "AIOS-0059"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0061",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "audit",
+      "title": "Lean audit drain API (ADR-0018)",
+      "dependencies": [
+        "AIOS-0058"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0062",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "audit + main",
+      "title": "Audit subsystem cleanup (ADR-0019: drops `#[allow(dead_code)]` + new audit_stress_smoke covering saturate + overflow + drain + re-emit)",
+      "dependencies": [
+        "AIOS-0061"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0062-T2",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "audit + smp",
+      "title": "SMP-aware audit_drain_all + audit_count/audit_dropped locking (sibling of AIOS-0062 / ADR-0019)",
+      "dependencies": [
+        "AIOS-0062"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0062-T3",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "audit + main",
+      "title": "Extend AIOS-0062-T2 L2 static-pin to cover a 3rd audit.rs read/write site",
+      "dependencies": [
+        "AIOS-0062-T2"
+      ],
+      "description": "",
+      "history": [
+        {
+          "event": "COMPLETED",
+          "date": "2026-08-15",
+          "note": "Extended the AIOS-0062-T2 L2 static-pin to cover the third AUDIT_LOCK-acquiring read/write site: audit_log (the producer/write half). audit_smp_lock_smoke now source-pins audit_log's signature and body (ring.records[ring.tail] = record, AUDIT_LOCK.lock()/unlock()) in addition to audit_drain_all + audit_dump_bytes, and the cross-check requires >=3 lock/unlock sites. This closes the audit-ring SMP asymmetry (ADR-0026) so a regression dropping the lock from the append path is caught. ci/smoke.sh green (27/27 headless+gui)."
+        }
+      ],
+      "artifacts": [
+        "kernel/src/main.rs"
+      ],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0063",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "task + main",
+      "title": "Codeguard M4 closure: task visibility tightening (ADR-0020)",
+      "dependencies": [
+        "AIOS-0062"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0064",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "ipc/endpoint + main",
+      "title": "Codeguard L1 closure: reply metadata bounds check (ADR-0021)",
+      "dependencies": [
+        "AIOS-0063"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0065",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "interrupt + main",
+      "title": "Codeguard L2 closure (ADR-0022: boot_hart_id() assertion on init_interrupts + init_timer, with boot smoke)",
+      "dependencies": [
+        "AIOS-0064"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0065-T2",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "interrupt + smp",
+      "title": "SMP-path exercise of Codeguard L2 (isolated secondary-hart assertion harness)",
+      "dependencies": [
+        "AIOS-0065"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0066",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "ipc/endpoint + main",
+      "title": "Codeguard A1 closure (ADR-0023: orphan reply cap on WouldBlock)",
+      "dependencies": [
+        "AIOS-0065",
+        "AIOS-0064"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0066-T1",
+      "status": "COMPLETED",
+      "priority": "P2",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "ipc/endpoint + main",
+      "title": "Rendezvous-fallthrough coverage for Codeguard A1 (sibling of AIOS-0066 / ADR-0023)",
+      "dependencies": [
+        "AIOS-0066"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0067",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "syscall + main + audit",
+      "title": "Codeguard A3 closure: tighten user_smoke test 6 to exact SyscallError discriminants + ADR-0014 audit pre-hook invariant",
+      "dependencies": [
+        "AIOS-0066"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0067-T1",
+      "status": "COMPLETED",
+      "priority": "P2",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "main + smokes",
+      "title": "Sweep all `assert_ne!(_, 0)` silent-pass patterns across boot smokes (sibling of AIOS-0067 / ADR-0024)",
+      "dependencies": [
+        "AIOS-0067"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0068",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "syscall + main + audit",
+      "title": "Codeguard B1 closure: DebugPrint silent-reject audit-hook smoke (ADR-0025)",
+      "dependencies": [
+        "AIOS-0067"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0068-T1",
+      "status": "COMPLETED",
+      "priority": "P2",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "syscall + main + audit",
+      "title": "Extend B1 smoke to also test the SUCCESSFUL DebugPrint path (sibling of AIOS-0068 / ADR-0025)",
+      "dependencies": [
+        "AIOS-0068"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0069",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "main + smp",
+      "title": "Codeguard B2 closure: timer ISR boot-order smoke (ADR-0026)",
+      "dependencies": [
+        "AIOS-0068"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0069-T1",
+      "status": "COMPLETED",
+      "priority": "P2",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "main + smp",
+      "title": "Per-hart boot-order coverage for Codeguard B2",
+      "dependencies": [
+        "AIOS-0069"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0070",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "syscall + interrupt",
+      "title": "Codeguard B7 closure: SUM cleared after ECALL and trap entry (ADR-0027)",
+      "dependencies": [
+        "AIOS-0069"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0070-T1",
+      "status": "COMPLETED",
+      "priority": "P2",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "syscall + smp",
+      "title": "Per-hart SUM-clear coverage for Codeguard B7",
+      "dependencies": [
+        "AIOS-0070"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0071",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "cap + syscall",
+      "title": "Codeguard B10 closure: rights bits bounds check (ADR-0028)",
+      "dependencies": [
+        "AIOS-0070"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0071-T1",
+      "status": "COMPLETED",
+      "priority": "P2",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "cap + main",
+      "title": "Direct-write rights-bits regression coverage for Codeguard B10",
+      "dependencies": [
+        "AIOS-0071"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0072-T1",
+      "status": "COMPLETED",
+      "priority": "P2",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "Kernel / Security",
+      "title": "Derivation-chain narrowing sibling of Codeguard B10",
+      "dependencies": [
+        "AIOS-0071-T1"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0073-T1",
+      "status": "COMPLETED",
+      "priority": "P2",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "",
+      "title": "B1 deny-path asymmetry sibling of Codeguard B1",
+      "dependencies": [
+        "AIOS-0068",
+        "AIOS-0068-T1"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0074-T1",
+      "status": "COMPLETED",
+      "priority": "P2",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "",
+      "title": "VFS cross-backend routing sibling of AIOS-0034 closure",
+      "dependencies": [
+        "AIOS-0034"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0075-T1",
+      "status": "COMPLETED",
+      "priority": "P2",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "",
+      "title": "Phase ledger reconciliation (P2-P13 closeout batch)",
+      "dependencies": [],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0076-T1",
+      "status": "COMPLETED",
+      "priority": "P2",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "",
+      "title": "P14 Desktop GUI scaffold kickoff — Codeguard G (GUI / Compositor) contract cascade smoke",
+      "dependencies": [
+        "AIOS-0047",
+        "AIOS-0075-T1"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0077-T1",
+      "status": "COMPLETED",
+      "priority": "P2",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "",
+      "title": "First-window paint smoke (Codeguard G2) - P14 follow-up",
+      "dependencies": [
+        "AIOS-0076-T1"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0078-T1",
+      "status": "COMPLETED",
+      "priority": "P2",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "",
+      "title": "Agent-launcher panel smoke (Codeguard G3) - P14 follow-up closure (with P1 compile-blocker fix)",
+      "dependencies": [
+        "AIOS-0077-T1"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0079-T1",
+      "status": "COMPLETED",
+      "priority": "P2",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "",
+      "title": "WASM Runtime closure smoke (Codeguard W1) - unconditional P11/V11-01 audit + inject_pep_bridge baseline",
+      "dependencies": [
+        "AIOS-0042",
+        "AIOS-0078-T1"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0080-T1",
+      "status": "COMPLETED",
+      "priority": "P2",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "",
+      "title": "Keyboard-input dispatch closure (Codeguard G4) - V14-01 desktop shell",
+      "dependencies": [
+        "AIOS-0078-T1",
+        "AIOS-0079-T1"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0081-T1",
+      "status": "COMPLETED",
+      "priority": "P2",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "",
+      "title": "Optional VirtIO-GPU cursor fallback closure",
+      "dependencies": [
+        "AIOS-0080-T1"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-F01",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "Kernel",
+      "title": "Kernel Architecture Decision",
+      "dependencies": [
+        "AIOS-0008",
+        "AIOS-0010"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-F02",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "Kernel",
+      "title": "System ABI Decision",
+      "dependencies": [
+        "AIOS-F01"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-F03",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "Memory",
+      "title": "Memory Protection Architecture",
+      "dependencies": [
+        "AIOS-F01",
+        "AIOS-F02"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-F04",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "Scheduler",
+      "title": "Scheduler Architecture",
+      "dependencies": [
+        "AIOS-F01",
+        "AIOS-F02"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-F05",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "IPC",
+      "title": "IPC Architecture",
+      "dependencies": [
+        "AIOS-F01",
+        "AIOS-F02"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-F06",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "Security",
+      "title": "Security & Capabilities Architecture",
+      "dependencies": [
+        "AIOS-F01",
+        "AIOS-F02",
+        "AIOS-F03",
+        "AIOS-F05"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    },
+    {
+      "task_id": "AIOS-0058b",
+      "status": "COMPLETED",
+      "priority": "P2",
+      "phase": "Implementation",
+      "type": "Implementation",
+      "subsystem": "shell + audit (polish)",
+      "title": "Shell cap + reader polish (sibling of AIOS-0058 / ADR-0015)",
+      "dependencies": [
+        "AIOS-0058"
+      ],
+      "description": "",
+      "history": [],
+      "artifacts": [],
+      "provenance": "graph-derived-recovery"
+    }
+  ],
+  "metadata": {
+    "project": "AI-Native Operating System",
+    "version": "2.9.0",
+    "last_updated": "2026-08-21",
+    "total_tasks": 89,
+    "completed_tasks": 89,
+    "active_tasks": 0,
+    "blocked_tasks": 0,
+    "on_hold_tasks": 0,
+    "next_task_id": "",
+    "reconstruction_source": [
+      "mostimportanAIfolder/DEPENDENCY_GRAPH.json"
+    ],
+    "provenance": "graph-derived-recovery",
+    "authoritative": false,
+    "warning": "Historical TASK_DATABASE.json was empty/unrecoverable; descriptions, dates, artifacts, and prior event histories are intentionally absent rather than inferred from graph titles."
+  },
+  "repair_notes": [
+    "Reconstructed from the canonical dependency graph after TASK_DATABASE.json was found empty.",
+    "Preserved only graph-backed task identity, status, title, priority, subsystem, type, and dependency edges.",
+    "Historical descriptions, dates, artifacts, and event histories were unavailable and were not fabricated.",
+    "2026-08-21 reconciliation: this ledger tracks only the v1 RISC-V microkernel substrate and is NON-authoritative (authoritative:false). Its all-COMPLETED statuses are reconstruction artifacts. The v2 Pillar-C Sprint 0..2 work (shipped + verified green 2026-08-21) is tracked in task_plan.md, not here."
+  ],
+  "provenance": "graph-derived-recovery",
+  "authoritative": false,
+  "reconstruction_warning": "Do not treat this recovered ledger as historical source-of-truth until the original task database is restored."
+}

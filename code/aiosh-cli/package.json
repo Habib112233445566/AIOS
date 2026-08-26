@@ -1,0 +1,29 @@
+{
+  "name": "aiosh-cli",
+  "version": "0.1.0",
+  "description": "AIOS shell CLI — Linux-substrate userspace command for the AIOS subsystem surface. Every subcommand writes one append-only audit row to a hash-chained SQLite WAL ring.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": {
+    "aiosh": "./dist/cli.js"
+  },
+  "main": "./dist/cli.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "bash tests/smoke.sh",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node --enable-source-maps dist/cli.js"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.5.0",
+    "commander": "^12.1.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/node": "^20.16.0",
+    "typescript": "^5.6.0"
+  }
+}

@@ -1,0 +1,9 @@
+[package]
+name = "aiosh-sandbox"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+aiosh-core = { path = "../aiosh-core" }
+serde_json = { workspace = true }

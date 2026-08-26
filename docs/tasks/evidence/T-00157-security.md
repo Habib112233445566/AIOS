@@ -1,0 +1,2 @@
+# T-00157 Security Review
+Config injection via environment variables validated strictly via floors/types. Prevents arbitrarily low sleep intervals, arbitrarily high timeouts causing starvation, and arbitrarily large max file bytes causing memory DOS.

@@ -1,0 +1,32 @@
+/target
+/kernel/target
+/userland/target
+
+# aiosh-cli (Sprint 0) build artifacts
+code/aiosh-cli/node_modules/
+code/aiosh-cli/dist/
+*.tsbuildinfo
+
+# aiosh-mcp (Sprint 0) build artifacts
+code/aiosh-mcp/.venv/
+code/aiosh-mcp/__pycache__/
+code/aiosh-mcp/*/__pycache__/
+code/aiosh-mcp/*.egg-info/
+code/aiosh-mcp/build/
+code/aiosh-mcp/dist/
+
+# Python bytecode anywhere
+**/__pycache__/
+*.pyc
+
+# Audit DBs — never commit (per-engagement state)
+**/audit.db
+**/audit.db-shm
+**/audit.db-wal
+
+# OS / editor noise
+.DS_Store
+*.swp
+
+code/aiosh-rust/target/
+scratch/

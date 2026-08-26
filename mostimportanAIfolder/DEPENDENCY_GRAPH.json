@@ -1,0 +1,1563 @@
+{
+  "metadata": {
+    "project": "AI-Native Operating System",
+    "version": "2.9.0",
+    "graph_type": "Directed Acyclic Graph (DAG)",
+    "last_updated": "2026-08-15",
+    "total_nodes": 108,
+    "total_edges": 138,
+    "control_plane_version": "2.9.0"
+  },
+  "dependency_types": [
+    "Research",
+    "Architecture",
+    "Specification",
+    "ADR",
+    "RFC",
+    "Implementation",
+    "Testing",
+    "Benchmark",
+    "Documentation",
+    "Deployment"
+  ],
+  "nodes": [
+    {
+      "id": "V1-12",
+      "type": "Research",
+      "title": "AI-Specific Attack Surface",
+      "status": "COMPLETED"
+    },
+    {
+      "id": "THREAT-0004",
+      "type": "Documentation",
+      "title": "AI-Specific Attack Surface Threat Model",
+      "status": "COMPLETED"
+    },
+    {
+      "id": "RES-V1",
+      "type": "Research",
+      "title": "Foundations Research Complete",
+      "status": "COMPLETED"
+    },
+    {
+      "id": "ARCH-KERNEL",
+      "type": "Architecture",
+      "title": "Kernel Architecture Complete",
+      "status": "COMPLETED"
+    },
+    {
+      "id": "ARCH-ALL",
+      "type": "Architecture",
+      "title": "All Architecture Specs Complete",
+      "status": "COMPLETED"
+    },
+    {
+      "id": "SPEC-FORMAL",
+      "type": "Specification",
+      "title": "Formal Specifications"
+    },
+    {
+      "id": "IMP-KERNEL",
+      "type": "Implementation",
+      "title": "Kernel Implementation"
+    },
+    {
+      "id": "IMP-MEMORY",
+      "type": "Implementation",
+      "title": "Memory Implementation"
+    },
+    {
+      "id": "IMP-SCHED",
+      "type": "Implementation",
+      "title": "Scheduler Implementation"
+    },
+    {
+      "id": "IMP-IPC",
+      "type": "Implementation",
+      "title": "IPC Implementation"
+    },
+    {
+      "id": "IMP-DRIVERS",
+      "type": "Implementation",
+      "title": "Driver Framework Implementation"
+    },
+    {
+      "id": "IMP-AI",
+      "type": "Implementation",
+      "title": "AI Runtime Implementation"
+    },
+    {
+      "id": "IMP-SEC",
+      "type": "Implementation",
+      "title": "Security Implementation"
+    },
+    {
+      "id": "RFC-0001",
+      "type": "RFC",
+      "title": "Kernel Architecture Decision",
+      "status": "DRAFT"
+    },
+    {
+      "id": "RFC-0002",
+      "type": "RFC",
+      "title": "System ABI Decision",
+      "status": "DRAFT"
+    },
+    {
+      "id": "RFC-0003",
+      "type": "RFC",
+      "title": "Memory Protection Architecture",
+      "status": "DRAFT"
+    },
+    {
+      "id": "RFC-0004",
+      "type": "RFC",
+      "title": "Scheduler Architecture",
+      "status": "DRAFT"
+    },
+    {
+      "id": "RFC-0005",
+      "type": "RFC",
+      "title": "IPC Architecture",
+      "status": "DRAFT"
+    },
+    {
+      "id": "RFC-0006",
+      "type": "RFC",
+      "title": "Security & Capabilities Architecture",
+      "status": "DRAFT"
+    },
+    {
+      "id": "AIOS-0001",
+      "type": "Implementation",
+      "title": "Define AI-Native Threat Model",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "subsystem": "Cross-cutting (Security)"
+    },
+    {
+      "id": "AIOS-0002",
+      "type": "Implementation",
+      "title": "Research AI Privilege Model",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "subsystem": "Kernel / AI Runtime"
+    },
+    {
+      "id": "AIOS-0003",
+      "type": "Implementation",
+      "title": "Research: Operating System Theory (First Principles)",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "subsystem": "Cross-cutting"
+    },
+    {
+      "id": "AIOS-0004",
+      "type": "Implementation",
+      "title": "Research: Systems Theory",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "subsystem": "Cross-cutting"
+    },
+    {
+      "id": "AIOS-0005",
+      "type": "Implementation",
+      "title": "Research: Computer Architecture",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "subsystem": "Hardware Abstraction"
+    },
+    {
+      "id": "AIOS-0006",
+      "type": "Implementation",
+      "title": "Research: Security Principles",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "subsystem": "Security"
+    },
+    {
+      "id": "AIOS-0007",
+      "type": "Implementation",
+      "title": "Research: AI Theory & Machine Learning",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "subsystem": "AI Runtime"
+    },
+    {
+      "id": "AIOS-0008",
+      "type": "Implementation",
+      "title": "Phase 2: Kernel Architecture Specification",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "subsystem": "Kernel"
+    },
+    {
+      "id": "AIOS-0009",
+      "type": "Implementation",
+      "title": "Phase 3-18: Full Architecture Specifications",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "subsystem": "All"
+    },
+    {
+      "id": "AIOS-0010",
+      "type": "Implementation",
+      "title": "Research Refresh: Verify Architecture Specs Against Latest Research",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "subsystem": "All"
+    },
+    {
+      "id": "AIOS-0011",
+      "type": "Implementation",
+      "title": "Phase 1: Formal Specifications (TLA+/Coq/Isabelle)",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "subsystem": "Kernel"
+    },
+    {
+      "id": "AIOS-0012",
+      "type": "Implementation",
+      "title": "RFC Generation: All Subsystems",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "subsystem": "All"
+    },
+    {
+      "id": "AIOS-0013",
+      "type": "Implementation",
+      "title": "Threat Model: AI-Specific Attack Surface",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "subsystem": "AI Runtime"
+    },
+    {
+      "id": "AIOS-0014",
+      "type": "Implementation",
+      "title": "Pre-Existing Code Reconciliation",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "subsystem": "Kernel"
+    },
+    {
+      "id": "AIOS-0015",
+      "type": "Implementation",
+      "title": "Update Security Architecture with Threat Model Findings",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "subsystem": "Security Architecture"
+    },
+    {
+      "id": "AIOS-0016",
+      "type": "Implementation",
+      "title": "Evaluate ProbeLogits-Style Kernel Safety Primitives",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "subsystem": "Kernel / AI Runtime"
+    },
+    {
+      "id": "AIOS-0027",
+      "type": "Implementation",
+      "title": "Update V4.02 Scheduler Spec (ML-predictive,\n  KV-aware,\n  agent-policy verification)",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "subsystem": "Kernel / Scheduling"
+    },
+    {
+      "id": "AIOS-0028",
+      "type": "Implementation",
+      "title": "Update V5.02 IPC Spec (Stateless MCP,\n  PEP runtime enforcement layer)",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "subsystem": "Kernel / IPC"
+    },
+    {
+      "id": "AIOS-0029",
+      "type": "Implementation",
+      "title": "Update V3.02 Memory Protection Spec (KV cache memory tiering)",
+      "status": "COMPLETED",
+      "priority": "P2",
+      "subsystem": "Kernel / Memory"
+    },
+    {
+      "id": "AIOS-0030",
+      "type": "Implementation",
+      "title": "Update V2.03 Boot Spec (RVA23 ISA baseline)",
+      "status": "COMPLETED",
+      "priority": "P2",
+      "subsystem": "Kernel / Boot"
+    },
+    {
+      "id": "AIOS-0035",
+      "type": "Implementation",
+      "title": "VirtIO Network Driver + ARP/ICMP — Basic networking",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "subsystem": "Kernel / Networking"
+    },
+    {
+      "id": "AIOS-0036",
+      "type": "Implementation",
+      "title": "TCP/IP Stack — DHCP,\n  DNS,\n  TCP sockets",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "subsystem": "Kernel / Networking"
+    },
+    {
+      "id": "AIOS-0037",
+      "type": "Implementation",
+      "title": "HTTP Server + MCP Endpoint — Agent communication over TCP",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "subsystem": "Kernel / AI Runtime"
+    },
+    {
+      "id": "AIOS-0040",
+      "type": "Implementation",
+      "title": "AI Agent Runtime — Agent TCB,\n  inference context,\n  tool binding",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "subsystem": "Kernel / AI Runtime"
+    },
+    {
+      "id": "AIOS-0041",
+      "type": "Implementation",
+      "title": "Inference Engine Integration — llama.cpp or similar in kernel",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "subsystem": "Kernel / AI Runtime"
+    },
+    {
+      "id": "AIOS-0042",
+      "type": "Implementation",
+      "title": "Audit Subsystem — Capability invocation logging + anomaly detection",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "subsystem": "Kernel / Security"
+    },
+    {
+      "id": "AIOS-0043",
+      "type": "Implementation",
+      "title": "Timing-Safe Capability Check — Constant-time PEP enforcement",
+      "status": "COMPLETED",
+      "priority": "P2",
+      "subsystem": "Kernel / Security"
+    },
+    {
+      "id": "AIOS-0045",
+      "type": "Implementation",
+      "title": "SMP / Multi-HART Support — Parallel kernel on multi-core RISC-V",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "subsystem": "Kernel / Core"
+    },
+    {
+      "id": "AIOS-0046",
+      "type": "Implementation",
+      "title": "NUMA-Aware Memory Tiering — Per-node memory pools + migration",
+      "status": "COMPLETED",
+      "priority": "P2",
+      "subsystem": "Kernel / Memory"
+    },
+    {
+      "id": "AIOS-0047",
+      "type": "Implementation",
+      "title": "GPU Driver Framework — VirtIO-GPU + simple framebuffer",
+      "status": "COMPLETED",
+      "priority": "P2",
+      "subsystem": "Kernel / Drivers"
+    },
+    {
+      "id": "AIOS-0048",
+      "type": "Implementation",
+      "title": "WASM Runtime — Sandboxed compute for untrusted agents",
+      "status": "COMPLETED",
+      "priority": "P2",
+      "subsystem": "Kernel / AI Runtime"
+    },
+    {
+      "id": "AIOS-0049",
+      "type": "Implementation",
+      "title": "CI/CD Pipeline — Automated QEMU boot tests + regression suite",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "subsystem": "Cross-cutting"
+    },
+    {
+      "id": "AIOS-0050",
+      "type": "Implementation",
+      "title": "Benchmark Suite — Scheduler latency,\n  IPC throughput,\n  FS IOPS",
+      "status": "COMPLETED",
+      "priority": "P2",
+      "subsystem": "Cross-cutting"
+    },
+    {
+      "id": "AIOS-0051",
+      "type": "Implementation",
+      "title": "RISC-V AIA Interrupt Controller — MSI,\n  irqchip virtualization",
+      "status": "COMPLETED",
+      "priority": "P2",
+      "subsystem": "Kernel / Interrupts"
+    },
+    {
+      "id": "AIOS-0055",
+      "type": "Implementation",
+      "title": "Audit & PEP Coverage Smoke (12 test pack)",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "subsystem": "Kernel / Audit"
+    },
+    {
+      "id": "AIOS-0056",
+      "type": "Implementation",
+      "title": "Boot Smoke Coverage Dashboard",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "subsystem": "Kernel / Boot"
+    },
+    {
+      "id": "AIOS-0057",
+      "type": "Implementation",
+      "title": "Syscall Audit Hook (ADR-0014)",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "subsystem": "audit + syscall"
+    },
+    {
+      "id": "AIOS-0058",
+      "type": "Implementation",
+      "title": "Audit Reader Protocol (ADR-0015)",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "subsystem": "audit + syscall + shell"
+    },
+    {
+      "id": "AIOS-0059",
+      "type": "Implementation",
+      "title": "Codeguard H1 closure (ADR-0016 AUDIT_LOG_READY flip + ring-proof)",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "subsystem": "pep + audit + main"
+    },
+    {
+      "id": "AIOS-0060",
+      "type": "Implementation",
+      "title": "CNode bitmap-backed free-slot lookup (ADR-0017,\n  closes 1 of 4 dashboard gaps)",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "subsystem": "cap/cnode"
+    },
+    {
+      "id": "AIOS-0061",
+      "type": "Implementation",
+      "title": "Lean audit drain API (ADR-0018)",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "subsystem": "audit"
+    },
+    {
+      "id": "AIOS-0062",
+      "type": "Implementation",
+      "title": "Audit subsystem cleanup (ADR-0019: drops `#[allow(dead_code)]` + new audit_stress_smoke covering saturate + overflow + drain + re-emit)",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "subsystem": "audit + main"
+    },
+    {
+      "id": "AIOS-0062-T2",
+      "type": "Implementation",
+      "title": "SMP-aware audit_drain_all + audit_count/audit_dropped locking (sibling of AIOS-0062 / ADR-0019)",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "subsystem": "audit + smp"
+    },
+    {
+      "id": "AIOS-0062-T3",
+      "type": "Implementation",
+      "title": "Extend AIOS-0062-T2 L2 static-pin to cover a 3rd audit.rs read/write site",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "subsystem": "audit + main"
+    },
+    {
+      "id": "AIOS-0063",
+      "type": "Implementation",
+      "title": "Codeguard M4 closure: task visibility tightening (ADR-0020)",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "subsystem": "task + main"
+    },
+    {
+      "id": "AIOS-0064",
+      "type": "Implementation",
+      "title": "Codeguard L1 closure: reply metadata bounds check (ADR-0021)",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "subsystem": "ipc/endpoint + main"
+    },
+    {
+      "id": "AIOS-0065",
+      "type": "Implementation",
+      "title": "Codeguard L2 closure (ADR-0022: boot_hart_id() assertion on init_interrupts + init_timer, with boot smoke)",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "subsystem": "interrupt + main"
+    },
+    {
+      "id": "AIOS-0065-T2",
+      "type": "Implementation",
+      "title": "SMP-path exercise of Codeguard L2 (isolated secondary-hart assertion harness)",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "subsystem": "interrupt + smp"
+    },
+    {
+      "id": "AIOS-0066",
+      "type": "Implementation",
+      "title": "Codeguard A1 closure (ADR-0023: orphan reply cap on WouldBlock)",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "subsystem": "ipc/endpoint + main"
+    },
+    {
+      "id": "AIOS-0066-T1",
+      "type": "Implementation",
+      "title": "Rendezvous-fallthrough coverage for Codeguard A1 (sibling of AIOS-0066 / ADR-0023)",
+      "status": "COMPLETED",
+      "priority": "P2",
+      "subsystem": "ipc/endpoint + main"
+    },
+    {
+      "id": "AIOS-0067",
+      "type": "Implementation",
+      "title": "Codeguard A3 closure: tighten user_smoke test 6 to exact SyscallError discriminants + ADR-0014 audit pre-hook invariant",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "subsystem": "syscall + main + audit"
+    },
+    {
+      "id": "AIOS-0067-T1",
+      "type": "Implementation",
+      "title": "Sweep all `assert_ne!(_, 0)` silent-pass patterns across boot smokes (sibling of AIOS-0067 / ADR-0024)",
+      "status": "COMPLETED",
+      "priority": "P2",
+      "subsystem": "main + smokes"
+    },
+    {
+      "id": "AIOS-0068",
+      "type": "Implementation",
+      "title": "Codeguard B1 closure: DebugPrint silent-reject audit-hook smoke (ADR-0025)",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "subsystem": "syscall + main + audit"
+    },
+    {
+      "id": "AIOS-0068-T1",
+      "type": "Implementation",
+      "title": "Extend B1 smoke to also test the SUCCESSFUL DebugPrint path (sibling of AIOS-0068 / ADR-0025)",
+      "status": "COMPLETED",
+      "priority": "P2",
+      "subsystem": "syscall + main + audit"
+    },
+    {
+      "id": "AIOS-0069",
+      "type": "Implementation",
+      "title": "Codeguard B2 closure: timer ISR boot-order smoke (ADR-0026)",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "subsystem": "main + smp"
+    },
+    {
+      "id": "AIOS-0069-T1",
+      "type": "Implementation",
+      "title": "Per-hart boot-order coverage for Codeguard B2",
+      "status": "COMPLETED",
+      "priority": "P2",
+      "subsystem": "main + smp"
+    },
+    {
+      "id": "AIOS-0070",
+      "type": "Implementation",
+      "title": "Codeguard B7 closure: SUM cleared after ECALL and trap entry (ADR-0027)",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "subsystem": "syscall + interrupt"
+    },
+    {
+      "id": "AIOS-0070-T1",
+      "type": "Implementation",
+      "title": "Per-hart SUM-clear coverage for Codeguard B7",
+      "status": "COMPLETED",
+      "priority": "P2",
+      "subsystem": "syscall + smp"
+    },
+    {
+      "id": "AIOS-0071",
+      "type": "Implementation",
+      "title": "Codeguard B10 closure: rights bits bounds check (ADR-0028)",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "subsystem": "cap + syscall"
+    },
+    {
+      "id": "AIOS-0071-T1",
+      "type": "Implementation",
+      "title": "Direct-write rights-bits regression coverage for Codeguard B10",
+      "status": "COMPLETED",
+      "priority": "P2",
+      "subsystem": "cap + main"
+    },
+    {
+      "id": "AIOS-0072-T1",
+      "type": "Implementation",
+      "title": "Derivation-chain narrowing sibling of Codeguard B10",
+      "status": "COMPLETED",
+      "priority": "P2",
+      "subsystem": "Kernel / Security"
+    },
+    {
+      "id": "AIOS-0073-T1",
+      "type": "Implementation",
+      "title": "B1 deny-path asymmetry sibling of Codeguard B1",
+      "status": "COMPLETED",
+      "priority": "P2"
+    },
+    {
+      "id": "AIOS-0075-T1",
+      "type": "Implementation",
+      "title": "Phase ledger reconciliation (P2-P13 closeout batch)",
+      "status": "COMPLETED",
+      "priority": "P2"
+    },
+    {
+      "id": "AIOS-0076-T1",
+      "type": "Implementation",
+      "title": "P14 Desktop GUI scaffold kickoff — Codeguard G (GUI / Compositor) contract cascade smoke",
+      "status": "COMPLETED",
+      "priority": "P2"
+    },
+    {
+      "id": "AIOS-0077-T1",
+      "type": "Implementation",
+      "title": "First-window paint smoke (Codeguard G2) - P14 follow-up",
+      "status": "COMPLETED",
+      "priority": "P2"
+    },
+    {
+      "id": "AIOS-0078-T1",
+      "type": "Implementation",
+      "title": "Agent-launcher panel smoke (Codeguard G3) - P14 follow-up closure (with P1 compile-blocker fix)",
+      "status": "COMPLETED",
+      "priority": "P2"
+    },
+    {
+      "id": "AIOS-0079-T1",
+      "type": "Implementation",
+      "title": "WASM Runtime closure smoke (Codeguard W1) - unconditional P11/V11-01 audit + inject_pep_bridge baseline",
+      "status": "COMPLETED",
+      "priority": "P2"
+    },
+    {
+      "id": "AIOS-0080-T1",
+      "type": "Implementation",
+      "title": "Keyboard-input dispatch closure (Codeguard G4) - V14-01 desktop shell",
+      "status": "COMPLETED",
+      "priority": "P2"
+    },
+    {
+      "id": "AIOS-0081-T1",
+      "type": "Implementation",
+      "title": "Optional VirtIO-GPU cursor fallback closure",
+      "status": "COMPLETED",
+      "priority": "P2"
+    },
+    {
+      "id": "AIOS-0058b",
+      "type": "Implementation",
+      "title": "Shell cap + reader polish (sibling of AIOS-0058 / ADR-0015)",
+      "status": "COMPLETED",
+      "priority": "P2",
+      "subsystem": "shell + audit (polish)"
+    },
+    {
+      "id": "AIOS-F01",
+      "type": "Implementation",
+      "title": "Kernel Architecture Decision",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "subsystem": "Kernel"
+    },
+    {
+      "id": "AIOS-F02",
+      "type": "Implementation",
+      "title": "System ABI Decision",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "subsystem": "Kernel"
+    },
+    {
+      "id": "AIOS-F03",
+      "type": "Implementation",
+      "title": "Memory Protection Architecture",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "subsystem": "Memory"
+    },
+    {
+      "id": "AIOS-F04",
+      "type": "Implementation",
+      "title": "Scheduler Architecture",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "subsystem": "Scheduler"
+    },
+    {
+      "id": "AIOS-F05",
+      "type": "Implementation",
+      "title": "IPC Architecture",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "subsystem": "IPC"
+    },
+    {
+      "id": "AIOS-F06",
+      "type": "Implementation",
+      "title": "Security & Capabilities Architecture",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "subsystem": "Security"
+    },
+    {
+      "id": "AIOS-0022",
+      "type": "Implementation",
+      "title": "MVP-M2: Capability System Implementation (32-slot CNode,\n  CloudCaps guards)",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "subsystem": "Kernel / Security"
+    },
+    {
+      "id": "AIOS-0023",
+      "type": "Implementation",
+      "title": "MVP-M3: Memory Management Implementation (frame allocator,\n  page tables,\n  VMO stub)",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "subsystem": "Kernel / Memory"
+    },
+    {
+      "id": "AIOS-0024",
+      "type": "Implementation",
+      "title": "MVP-M4: IPC Implementation (endpoints,\n  message registers,\n  capability transfer)",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "subsystem": "Kernel / IPC"
+    },
+    {
+      "id": "AIOS-0025",
+      "type": "Implementation",
+      "title": "MVP-M5: Scheduling Implementation (TCBs,\n  round-robin,\n  call/reply,\n  nbsend/nbrecv)",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "subsystem": "Kernel / Scheduling"
+    },
+    {
+      "id": "AIOS-0026",
+      "type": "Implementation",
+      "title": "MVP-M6: User Space (root task,\n  ELF loader,\n  context switch,\n  syscall ABI)",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "subsystem": "Kernel / User Space"
+    },
+    {
+      "id": "AIOS-0031",
+      "type": "Implementation",
+      "title": "Ramdisk Filesystem (64KB block store,\n  create/read/write/delete/list)",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "subsystem": "Kernel / Filesystem"
+    },
+    {
+      "id": "AIOS-0032",
+      "type": "Implementation",
+      "title": "VirtIO Block Driver — Persistent storage via QEMU virtio-blk",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "subsystem": "Kernel / Drivers"
+    },
+    {
+      "id": "AIOS-0033",
+      "type": "Implementation",
+      "title": "FAT32 Filesystem Driver — Read/write FAT32 volumes from VirtIO block",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "subsystem": "Kernel / Filesystem"
+    },
+    {
+      "id": "AIOS-0034",
+      "type": "Implementation",
+      "title": "Virtual Filesystem Switch (VFS) — Unified FS interface",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "subsystem": "Kernel / Filesystem"
+    },
+    {
+      "id": "AIOS-0038",
+      "type": "Implementation",
+      "title": "Multi-Process User Space — fork/exec,\n  process isolation,\n  PID namespace",
+      "status": "COMPLETED",
+      "priority": "P0",
+      "subsystem": "Kernel / User Space"
+    },
+    {
+      "id": "AIOS-0039",
+      "type": "Implementation",
+      "title": "User-Space Shell — /bin/sh as a ramdisk-loaded process",
+      "status": "COMPLETED",
+      "priority": "P1",
+      "subsystem": "Kernel / User Space"
+    },
+    {
+      "id": "AIOS-0044",
+      "type": "Implementation",
+      "title": "UEFI Bootloader — Replace OpenSBI direct boot with UEFI",
+      "status": "COMPLETED",
+      "priority": "P2",
+      "subsystem": "Kernel / Boot"
+    },
+    {
+      "id": "AIOS-0074-T1",
+      "type": "Implementation",
+      "title": "VFS cross-backend routing sibling of AIOS-0034 closure",
+      "status": "COMPLETED",
+      "priority": "P2"
+    }
+  ],
+  "dependencies": [
+    {
+      "from": "AIOS-0002",
+      "to": "AIOS-0001",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0008",
+      "to": "AIOS-0003",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0008",
+      "to": "AIOS-0004",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0008",
+      "to": "AIOS-0005",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0008",
+      "to": "AIOS-0006",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0008",
+      "to": "AIOS-0007",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0009",
+      "to": "AIOS-0008",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0010",
+      "to": "AIOS-0009",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0011",
+      "to": "AIOS-0008",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0011",
+      "to": "AIOS-0010",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0012",
+      "to": "AIOS-0009",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0012",
+      "to": "AIOS-0010",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0013",
+      "to": "AIOS-0001",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0013",
+      "to": "AIOS-0007",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0013",
+      "to": "V1-12",
+      "relationship": "produces"
+    },
+    {
+      "from": "AIOS-0013",
+      "to": "THREAT-0004",
+      "relationship": "produces"
+    },
+    {
+      "from": "AIOS-0014",
+      "to": "AIOS-0008",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "RES-V1",
+      "to": "AIOS-0003",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "RES-V1",
+      "to": "AIOS-0004",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "RES-V1",
+      "to": "AIOS-0005",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "RES-V1",
+      "to": "AIOS-0006",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "RES-V1",
+      "to": "AIOS-0007",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "ARCH-KERNEL",
+      "to": "RES-V1",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "ARCH-ALL",
+      "to": "ARCH-KERNEL",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "SPEC-FORMAL",
+      "to": "ARCH-KERNEL",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "SPEC-FORMAL",
+      "to": "AIOS-0010",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "IMP-KERNEL",
+      "to": "ARCH-KERNEL",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "IMP-KERNEL",
+      "to": "SPEC-FORMAL",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "IMP-MEMORY",
+      "to": "ARCH-ALL",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "IMP-MEMORY",
+      "to": "SPEC-FORMAL",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "IMP-SCHED",
+      "to": "ARCH-ALL",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "IMP-IPC",
+      "to": "ARCH-ALL",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "IMP-DRIVERS",
+      "to": "ARCH-ALL",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "IMP-AI",
+      "to": "ARCH-ALL",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "IMP-SEC",
+      "to": "AIOS-0001",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-F01",
+      "to": "AIOS-0008",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-F01",
+      "to": "AIOS-0010",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-F02",
+      "to": "AIOS-F01",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-F03",
+      "to": "AIOS-F01",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-F04",
+      "to": "AIOS-F01",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-F04",
+      "to": "AIOS-F02",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-F05",
+      "to": "AIOS-F01",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-F05",
+      "to": "AIOS-F02",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "RFC-0001",
+      "to": "AIOS-F01",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "RFC-0002",
+      "to": "AIOS-F02",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-F03",
+      "to": "AIOS-F02",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "RFC-0003",
+      "to": "AIOS-F03",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "RFC-0004",
+      "to": "AIOS-F04",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-F04",
+      "to": "AIOS-F02",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "RFC-0005",
+      "to": "AIOS-F05",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-F05",
+      "to": "AIOS-F02",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-F06",
+      "to": "AIOS-F01",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-F06",
+      "to": "AIOS-F02",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-F06",
+      "to": "AIOS-F03",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-F06",
+      "to": "AIOS-F05",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "RFC-0006",
+      "to": "AIOS-F06",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0024",
+      "to": "AIOS-0023",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0024",
+      "to": "AIOS-F05",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0025",
+      "to": "AIOS-0024",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0026",
+      "to": "AIOS-0025",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0015",
+      "to": "AIOS-0001",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0015",
+      "to": "AIOS-0009",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0016",
+      "to": "AIOS-0001",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0016",
+      "to": "AIOS-0008",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0022",
+      "to": "AIOS-F01",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0022",
+      "to": "AIOS-F06",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0023",
+      "to": "AIOS-0022",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0027",
+      "to": "AIOS-0010",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0028",
+      "to": "AIOS-0010",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0029",
+      "to": "AIOS-0010",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0031",
+      "to": "AIOS-0026",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0030",
+      "to": "AIOS-0010",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0032",
+      "to": "AIOS-0031",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0033",
+      "to": "AIOS-0032",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0034",
+      "to": "AIOS-0031",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0034",
+      "to": "AIOS-0033",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0036",
+      "to": "AIOS-0035",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0037",
+      "to": "AIOS-0036",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0037",
+      "to": "AIOS-0028",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0038",
+      "to": "AIOS-0026",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0039",
+      "to": "AIOS-0038",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0039",
+      "to": "AIOS-0034",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0040",
+      "to": "AIOS-0027",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0040",
+      "to": "AIOS-0028",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0040",
+      "to": "AIOS-0029",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0041",
+      "to": "AIOS-0040",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0041",
+      "to": "AIOS-0029",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0042",
+      "to": "AIOS-0028",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0043",
+      "to": "AIOS-0028",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0043",
+      "to": "AIOS-0042",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0044",
+      "to": "AIOS-0033",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0045",
+      "to": "AIOS-0027",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0046",
+      "to": "AIOS-0029",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0046",
+      "to": "AIOS-0045",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0048",
+      "to": "AIOS-0040",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0048",
+      "to": "AIOS-0028",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0051",
+      "to": "AIOS-0045",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0055",
+      "to": "AIOS-0028",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0056",
+      "to": "AIOS-0055",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0058",
+      "to": "AIOS-0055",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0058",
+      "to": "AIOS-0057",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0058b",
+      "to": "AIOS-0058",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0059",
+      "to": "AIOS-0058",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0060",
+      "to": "AIOS-0059",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0062-T2",
+      "to": "AIOS-0062",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0062-T3",
+      "to": "AIOS-0062-T2",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0065-T2",
+      "to": "AIOS-0065",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0066",
+      "to": "AIOS-0065",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0066-T1",
+      "to": "AIOS-0066",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0067",
+      "to": "AIOS-0066",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0067-T1",
+      "to": "AIOS-0067",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0068",
+      "to": "AIOS-0067",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0068-T1",
+      "to": "AIOS-0068",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0069",
+      "to": "AIOS-0068",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0069-T1",
+      "to": "AIOS-0069",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0070",
+      "to": "AIOS-0069",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0070-T1",
+      "to": "AIOS-0070",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0071",
+      "to": "AIOS-0070",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0071-T1",
+      "to": "AIOS-0071",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0062",
+      "to": "AIOS-0061",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0065",
+      "to": "AIOS-0064",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0066",
+      "to": "AIOS-0064",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0061",
+      "to": "AIOS-0058",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0063",
+      "to": "AIOS-0062",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0064",
+      "to": "AIOS-0063",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0078-T1",
+      "to": "AIOS-0077-T1",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0079-T1",
+      "to": "AIOS-0042",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0080-T1",
+      "to": "AIOS-0078-T1",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0081-T1",
+      "to": "AIOS-0080-T1",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0072-T1",
+      "to": "AIOS-0071-T1",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0073-T1",
+      "to": "AIOS-0068",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0073-T1",
+      "to": "AIOS-0068-T1",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0074-T1",
+      "to": "AIOS-0034",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0076-T1",
+      "to": "AIOS-0047",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0076-T1",
+      "to": "AIOS-0075-T1",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0077-T1",
+      "to": "AIOS-0076-T1",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0079-T1",
+      "to": "AIOS-0078-T1",
+      "relationship": "depends_on"
+    },
+    {
+      "from": "AIOS-0080-T1",
+      "to": "AIOS-0079-T1",
+      "relationship": "depends_on"
+    }
+  ],
+  "edges": [
+    {
+      "source": "AIOS-0073-T1",
+      "target": "AIOS-0068",
+      "type": "extends"
+    },
+    {
+      "source": "AIOS-0073-T1",
+      "target": "AIOS-0068-T1",
+      "type": "sibling-of"
+    },
+    {
+      "source": "AIOS-0073-T1",
+      "target": "ADR-0025",
+      "type": "parent-adr"
+    },
+    {
+      "source": "AIOS-0073-T1",
+      "target": "ADR-0028-B1A",
+      "type": "sibling-adr"
+    },
+    {
+      "source": "AIOS-0074-T1",
+      "target": "AIOS-0034",
+      "type": "sibling"
+    },
+    {
+      "source": "AIOS-0074-T1",
+      "target": "ADR-0028-M5A",
+      "type": "sibling-adr"
+    },
+    {
+      "source": "AIOS-0034",
+      "target": "AIOS-0074-T1",
+      "type": "closes-via-sibling"
+    }
+  ]
+}

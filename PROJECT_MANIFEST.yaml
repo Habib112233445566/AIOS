@@ -1,0 +1,472 @@
+# ==========================================================
+# AI-Native Operating System
+# Master Project Manifest
+# ==========================================================
+
+# v2 amendment (2026-08-20):
+#   Product vision restated by the user. Three pillars + S-rank AI subsystem.
+#   See README.md and mostimportanAIfolder/AIOS_MASTER_BLUEPRINT.md (v2.0)
+#   and mostimportanAIfolder/PRODUCT_ROADMAP.md (v2.0) for the canonical v2
+#   statement. This file is amended in-place to record the v2 framing while
+#   preserving prior version numbers for traceability.
+#
+# v2.1 amendment (2026-08-21) — implementation language:
+#   User directive: the shipping v2 stack is written in RUST. The MCP
+#   server, CLI, audit ring, classifier (R-01..R-12), PEP grant store,
+#   retention, pentest wrappers, sandbox, and agent loop now live in
+#   code/aiosh-rust/ (aiosh-core + aiosh-cli + aiosh-mcp; zero-warning
+#   cargo build, 45 cargo tests green, MCP wire contract smoke green).
+#   The legacy TypeScript (code/aiosh-cli) and Python (code/aiosh-mcp)
+#   trees are retained in-repo as the reference cross-substrate contract
+#   and are NOT the ship path. ci/run_all_smokes.sh runs rust_smoke first,
+#   then the legacy suites.
+
+project:
+
+  name: AI-Native Operating System
+
+  codename: AIOS
+
+  description: >
+    A Linux system for ethical hacking on the inside, a Windows-style
+    desktop on the outside, with AI as a first-class S-rank kernel
+    subsystem that controls the whole system. Three pillars — Pillar A
+    (Linux ethical-hacking platform), Pillar B (Windows-style desktop),
+    Pillar C (AI as S-rank first-class kernel subsystem) — drive all
+    product decisions.
+
+  owner: Human Project Owner
+
+  repository_version: 0.1.0
+
+  architecture_version: 0.1.0
+
+  specification_version: 0.1.0
+
+  knowledge_graph_version: 2.2.0
+
+  task_database_version: 2.2.0
+
+  created: 2026-07-16
+
+  last_updated: 2026-08-21
+
+  session_day_info:
+    session_date: 2026-07-24
+    project_day: 9
+    days_since_project_start: 9
+    project_start_date: 2026-07-16
+    project_elapsed_days: 9
+    sessions_completed_today: 2
+    tasks_completed_today:
+      - AIOS-0002 (10d est → 1d actual, 9d saved)
+      - AIOS-0010 (14d est → 1d actual, 13d saved)
+    total_days_saved: 22
+    cumulative_efficiency: "9 days elapsed, equivalent to ~31 days of estimated work completed"
+
+# ==========================================================
+
+project_status:
+  current_state: IMPLEMENTATION
+  current_phase: "v2 Sprint 3 — Rust rewrite of the full shipping stack SHIPPED 2026-08-21 (aiosh-rust: core+cli+mcp, 45 tests + MCP wire smoke green); next: demo snap-test CI, pentest taxonomy expansion"
+  completion_percentage: 91
+  health_status: HEALTHY_WITH_WARNINGS
+  last_completed_task: "Sprint 3 item 1 — audit-ring retention policy (checkpointed rotation + bloom filter; ADR-0036; retention smoke R1-R7 green, all baseline suites green)"
+  active_task: "Sprint 3 item 2 — formalize aiosh demo snap test into the CI suite"
+  next_task: "Sprint 3 item 3 — expand pentest wrappers toward full Kali / MITRE ATT&CK v19 taxonomy"
+  # TASK_DATABASE.json is a NON-authoritative graph-derived reconstruction
+  # (metadata.authoritative: false, provenance: graph-derived-recovery);
+  # its all-COMPLETED statuses are artifacts. Live source of truth is
+  # repository evidence: ADRs + shipped code with green smokes, and
+  # task_plan.md (v2/Sprint framing). See progress.md 2026-08-21.
+  selected_task_reason: "AIOS-0039 is the highest-priority unfinished task whose dependencies are all COMPLETED; task order is dependency-first topological order."
+  dashboard_coverage: "57 GUI PASS rows / 53 headless PASS rows; 7 explicit gaps remain (4 GUI feature-gated rows + 3 hardware-gated I/O rows)"
+  last_validation: "2026-08-09: headless and GUI RISC-V cargo check passed; AIOS-0039 user IPC transport smoke passed; UTF-8 parsing passed for TASK_DATABASE.json, DEPENDENCY_GRAPH.json, and KNOWLEDGE_GRAPH.json. Full ci/smoke.sh reaches AIOS-0039, then stops at the unrelated scheduler FIFO assertion at kernel/src/main.rs:2443 before AIOS-0072-T1 and the dashboard."
+  blocked_tasks: 0
+  on_hold_tasks: 1
+  control_plane_version: 2.2.0
+  day1_summary:
+    date: 2026-07-24
+    tasks_completed:
+      - AIOS-0002: Research AI Privilege Model (10d est → 1d actual, 9d saved)
+      - AIOS-0010: Research Refresh 8/18 specs (14d est → 1d actual, 13d saved)
+      - AIOS-0027: ML-Predictive Scheduler (3d est → 1d actual, 2d saved)
+      - AIOS-0028: Stateless MCP + PEP in IPC (3d est → 1d actual, 2d saved)
+      - AIOS-0029: KV Cache Memory Tiering (1d est → 1d actual, 0d saved)
+    tasks_started:
+      - AIOS-0011: Formal Specifications (30d, Day 1 complete, 29d remaining)
+    artifacts_created_today:
+      - V1-10 Research Report (finalized from draft)
+      - V1-11 Research Refresh Report
+      - SYS-0003 Capability TLA+ Module (enhanced from skeleton)
+      - SYS-0006 Agent Delegation TLA+
+      - SYS-0007 Scheduler TLA+
+      - RFC-0007 AI Agent Privilege Model
+      - THREAT-0003 Agent Privilege Escalation
+      - AIOS-0027 through AIOS-0030 (4 new tasks)
+    day_verdict: "PRODUCTIVE — 5 tasks completed (28 days ahead), 1 started, 8 artifacts, 4 tasks generated, kernel code shipped (scheduler + PEP + memory tiers)"
+
+  completed_tasks:
+    - AIOS-0014 (Pre-Existing Code Reconciliation — decision: src/ x86_64 blog_os is a separate historical prototype and pattern reference; NOT refactored into RISC-V AINOS (ISA/ABI/monolithic mismatch, portable concepts already reimplemented), NOT a v1.0 compatibility-layer build target (Constitution Art 12); retained in place; ADR-0033 + RECON-0001; no code changed)
+    - AIOS-0013 (Threat Model: AI-Specific Attack Surface — V1-12 research report + THREAT-0004 threat model; 7 AI attack families, L0-L5 defense-in-depth stack, RISK-0022..RISK-0027 registered; ADR-0010 validated)
+    - AIOS-0065-T2 (SMP-path L2 exercise — isolated secondary-hart assertion harness; normal and negative QEMU validation)
+    - AIOS-0067-T1 (strict FNV-1a vectors for PEP boot smoke; ADR-0029)
+    - AIOS-0034 (VFS layer — vfs_smoke; vfs_cross_backend_routing_smoke is the AIOS-0074-T1 sibling; P7 row in roadmaps/README.md flipped to COMPLETE)
+    - AIOS-0074-T1 (VFS cross-backend routing sibling of Codeguard M5; vfs_cross_backend_routing_smoke pins resolve_path callsites >= 4 + V1 README stat + V2 NotFound negative + V3 round-trip; ACTUAL_SMOKE_FNS 49 -> 50)
+    - AIOS-0075-T1 (Phase ledger reconciliation (P2-P13 closeout batch); 13/13 roadmap rows flipped; 6 stale NOT_STARTED tasks flipped COMPLETED in DB; P14 IN_PROGRESS; P0/P1 left PENDING; P7 phase closeout)
+    - AIOS-0073-T1 (B1 deny-path asymmetry sibling of Codeguard B1; debug_print_deny_path_asymmetry_smoke pins the audit asymmetry between sys_debug_print's kernel-range deny path (audit_debug_print_deny fires) and bad-length deny path (audit_debug_print_deny does NOT fire) via structural pin + 3-ECALL runtime asymmetry; ADR-0028-B10A; ACTUAL_SMOKE_FNS 48 -> 49)
+    - AIOS-0001
+    - AIOS-0002
+    - AIOS-0003
+    - AIOS-0004
+    - AIOS-0005
+    - AIOS-0006
+    - AIOS-0007
+    - AIOS-0008
+    - AIOS-0009
+    - AIOS-0010
+    - AIOS-F01
+    - AIOS-F02
+    - AIOS-F03
+    - AIOS-F04
+    - AIOS-F05
+    - AIOS-F06
+    - AIOS-0022
+    - AIOS-0023
+    - AIOS-0024
+    - AIOS-0025
+    - AIOS-0026
+
+# ==========================================================
+
+boot:
+
+  protocol: AI_BOOT_PROTOCOL.md
+
+  start_file: START_HERE.md
+
+  execution_protocol: MASTER_PROJECT_EXECUTION_PROTOCOL.md
+
+  constitution: AI_CONSTITUTION.md
+
+# ==========================================================
+
+boot_order:
+
+  - START_HERE.md
+
+  - PROJECT_MANIFEST.yaml
+
+  - AI_BOOT_PROTOCOL.md
+
+  - AI_CONSTITUTION.md
+
+  - MASTER_PROJECT_EXECUTION_PROTOCOL.md
+
+  - KNOWLEDGE_GRAPH.json
+
+  - TASK_DATABASE.json
+
+  - DEPENDENCY_GRAPH.json
+
+  - ADR_INDEX.md
+
+  - RFC_INDEX.md
+
+# ==========================================================
+
+repository:
+
+  root: /
+
+  architecture: /architecture
+
+  research: /research
+
+  specifications: /specifications
+
+  adr: /adrs
+
+  rfc: /rfcs
+
+  kernel: /kernel
+
+  ai: /ai
+
+  runtime: /runtime
+
+  drivers: /drivers
+
+  networking: /networking
+
+  storage: /storage
+
+  security: /security
+
+  libraries: /libraries
+
+  sdk: /sdk
+
+  tests: /tests
+
+  benchmarks: /benchmarks
+
+  documentation: /documentation
+
+  knowledge_graph: /knowledge-graph
+
+  tasks: /tasks
+
+# ==========================================================
+
+engineering_rules:
+
+  implementation_before_specification: false
+
+  implementation_before_research: false
+
+  require_adr: true
+
+  require_rfc: true
+
+  require_formal_specification: true
+
+  require_testing_plan: true
+
+  require_benchmark_plan: true
+
+  require_threat_model: true
+
+  require_risk_register: true
+
+  require_traceability: true
+
+# ==========================================================
+
+research_policy:
+
+  first_principles_required: true
+
+  compare_existing_systems: true
+
+  academic_research_required: true
+
+  standards_required: true
+
+  benchmark_required: true
+
+  multiple_sources_required: true
+
+# ==========================================================
+
+mandatory_research_sources:
+
+  academic:
+
+    - arXiv
+
+    - ACM Digital Library
+
+    - IEEE Xplore
+
+    - Springer
+
+    - USENIX
+
+    - OSDI
+
+    - SOSP
+
+    - EuroSys
+
+    - ASPLOS
+
+    - MICRO
+
+    - ISCA
+
+    - NSDI
+
+    - SIGCOMM
+
+  operating_systems:
+
+    - Linux
+
+    - Windows NT
+
+    - FreeBSD
+
+    - OpenBSD
+
+    - NetBSD
+
+    - seL4
+
+    - Fuchsia
+
+    - Redox
+
+    - Barrelfish
+
+    - Singularity
+
+  standards:
+
+    - RFC
+
+    - POSIX
+
+    - NIST
+
+    - ISO
+
+    - PCI-SIG
+
+    - UEFI
+
+    - CXL Consortium
+
+    - Khronos
+
+    - RISC-V International
+
+# ==========================================================
+
+required_outputs:
+
+  - Research Report
+
+  - Architecture Specification
+
+  - Formal Specification
+
+  - ADR
+
+  - RFC
+
+  - Component Specification
+
+  - Threat Model
+
+  - Risk Register
+
+  - Benchmark Plan
+
+  - Testing Strategy
+
+  - API Specification
+
+  - Protocol Specification
+
+  - Knowledge Graph Update
+
+  - Task Database Update
+
+  - Repository Index Update
+
+# ==========================================================
+
+quality_gate:
+
+  research_complete: true
+
+  architecture_complete: true
+
+  specification_complete: true
+
+  adr_complete: true
+
+  rfc_complete: true
+
+  threat_model_complete: true
+
+  benchmark_complete: true
+
+  testing_complete: true
+
+  documentation_complete: true
+
+  knowledge_graph_updated: true
+
+  task_database_updated: true
+
+  dependency_graph_updated: true
+
+# ==========================================================
+
+repository_indexes:
+
+  knowledge_graph: KNOWLEDGE_GRAPH.json
+
+  task_database: TASK_DATABASE.json
+
+  dependency_graph: DEPENDENCY_GRAPH.json
+
+  adr_index: ADR_INDEX.md
+
+  rfc_index: RFC_INDEX.md
+
+  documentation_index: DOCUMENTATION_INDEX.md
+
+# ==========================================================
+
+execution:
+
+  auto_update_repository: true
+
+  auto_generate_documents: true
+
+  auto_cross_reference: true
+
+  auto_validate_dependencies: true
+
+  auto_check_consistency: true
+
+  auto_generate_reports: true
+
+# ==========================================================
+
+human_approval_required:
+
+  kernel_architecture
+
+  security_architecture
+
+  capability_model
+
+  cryptography
+
+  privilege_model
+
+  ai_runtime
+
+  scheduler
+
+  distributed_architecture
+
+  memory_model
+
+# ==========================================================
+
+shutdown:
+
+  before_exit:
+
+    - Save project state
+
+    - Update manifest
+
+    - Update knowledge graph
+
+    - Update task database
+
+    - Update repository indexes
+
+    - Generate session report
+
+    - Record unfinished work
+
+# ==========================================================
+
+end_of_manifest: true

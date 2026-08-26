@@ -1,0 +1,15 @@
+[package]
+name = "aiosh-mcp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "aiosh-mcp"
+path = "src/main.rs"
+
+[dependencies]
+aiosh-core = { path = "../aiosh-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+rusqlite = { workspace = true }

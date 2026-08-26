@@ -1,0 +1,26 @@
+[
+  {
+    "n_rows": 10000,
+    "keep_rows": 1000,
+    "archived": 9000,
+    "seed_s": 0.546,
+    "verify_live_s": 0.574,
+    "rotate_s": 1.327,
+    "verify_post_rotate_s": 0.0466,
+    "verify_full_s": 0.344,
+    "archive_checked": 9000,
+    "live_checked_after": 1001
+  },
+  {
+    "n_rows": 100000,
+    "keep_rows": 1000,
+    "archived": 99000,
+    "seed_s": 11.959,
+    "verify_live_s": 6.251,
+    "rotate_s": 25.898,
+    "verify_post_rotate_s": 0.1509,
+    "verify_full_s": 6.021,
+    "archive_checked": 99000,
+    "live_checked_after": 1001
+  }
+]

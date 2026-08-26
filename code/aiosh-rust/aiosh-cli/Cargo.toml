@@ -1,0 +1,16 @@
+[package]
+name = "aiosh-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "aiosh"
+path = "src/main.rs"
+
+[dependencies]
+aiosh-core = { path = "../aiosh-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+rusqlite = { workspace = true }
+chrono = { workspace = true }
