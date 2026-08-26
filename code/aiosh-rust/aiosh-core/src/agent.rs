@@ -436,11 +436,17 @@ fn plan_with_stub(prompt: &str, observations: &[String]) -> AgentPlan {
 }
 
 fn extract_number(s: &str) -> Option<i64> {
-    s.chars()
-        .filter(|c| c.is_ascii_digit())
-        .collect::<String>()
-        .parse()
-        .ok()
+    // First standalone numeric token ("audit tail 5" → 5), not a
+    // concatenation of every digit in the prompt.
+    s.split_whitespace().find_map(|w| {
+        let digits: String =
+            w.chars().skip_while(|c| !c.is_ascii_digit()).take_while(|c| c.is_ascii_digit()).collect();
+        if digits.is_empty() {
+            None
+        } else {
+            digits.parse().ok()
+        }
+    })
 }
 
 fn extract_target(lc: &str, keywords: &[&str]) -> Option<String> {
@@ -485,12 +491,10 @@ pub fn run_agent_loop(mut opts: AgentLoopOptions) -> AgentLoopResult {
             None
         };
         let plan = ollama_plan.unwrap_or_else(|| plan_with_stub(opts.prompt, &observations));
-        policy_revision = classify(
-            "agent.step",
-            None,
-            &serde_json::json!({"prompt": &opts.prompt[..opts.prompt.len().min(256)], "step": i}),
-        )
-        .policy_revision;
+        // char-safe truncation (byte-slicing can panic mid-codepoint)
+        let prompt_head: String = opts.prompt.chars().take(256).collect();
+        policy_revision = classify("agent.step", None, &serde_json::json!({"prompt": prompt_head, "step": i}))
+            .policy_revision;
 
         if plan.tool_calls.is_empty() || plan.stop_reason == "end_turn" {
             steps.push(AgentStep { step: i, reasoning: plan.reasoning, tool_results: vec![] });

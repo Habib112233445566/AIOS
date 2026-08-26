@@ -424,8 +424,15 @@ def grant_check(
     if g is None:
         return {"ok": False, "reason": f"unknown or revoked grant: {grant_id}"}
     # Expiry check (also covers revoked, since load_grant returns None).
+    # Fail CLOSED: a malformed timestamp refuses the grant instead of
+    # crashing the gate unaudited or silently treating it as unexpired.
     now = dt.datetime.now(dt.timezone.utc)
-    if dt.datetime.fromisoformat(g["expires_at"].replace("Z", "+00:00")) < now:
+    try:
+        expires = dt.datetime.fromisoformat(g["expires_at"].replace("Z", "+00:00"))
+    except (ValueError, TypeError, AttributeError):
+        return {"ok": False,
+                "reason": f"grant {grant_id} expired or has malformed expires_at"}
+    if expires < now:
         return {"ok": False, "reason": f"grant {grant_id} expired"}
     # Scope check: tool must be in grant.scope.tools (glob match).
     scope_tools = g["scope"].get("tools", []) or []

@@ -133,7 +133,7 @@ impl PepStore {
         let ttl = if ttl_seconds <= 0 { 3600 } else { ttl_seconds };
         let now = Utc::now();
         let expires = now + chrono::Duration::seconds(ttl);
-        let grant_id = format!("gr_{}", random_hex(8));
+        let grant_id = format!("gr_{}", random_hex(8)?);
         let scope_json = serde_json::to_string(scope).unwrap_or_else(|_| "{}".into());
         let scope_hash = sha256_hex(&canonical(&scope_to_json(scope)));
 
@@ -266,13 +266,22 @@ impl PepStore {
                     .get(id)
                     .map_err(|e| format!("grant lookup failed: {}", e))?
                     .ok_or_else(|| format!("unknown or revoked grant: {}", id))?;
-                // Expiry.
+                // Expiry — fail CLOSED: a malformed timestamp refuses the
+                // grant rather than silently treating it as unexpired.
                 let now = Utc::now();
-                let expires = chrono::DateTime::parse_from_rfc3339(&g.expires_at)
-                    .map(|d| d.with_timezone(&Utc))
-                    .unwrap_or(now);
-                if expires < now {
-                    return Err(format!("grant {} expired", id));
+                let expires =
+                    chrono::DateTime::parse_from_rfc3339(&g.expires_at)
+                        .map(|d| d.with_timezone(&Utc))
+                        .map_err(|_| ())
+                        .and_then(|d| if d < now { Err(()) } else { Ok(d) });
+                match expires {
+                    Err(()) => {
+                        return Err(format!(
+                            "grant {} expired or has malformed expires_at",
+                            id
+                        ))
+                    }
+                    Ok(_) => {}
                 }
                 // Tool scope.
                 if !tool_glob_match(tool, &g.scope.tools) {
@@ -316,25 +325,26 @@ fn scope_to_json(scope: &GrantScope) -> Value {
 }
 
 /// Random hex string of `bytes` bytes (16 hex chars for gr_ ids).
-fn random_hex(bytes: usize) -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    // Entropy: time + ASLR'd address — good enough for grant ids that
-    // are additionally recorded in the audit ring.
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    let addr = &nanos as *const _ as usize;
-    let mut out = String::with_capacity(bytes * 2);
-    let mut seed = nanos as u64 ^ addr as u64;
-    for _ in 0..bytes {
-        // xorshift64
-        seed ^= seed << 13;
-        seed ^= seed >> 7;
-        seed ^= seed << 17;
-        out.push_str(&format!("{:02x}", (seed & 0xff) as u8));
-    }
-    out
+///
+/// Grant ids are bearer tokens authorizing irreversible actions — they
+/// MUST come from the OS CSPRNG, never from a userspace PRNG seeded
+/// with time/addresses.
+fn random_hex(bytes: usize) -> Result<String, rusqlite::Error> {
+    use std::io::Read;
+    let mut buf = vec![0u8; bytes];
+    let mut f = std::fs::File::open("/dev/urandom").map_err(|e| {
+        rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::new(
+            e.kind(),
+            format!("grant id entropy unavailable (/dev/urandom): {e}"),
+        )))
+    })?;
+    f.read_exact(&mut buf).map_err(|e| {
+        rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::new(
+            e.kind(),
+            format!("grant id entropy read failed: {e}"),
+        )))
+    })?;
+    Ok(buf.iter().map(|b| format!("{:02x}", b)).collect())
 }
 
 #[cfg(test)]

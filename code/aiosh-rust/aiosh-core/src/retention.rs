@@ -458,12 +458,19 @@ pub fn rotate(
         None,
     );
 
+    // One real SQLite transaction: segment checkpoint + live-row delete
+    // + rotation audit row either all commit or none do. The rotation
+    // row is written on the SAME connection so it participates in the
+    // transaction; its prev_hash is the live head AFTER the delete
+    // (kept-tail hash, or — when keep_rows == 0 — the head of the
+    // segment we just inserted).
     let tx_result = (|| -> rusqlite::Result<i64> {
-        conn.execute(
+        let tx = conn.unchecked_transaction()?;
+        tx.execute(
             r#"INSERT INTO audit_segments
                (segment_id, closed_at, first_row_id, last_row_id, row_count,
-                genesis_prev_hash, head_hash, archive_path, archive_sha256,
-                bloom_m_bits, bloom_k, bloom_hex)
+                 genesis_prev_hash, head_hash, archive_path, archive_sha256,
+                 bloom_m_bits, bloom_k, bloom_hex)
                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)"#,
             params![
                 segment_id,
@@ -480,9 +487,66 @@ pub fn rotate(
                 bloom_hex,
             ],
         )?;
-        conn.execute("DELETE FROM audit_ring WHERE id <= ?1", params![last_id])?;
-        let row = ring.write(rotation_input)?;
-        Ok(row.id)
+        tx.execute("DELETE FROM audit_ring WHERE id <= ?1", params![last_id])?;
+        let prev_hash: String = tx
+            .query_row(
+                "SELECT hash FROM audit_ring ORDER BY id DESC LIMIT 1",
+                [],
+                |r| r.get::<_, String>(0),
+            )
+            .optional()?
+            .or_else(|| {
+                tx.query_row(
+                    "SELECT head_hash FROM audit_segments ORDER BY segment_id DESC LIMIT 1",
+                    [],
+                    |r| r.get::<_, String>(0),
+                )
+                .ok()
+            })
+            .unwrap_or_else(|| GENESIS_HASH.to_string());
+        let proto = rotation_input.hash_proto_with_prev(&prev_hash);
+        let hash = sha256_hex(&format!("{}{}", prev_hash, canonical(&proto)));
+        tx.execute(
+            r#"INSERT INTO audit_ring (
+                ts, actor, actor_id, tool, command, args_json, target,
+                outcome, outcome_detail, constitution_rev, grant_token,
+                c1, c2, c3, c4,
+                policy_revision, classify_rule_ids_json, classify_evidence_json,
+                classify_overall_verdict, classify_verdict_reason,
+                prev_hash, hash
+            ) VALUES (
+                ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11,
+                ?12, ?13, ?14, ?15,
+                ?16, ?17, ?18, ?19, ?20, ?21, ?22
+            )"#,
+            params![
+                rotation_input.ts,
+                rotation_input.actor,
+                rotation_input.actor_id,
+                rotation_input.tool,
+                rotation_input.command,
+                canonical(&rotation_input.args),
+                rotation_input.target,
+                rotation_input.outcome,
+                rotation_input.outcome_detail,
+                rotation_input.constitution_rev,
+                rotation_input.grant_token,
+                rotation_input.c_flags.c1 as i64,
+                rotation_input.c_flags.c2 as i64,
+                rotation_input.c_flags.c3 as i64,
+                rotation_input.c_flags.c4 as i64,
+                rotation_input.policy_revision.as_deref(),
+                rotation_input.classify_rule_ids.as_ref().map(|ids| canonical(&serde_json::Value::Array(ids.iter().map(|s| serde_json::Value::String(s.clone())).collect()))),
+                rotation_input.classify_evidence.as_ref().map(|ev| canonical(ev)),
+                rotation_input.classify_overall_verdict,
+                rotation_input.classify_verdict_reason,
+                prev_hash,
+                hash,
+            ],
+        )?;
+        let audit_id = tx.last_insert_rowid();
+        tx.commit()?;
+        Ok(audit_id)
     })();
 
     match tx_result {

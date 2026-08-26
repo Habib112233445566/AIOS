@@ -167,46 +167,23 @@ impl Server {
             }
             "aios.audit.verify" => {
                 let full = arguments.get("full").and_then(|v| v.as_bool()).unwrap_or(false);
-                let live_verify = if full {
+                // Pre-compute the live walk OUTSIDE the closure so the
+                // closure never borrows self.ring (recorded_call needs
+                // &mut for its own audit writes).
+                let live = if full {
                     None
-                } else if tool == "aios.ci" {
-                    let action = arguments.get("action").and_then(|v| v.as_str()).unwrap_or("");
-                    let file = arguments.get("file").and_then(|v| v.as_str());
-                    let result = server.call_ci(action, file);
-                    let is_error = result.get("ok").and_then(|v| v.as_bool()) == Some(false);
-                    json!({
-                        "jsonrpc": "2.0", "id": id,
-                        "result": {
-                            "content": [{"type": "text", "text": result.to_string()}],
-                            "structuredContent": {"result": result},
-                            "isError": is_error,
-                        }
-                    })
                 } else {
-                    self.ring.verify().map_err(|e| e.to_string()).ok()
+                    self.ring.verify().ok()
                 };
                 let db_path = self.ring.path().to_string();
-                let f = || -> Result<Value, String> {
+                let f = move || -> Result<Value, String> {
                     let result = if full {
                         let conn = if db_path == ":memory:" {
-                            rusqlite::Connection::open_in_memory().unwrap()
-                        } else if tool == "aios.ci" {
-                    let action = arguments.get("action").and_then(|v| v.as_str()).unwrap_or("");
-                    let file = arguments.get("file").and_then(|v| v.as_str());
-                    let result = server.call_ci(action, file);
-                    let is_error = result.get("ok").and_then(|v| v.as_bool()) == Some(false);
-                    json!({
-                        "jsonrpc": "2.0", "id": id,
-                        "result": {
-                            "content": [{"type": "text", "text": result.to_string()}],
-                            "structuredContent": {"result": result},
-                            "isError": is_error,
-                        }
-                    })
-                } else {
-                            rusqlite::Connection::open(&db_path).unwrap()
+                            rusqlite::Connection::open_in_memory().map_err(|e| e.to_string())?
+                        } else {
+                            rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?
                         };
-                        let res = retention::verify_full(&conn, None).map_err(|e| e.to_string())?;
+                        let res = retention::verify_full(&conn, None)?;
                         json!({
                             "ok": res.ok, "mode": "full",
                             "checked": res.checked,
@@ -218,21 +195,8 @@ impl Server {
                             "broken_segment": res.broken_segment,
                             "error": res.error,
                         })
-                    } else if tool == "aios.ci" {
-                    let action = arguments.get("action").and_then(|v| v.as_str()).unwrap_or("");
-                    let file = arguments.get("file").and_then(|v| v.as_str());
-                    let result = server.call_ci(action, file);
-                    let is_error = result.get("ok").and_then(|v| v.as_bool()) == Some(false);
-                    json!({
-                        "jsonrpc": "2.0", "id": id,
-                        "result": {
-                            "content": [{"type": "text", "text": result.to_string()}],
-                            "structuredContent": {"result": result},
-                            "isError": is_error,
-                        }
-                    })
-                } else {
-                        let res = live_verify.as_ref().ok_or("audit.verify failed")?;
+                    } else {
+                        let res = live.as_ref().ok_or_else(|| "audit.verify failed".to_string())?;
                         json!({
                             "ok": res.ok, "mode": "live",
                             "checked": res.checked,
@@ -242,7 +206,7 @@ impl Server {
                         })
                     };
                     let ok = result.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
-                    let mut out = result.clone();
+                    let mut out = result;
                     out["tool"] = json!("aios.audit.verify");
                     out["ok_"] = json!(ok);
                     Ok(out)
@@ -264,68 +228,32 @@ impl Server {
                 if !verdict.ok {
                     return verdict.to_json();
                 }
-                let db_path = self.ring.path().to_string();
-                let conn = if db_path == ":memory:" {
-                    rusqlite::Connection::open_in_memory().unwrap()
-                } else if tool == "aios.ci" {
-                    let action = arguments.get("action").and_then(|v| v.as_str()).unwrap_or("");
-                    let file = arguments.get("file").and_then(|v| v.as_str());
-                    let result = server.call_ci(action, file);
-                    let is_error = result.get("ok").and_then(|v| v.as_bool()) == Some(false);
-                    json!({
-                        "jsonrpc": "2.0", "id": id,
-                        "result": {
-                            "content": [{"type": "text", "text": result.to_string()}],
-                            "structuredContent": {"result": result},
-                            "isError": is_error,
-                        }
-                    })
-                } else {
-                    rusqlite::Connection::open(&db_path).unwrap()
-                };
+                let grant_owned = grant_id.map(|s| s.to_string());
                 match retention::rotate(
-                    &conn,
                     &mut self.ring,
                     retention::RotateOptions {
                         keep_rows,
                         actor: "agent".into(),
                         actor_id: dispatch::DEFAULT_ACTOR_ID.into(),
-                        grant_token: grant_id.map(|s| s.into()),
-                        constitution_rev: Some(active_constitution_rev(None)),
+                        grant_token: grant_owned.clone(),
+                        constitution_rev: Some(self.constitution_rev.clone()),
                         ..Default::default()
                     },
                 ) {
                     Ok(res) => {
-                        if res.ok {
-                            let mut out = res.to_json();
-                            out["tool"] = json!("audit.rotate");
-                            out["classifier_policy_revision"] = json!(verdict.policy_revision);
-                            out
-                        } else if tool == "aios.ci" {
-                    let action = arguments.get("action").and_then(|v| v.as_str()).unwrap_or("");
-                    let file = arguments.get("file").and_then(|v| v.as_str());
-                    let result = server.call_ci(action, file);
-                    let is_error = result.get("ok").and_then(|v| v.as_bool()) == Some(false);
-                    json!({
-                        "jsonrpc": "2.0", "id": id,
-                        "result": {
-                            "content": [{"type": "text", "text": result.to_string()}],
-                            "structuredContent": {"result": result},
-                            "isError": is_error,
-                        }
-                    })
-                } else {
-                            let mut out = res.to_json();
-                            out["tool"] = json!("audit.rotate");
+                        let mut out = res.to_json();
+                        out["tool"] = json!("audit.rotate");
+                        out["classifier_policy_revision"] = json!(verdict.policy_revision);
+                        if !res.ok {
+                            // retention.rotate already wrote its own refusal row.
                             out["gate"] = json!("retention");
-                            out["classifier_policy_revision"] = json!(verdict.policy_revision);
-                            out
                         }
+                        out
                     }
                     Err(e) => {
                         let row = dispatch::commit(
                             &mut self.ring, "audit.rotate", "audit.rotate",
-                            &json!({"keep_rows": keep_rows}), None, grant_id,
+                            &json!({"keep_rows": keep_rows}), None, grant_owned.as_deref(),
                             "error", Some(&e.to_string()),
                             dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, &verdict,
                         );
@@ -336,26 +264,13 @@ impl Server {
             }
             "aios.audit.segments" => {
                 let db_path = self.ring.path().to_string();
-                let f = || -> Result<Value, String> {
+                let f = move || -> Result<Value, String> {
                     let conn = if db_path == ":memory:" {
-                        rusqlite::Connection::open_in_memory().unwrap()
-                    } else if tool == "aios.ci" {
-                    let action = arguments.get("action").and_then(|v| v.as_str()).unwrap_or("");
-                    let file = arguments.get("file").and_then(|v| v.as_str());
-                    let result = server.call_ci(action, file);
-                    let is_error = result.get("ok").and_then(|v| v.as_bool()) == Some(false);
-                    json!({
-                        "jsonrpc": "2.0", "id": id,
-                        "result": {
-                            "content": [{"type": "text", "text": result.to_string()}],
-                            "structuredContent": {"result": result},
-                            "isError": is_error,
-                        }
-                    })
-                } else {
-                        rusqlite::Connection::open(&db_path).unwrap()
+                        rusqlite::Connection::open_in_memory().map_err(|e| e.to_string())?
+                    } else {
+                        rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?
                     };
-                    let segs = retention::list_segments(&conn).map_err(|e| e.to_string())?;
+                    let segs = retention::list_segments(&conn)?;
                     let segs_json: Vec<Value> = segs
                         .iter()
                         .map(|s| {
@@ -385,29 +300,16 @@ impl Server {
                 )
             }
             "aios.audit.seen" => {
-                let hash = arguments.get("hash").and_then(|v| v.as_str()).unwrap_or("");
+                let hash = arguments.get("hash").and_then(|v| v.as_str()).unwrap_or("").to_string();
                 let exact = arguments.get("exact").and_then(|v| v.as_bool()).unwrap_or(false);
                 let db_path = self.ring.path().to_string();
-                let f = || -> Result<Value, String> {
+                let f = move || -> Result<Value, String> {
                     let conn = if db_path == ":memory:" {
-                        rusqlite::Connection::open_in_memory().unwrap()
-                    } else if tool == "aios.ci" {
-                    let action = arguments.get("action").and_then(|v| v.as_str()).unwrap_or("");
-                    let file = arguments.get("file").and_then(|v| v.as_str());
-                    let result = server.call_ci(action, file);
-                    let is_error = result.get("ok").and_then(|v| v.as_bool()) == Some(false);
-                    json!({
-                        "jsonrpc": "2.0", "id": id,
-                        "result": {
-                            "content": [{"type": "text", "text": result.to_string()}],
-                            "structuredContent": {"result": result},
-                            "isError": is_error,
-                        }
-                    })
-                } else {
-                        rusqlite::Connection::open(&db_path).unwrap()
+                        rusqlite::Connection::open_in_memory().map_err(|e| e.to_string())?
+                    } else {
+                        rusqlite::Connection::open(&db_path).map_err(|e| e.to_string())?
                     };
-                    let res = retention::seen(&conn, hash, exact, None).map_err(|e| e.to_string())?;
+                    let res = retention::seen(&conn, &hash, exact, None)?;
                     Ok(json!({"ok": true, "tool": "aios.audit.seen",
                               "found": res.found, "id": res.id,
                               "segments": res.segments, "note": res.note}))
@@ -458,83 +360,6 @@ impl Server {
             pep: &self.pep,
             constitution_rev: &self.constitution_rev,
             actor_id: "agent:mcp@aiosh-mcp",
-        }
-    }
-
-    /// `aios.task` — gate + execute per spec T-00022 §4. Exactly one
-    /// audit row for every outcome (ok / refused / error).
-
-    fn call_ci(&mut self, action: &str, file_arg: Option<&str>) -> Value {
-        let file_path = file_arg
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| {
-                std::env::var("AIOSH_CI_RESULTS").unwrap_or_else(|_| "/tmp/aiosh-ci-results.json".to_string())
-            });
-
-        let path = std::path::Path::new(&file_path);
-        let summary = match aiosh_core::ci::load_summary_with_retry(path, 3) {
-            Ok(s) => s,
-            Err(e) => {
-                let verdict = dispatch::dispatch(
-                    &mut self.ring, &self.pep,
-                    "aios.ci", "ci.error", &json!({"action": action, "file": file_path}),
-                    None, None, false,
-                    "agent:mcp@aiosh-mcp", "agent:mcp",
-                );
-                dispatch::commit(
-                    &mut self.ring, "aios.ci", "ci.error",
-                    &json!({"action": action, "file": file_path}), None,
-                    None, "error", Some(&e),
-                    "agent:mcp@aiosh-mcp", "agent:mcp", &verdict,
-                );
-                return json!({"ok": false, "error": format!("ci-service: {}", e)});
-            }
-        };
-
-        match action {
-            "show" => {
-                let report = aiosh_core::ci::human_report(&summary);
-                json!({"ok": true, "result": report})
-            }
-            "failures" => {
-                let failures: Vec<_> = summary.results.iter().filter(|r| r.status != "pass").collect();
-                let mut report = String::new();
-                if failures.is_empty() {
-                    report.push_str("no failed suites\n");
-                } else {
-                    for r in failures {
-                        let rc = r.exit_code.map_or("-".to_string(), |c| c.to_string());
-                        report.push_str(&format!("[FAIL] {} {} ({} ms) exit={} log={}\n", r.index, r.suite, r.duration_ms, rc, r.log_path));
-                    }
-                }
-                json!({"ok": true, "result": report})
-            }
-            "check" => {
-                let passed = summary.all_pass;
-                let msg = if passed {
-                    format!("ci-check: PASS ({}/{} suites)", summary.passed, summary.total)
-                } else {
-                    format!("ci-check: FAIL ({}/{} suites, {} failed)", summary.passed, summary.total, summary.failed)
-                };
-                
-                let verdict = dispatch::dispatch(
-                    &mut self.ring, &self.pep,
-                    "aios.ci", "ci.check", &json!({"action": action, "file": file_path}),
-                    None, None, false,
-                    "agent:mcp@aiosh-mcp", "agent:mcp",
-                );
-                dispatch::commit(
-                    &mut self.ring, "aios.ci", "ci.check",
-                    &json!({"action": action, "file": file_path}), None,
-                    None, if passed { "success" } else { "failure" }, Some(&msg),
-                    "agent:mcp@aiosh-mcp", "agent:mcp", &verdict,
-                );
-
-                json!({"ok": true, "result": msg})
-            }
-            _ => {
-                json!({"ok": false, "error": "unknown action"})
-            }
         }
     }
 
@@ -803,11 +628,18 @@ fn main() {
         let params = request.get("params").cloned().unwrap_or(json!({}));
         let response = match method {
             "initialize" => {
-                let protocol_version = params
+                // MCP spec: respond with the version the client asked for
+                // when we support it; otherwise advertise OUR latest
+                // supported version (never echo an unknown string).
+                let requested = params
                     .get("protocolVersion")
                     .and_then(|v| v.as_str())
-                    .unwrap_or(SCHEMA_VERSION)
-                    .to_string();
+                    .unwrap_or(SCHEMA_VERSION);
+                let protocol_version = if requested == SCHEMA_VERSION {
+                    requested.to_string()
+                } else {
+                    SCHEMA_VERSION.to_string()
+                };
                 json!({
                     "jsonrpc": "2.0",
                     "id": id,

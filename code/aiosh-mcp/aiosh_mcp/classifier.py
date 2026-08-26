@@ -146,7 +146,7 @@ CLASSIFIER_RULES: tuple[Rule, ...] = (
         rule_id="R-05b",
         tool_pattern="process.run",
         args_match=(
-            RuleAtomic(key="args", contains="$DANGEROUS_ARG_FRAGMENT"),
+            RuleAtomic(key="args", contains="$DANGEROUS_ARG_FRAGMENTS"),
         ),
         c_flags_set={"c3": True},
         base_confidence=0.85,
@@ -219,9 +219,9 @@ def _token_resolves_contains(token: str, val: str) -> bool:
     Mirrors TS ruleMatches.ts:resolveContains()."""
     if token == "$DANGEROUS_BINS":
         return val in DANGEROUS_BINS
-    if token == "$DANGEROUS_ARG_FRAGMENT":
+    if token == "$DANGEROUS_ARG_FRAGMENTS":
         return any(fr in val for fr in DANGEROUS_ARG_FRAGMENTS)
-    if token == "$PROMPT_INJECTION_FRAGMENT":
+    if token == "$PROMPT_INJECTION_FRAGMENTS":
         return any(fr in val for fr in PROMPT_INJECTION_FRAGMENTS)
     if token == "$EXTERNAL_SCAN_AGGREGATORS":
         # R-09 uses contains="$EXTERNAL_SCAN_AGGREGATORS" against

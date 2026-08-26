@@ -186,7 +186,7 @@ fn main() {
         Some("ci") => cmd_ci(&args[1..]),
         Some("task") => cmd_task(&args[1..]),
         Some("--help") | Some("-h") | None => {
-            println!("aiosh — AIOS shell CLI (Rust)\n\nUsage: aiosh <status|run|agent|audit|grant|pentest|classify|task> ...\n\n  aiosh task <status|done|block|unblock|skip|rebuild|check>  Task ledger control");
+            println!("aiosh — AIOS shell CLI (Rust)\n\nUsage: aiosh <status|run|agent|audit|grant|pentest|classify|task|ci> ...\n\n  aiosh task <status|done|block|unblock|skip|rebuild|check>  Task ledger control\n  aiosh ci <show|failures|check|config|metrics> [--file PATH]  CI smoke reports");
             0
         }
         Some(other) => {
@@ -614,15 +614,25 @@ fn rustc_version() -> String {
 
 fn cmd_run(args: &[String]) -> i32 {
     let mut ctx = open_context();
-    let target = parse_flag(args, "--target");
-    let command_args: Vec<String> = args
-        .iter()
-        .filter(|a| *a != "--target")
-        .cloned()
-        .filter(|a| !a.starts_with("--target"))
-        .collect();
-    // Strip the value that followed --target.
-    let command_args = strip_flag_value(&command_args, "--target");
+    // Single-pass option parsing: `--target VALUE` / `--target=VALUE` is
+    // consumed together with its value; EVERY other token — including
+    // dash-prefixed ones — belongs to the spawned command's argv.
+    let mut target: Option<String> = None;
+    let mut command_args: Vec<String> = Vec::new();
+    {
+        let mut it = args.iter();
+        while let Some(a) = it.next() {
+            if a == "--target" {
+                target = it.next().cloned();
+                continue;
+            }
+            if let Some(v) = a.strip_prefix("--target=") {
+                target = Some(v.to_string());
+                continue;
+            }
+            command_args.push(a.clone());
+        }
+    }
     if command_args.is_empty() {
         return err_out(json!({"ok": false, "subcommand": "run", "outcome": "error",
                               "audit_id": -1, "error": "usage: aiosh run <command...>"}));
@@ -678,26 +688,6 @@ fn parse_policy(v: &Value) -> aiosh_core::sandbox::SandboxPolicy {
     aiosh_core::sandbox::SandboxPolicy::from_json(&v.to_string()).unwrap_or_default()
 }
 
-fn strip_flag_value(args: &[String], flag: &str) -> Vec<String> {
-    let mut out = vec![];
-    let mut skip_next = false;
-    let mut it = args.iter().peekable();
-    while let Some(a) = it.next() {
-        if a == flag {
-            let _ = it.next(); // skip value
-            skip_next = true;
-            continue;
-        }
-        if skip_next && a == flag {
-            skip_next = false;
-            continue;
-        }
-        skip_next = false;
-        out.push(a.clone());
-    }
-    out
-}
-
 fn cmd_agent(args: &[String]) -> i32 {
     let mut ctx = open_context();
     let grant = parse_flag(args, "--grant");
@@ -709,12 +699,25 @@ fn cmd_agent(args: &[String]) -> i32 {
     let ollama_model =
         parse_flag(args, "--ollama-model").unwrap_or_else(|| "qwen2.5:7b-instruct".into());
 
-    // First positional arg(s) after flags = the prompt.
-    let prompt_args: Vec<String> = args
-        .iter()
-        .filter(|a| !a.starts_with("--"))
-        .cloned()
-        .collect();
+    // First positional token(s) = the prompt. Known value-taking flags
+    // are skipped together with their values so option values never
+    // leak into the prompt text.
+    const VALUE_FLAGS: [&str; 4] =
+        ["--grant", "--max-steps", "--ollama-url", "--ollama-model"];
+    let mut prompt_args: Vec<String> = Vec::new();
+    {
+        let mut it = args.iter();
+        while let Some(a) = it.next() {
+            if VALUE_FLAGS.contains(&a.as_str()) {
+                let _ = it.next(); // consume the flag's value
+                continue;
+            }
+            if a.starts_with("--") {
+                continue;
+            }
+            prompt_args.push(a.clone());
+        }
+    }
     let prompt = prompt_args.join(" ");
     if prompt.is_empty() {
         return err_out(json!({"ok": false, "subcommand": "agent", "outcome": "error",

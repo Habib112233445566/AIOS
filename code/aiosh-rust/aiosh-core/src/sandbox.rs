@@ -231,6 +231,25 @@ struct LandlockPathBeneathAttr {
     parent_fd: i32,
 }
 
+/// `struct landlock_ruleset_attr { __u64 handled_access_fs; }`.
+#[repr(C)]
+struct LandlockRulesetAttr {
+    handled_access_fs: u64,
+}
+
+/// Every FS right this sandbox may restrict (Landlock ABI v1 set).
+/// `handled_access_fs` MUST cover all rights used by the rules, or
+/// restrict_self silently leaves the unlisted rights unrestricted.
+const LANDLOCK_HANDLED_FS: u64 = LANDLOCK_ACCESS_FS_EXECUTE
+    | LANDLOCK_ACCESS_FS_WRITE_FILE
+    | LANDLOCK_ACCESS_FS_READ_FILE
+    | LANDLOCK_ACCESS_FS_READ_DIR
+    | LANDLOCK_ACCESS_FS_REMOVE_DIR
+    | LANDLOCK_ACCESS_FS_REMOVE_FILE
+    | LANDLOCK_ACCESS_FS_MAKE_DIR
+    | LANDLOCK_ACCESS_FS_MAKE_REG
+    | LANDLOCK_ACCESS_FS_MAKE_SYM;
+
 fn path_access_bits(rule: &PathRule) -> u64 {
     let mut bits = 0u64;
     if rule.read {
@@ -251,8 +270,39 @@ fn path_access_bits(rule: &PathRule) -> u64 {
 }
 
 fn apply_landlock(rules: &[PathRule]) -> (bool, String) {
+    // 1. Probe the ABI version (flag LANDLOCK_CREATE_RULESET_VERSION).
+    //    With this flag the kernel returns the highest supported ABI
+    //    version — NOT a file descriptor — so this call is purely
+    //    informational and must never be closed or used as an fd.
+    let abi = unsafe {
+        libc::syscall(
+            SYS_LANDLOCK_CREATE_RULESET,
+            std::ptr::null::<u8>(),
+            0 as usize,
+            LANDLOCK_CREATE_RULESET_VERSION,
+        )
+    };
+    if abi < 0 {
+        let err = std::io::Error::last_os_error();
+        return match err.raw_os_error() {
+            Some(libc::ENOSYS) | Some(libc::EOPNOTSUPP) => {
+                (false, "landlock not supported by kernel (pre-5.13?)".into())
+            }
+            _ => (
+                false,
+                format!("landlock_create_ruleset(version probe) failed: {}", err),
+            ),
+        };
+    }
+    // 2. Create the REAL ruleset: no flags, with handled_access_fs set.
+    let attr = LandlockRulesetAttr { handled_access_fs: LANDLOCK_HANDLED_FS };
     let ruleset_fd = unsafe {
-        libc::syscall(SYS_LANDLOCK_CREATE_RULESET, std::ptr::null::<u8>(), 0, LANDLOCK_CREATE_RULESET_VERSION)
+        libc::syscall(
+            SYS_LANDLOCK_CREATE_RULESET,
+            &attr as *const LandlockRulesetAttr,
+            std::mem::size_of::<LandlockRulesetAttr>(),
+            0 as libc::c_uint,
+        )
     };
     if ruleset_fd < 0 {
         let err = std::io::Error::last_os_error();

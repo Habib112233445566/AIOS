@@ -22,30 +22,39 @@ use std::process::ExitCode;
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    let usage = "usage: aiosh-sandbox --policy <json> -- <bin> <args...>";
 
-    // Parse `--policy <json> -- <bin> <args...>`.
-    let policy_json = match args.iter().position(|a| a == "--policy") {
+    // Parse `--policy <json> -- <bin> <args...>` without panicking on
+    // truncated argv (`--policy` as the final argument, etc.).
+    let mut policy_json = "{}".to_string();
+    let mut argv: Vec<String> = Vec::new();
+    match args.iter().position(|a| a == "--policy") {
         Some(i) => {
-            let raw = args.get(i + 1).cloned().unwrap_or_default();
-            let rest = &args[i + 2..];
+            let raw = match args.get(i + 1) {
+                Some(v) => v.clone(),
+                None => {
+                    eprintln!("{usage}");
+                    return ExitCode::from(2);
+                }
+            };
+            let rest = &args[(i + 2).min(args.len())..];
             if rest.first().map(|s| s.as_str()) != Some("--") {
-                eprintln!("usage: aiosh-sandbox --policy <json> -- <bin> <args...>");
+                eprintln!("{usage}");
                 return ExitCode::from(2);
             }
-            (raw, rest[1..].to_vec())
+            policy_json = raw;
+            argv = rest[1..].to_vec();
         }
         None => {
             // No policy: everything after `--` is the command.
-            let rest = &args[..];
-            if rest.first().map(|s| s.as_str()) != Some("--") {
-                eprintln!("usage: aiosh-sandbox --policy <json> -- <bin> <args...>");
+            if args.first().map(|s| s.as_str()) != Some("--") {
+                eprintln!("{usage}");
                 return ExitCode::from(2);
             }
-            ("{}".to_string(), rest[1..].to_vec())
+            argv = args[1..].to_vec();
         }
-    };
+    }
 
-    let (policy_json, argv) = policy_json;
     if argv.is_empty() {
         eprintln!("sandbox: empty argv");
         return ExitCode::from(2);

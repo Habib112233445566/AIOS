@@ -131,6 +131,7 @@ async def _serve() -> int:
                 raw = raw.strip()
                 if not raw:
                     continue
+                request: Any = None
                 try:
                     request = json.loads(raw)
                     response = await _handle(session, known, request)

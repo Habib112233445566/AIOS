@@ -237,18 +237,25 @@ def _apply_seccomp_blacklist(denied_syscalls: Sequence[int]) -> tuple[bool, str]
     if arch == 0:
         return False, "unsupported arch for seccomp filter"
     bpf_bytes = _build_blacklist_bpf(denied_syscalls, arch)
-    # Build a stable struct sock_fprog in a contiguous byte buffer so
-    # the pointer stays valid through the syscall. Layout on x86_64:
-    #   u16 len; u16 __pad; u64 filter_ptr;
+    # struct sock_fprog { u16 len; struct sock_filter *filter; } —
+    # declared as a ctypes Structure so the pointer lands at its true
+    # (aligned) offset. Hand-packing the u64 at byte offset 2 put it in
+    # the padding and handed the kernel a NULL filter (EFAULT).
+    n_insns = len(bpf_bytes) // 8
     prog_arr = (ctypes.c_uint32 * (len(bpf_bytes) // 4)) \
         .from_buffer_copy(bpf_bytes)
-    sock_fprog_buf = (ctypes.c_uint8 * 16)()
-    struct.pack_into("<H", sock_fprog_buf, 0, len(bpf_bytes) // 8)
-    struct.pack_into("<Q", sock_fprog_buf, 2,
-                     ctypes.addressof(prog_arr))
+
+    class SockFprog(ctypes.Structure):
+        _fields_ = [
+            ("len", ctypes.c_uint16),
+            ("filter", ctypes.POINTER(ctypes.c_uint32)),
+        ]
+
+    fprog = SockFprog(n_insns, ctypes.cast(prog_arr,
+                                           ctypes.POINTER(ctypes.c_uint32)))
     SECCOMP_SET_MODE_FILTER = 1
     rc = _libc_syscall(_syscall("seccomp"),
-                        SECCOMP_SET_MODE_FILTER, 0, sock_fprog_buf)
+                        SECCOMP_SET_MODE_FILTER, 0, ctypes.byref(fprog))
     if rc < 0:
         eno = _errno()
         if eno == errno.EINVAL:
@@ -294,29 +301,42 @@ def _path_access_bits(rule: PathRule) -> int:
 def _apply_landlock(rules: Sequence[PathRule]) -> tuple[bool, str]:
     """Create a Landlock ruleset, add the rules, restrict self.
     Returns (applied, detail)."""
-    # ABI version 1 is the latest stable we rely on.
-    ABI_VERSION = 1
-    ruleset_fd = _libc_syscall(
-        _syscall("landlock_create_ruleset"),
-        None, 0, ABI_VERSION,
-    )
+    # Step 1 — probe the ABI version. With LANDLOCK_CREATE_RULESET_
+    # VERSION (=1) in flags the kernel returns the highest supported
+    # ABI version — an integer, NOT a file descriptor. The previous
+    # code used this probe as if it were the ruleset fd, so no ruleset
+    # ever existed and every add_rule/restrict_self failed with EBADF.
+    nr_create = _syscall("landlock_create_ruleset")
+    abi = _libc_syscall(nr_create, None, 0, 1)
+    if abi < 0:
+        eno = _errno()
+        if eno in (errno.ENOSYS, errno.EOPNOTSUPP):
+            return False, "landlock not supported by kernel (pre-5.13?)"
+        return False, f"landlock_create_ruleset(version probe) failed: " \
+                      f"errno={eno} ({errno.errorcode.get(eno, '?')})"
+    # Step 2 — create the REAL ruleset: flags=0 and handled_access_fs
+    # must list every right we restrict; anything omitted is left
+    # unrestricted for ALL paths.
+    handled = (_path_access_bits(PathRule(path="", read=True, write=True,
+                                          execute=True)))
+    attr_ruleset = struct.pack("<Q", handled)
+    ruleset_fd = _libc_syscall(nr_create, attr_ruleset,
+                                len(attr_ruleset), 0)
     if ruleset_fd < 0:
         eno = _errno()
-        if eno == errno.ENOSYS or eno == errno.EOPNOTSUPP:
+        if eno in (errno.ENOSYS, errno.EOPNOTSUPP):
             return False, "landlock not supported by kernel (pre-5.13?)"
         return False, f"landlock_create_ruleset failed: errno={eno} " \
                        f"({errno.errorcode.get(eno, '?')})"
     added = 0
     try:
         for rule in rules:
-            path_b = rule.path.encode("utf-8") + b"\x00"
             bits = _path_access_bits(rule)
             if bits == 0:
                 continue
             # struct landlock_path_beneath_attr {
             #   __u64 allowed_access;
-            #   __s32 parent_fd; (we pass AT_FDCWD = -100 so path is
-            #                      interpreted relative to cwd)
+            #   __s32 parent_fd;
             # };
             AT_FDCWD = -100
             attr = struct.pack("<Qi", bits, AT_FDCWD)
@@ -335,7 +355,7 @@ def _apply_landlock(rules: Sequence[PathRule]) -> tuple[bool, str]:
                 if eno == errno.ENOENT:
                     continue
                 return False, f"landlock_add_rule({rule.path!r}) failed: " \
-                               f"errno={eno} ({errno.errorcode.get(eno, '?')})"
+                              f"errno={eno} ({errno.errorcode.get(eno, '?')})"
             added += 1
         # Restrict self. This call is irrevocable for the process.
         rc = _libc_syscall(_syscall("landlock_restrict_self"),
@@ -572,6 +592,10 @@ def _main() -> int:
     """CLI: `python -m aiosh_mcp.sandbox --policy <json> -- <bin> <args...>`"""
     if "--policy" in sys.argv:
         i = sys.argv.index("--policy")
+        if i + 1 >= len(sys.argv):
+            print("usage: python -m aiosh_mcp.sandbox "
+                  "--policy <json> -- <bin> <args...>", file=sys.stderr)
+            return 2
         policy_json = sys.argv[i + 1]
         rest = sys.argv[i + 2:]
     else:

@@ -16,7 +16,10 @@ concurrent runs on the same host.
 from __future__ import annotations
 
 import errno
-import fcntl
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
 import glob
 import json
 import os
@@ -418,6 +421,9 @@ def acquire_lock(lock_path: str = LOCK_PATH):
     instead of hanging the process forever.
     """
     import time
+    if fcntl is None:
+        yield
+        return
     fd = os.open(lock_path, os.O_WRONLY | os.O_CREAT, 0o644)
     deadline = time.monotonic() + LOCK_TIMEOUT_SECS
     try:
