@@ -117,6 +117,19 @@ D1/D2/D3). As of 2026-08-21 the whole chain is ported to **Rust**
 this (full Kali tool taxonomy, real on-device inference) and adds the
 Pillar-B desktop hook.
 
+
+## CI Smoke Orchestration
+
+The project uses a rigorous CI Smoke Orchestration subsystem to guarantee cross-substrate parity and stability.
+
+- **Orchestrator:** `ci/run_all_smokes.sh` handles end-to-end execution of all suites.
+- **Commands (`aiosh ci`)**:
+  - `check`: Validates CI results and strictly emits an audit row (ADR-0035).
+  - `show` / `failures`: Human-readable console reports.
+  - `config`: Prints active timeout/size limits.
+  - `metrics`: Dumps a consolidated JSON observability snapshot of CI health.
+- **Configuration (Twelve-Factor)**: Use `AIOSH_CI_RESULTS`, `AIOSH_CI_MAX_FILE_BYTES`, `AIOSH_CI_TIMEOUT_DEFAULT_S`, `AIOSH_CI_LOAD_RETRIES`, and `AIOSH_CI_RETRY_SLEEP_MS` to dynamically tune orchestrator bounds without touching code.
+
 ## Task ledger (read this before doing any work)
 
 The canonical work queue is `docs/tasks/MASTER_TASK_LEDGER.jsonl`

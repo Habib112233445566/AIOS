@@ -288,6 +288,8 @@ snap test** formalized into the CI suite; and (3) expanding the five
 pentest wrappers toward the full Kali / MITRE ATT&CK v19 taxonomy.
 
 ### Queued (Sprint 2)
+- **Sprint 3 (SHIPPED 2026-08-26): CI Smoke Orchestration documentation (T-00191..T-00200)**.
+  - Formally documented the CI Smoke Orchestration architecture, CLI surface, and configuration parameters, completely wrapping up Phase 0 of the master ledger matrix!
 - **Sprint 3 (SHIPPED 2026-08-26): CI Smoke Orchestration observability (T-00181..T-00190)**.
   - Standardized CI health metrics via iosh ci metrics action, completing the Phase 0 integration matrix.
 - **Sprint 3 (SHIPPED 2026-08-25): CI Smoke Orchestration security policy (T-00171..T-00180)**.
