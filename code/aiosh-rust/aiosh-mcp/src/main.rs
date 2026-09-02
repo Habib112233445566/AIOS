@@ -406,6 +406,57 @@ impl Server {
                 "additionalProperties": false
             }
         }));
+        tools.push(json!({
+            "name": "aios.distro.list",
+            "description": "List registered Linux distribution profiles.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "store_path": { "type": "string", "description": "Optional path to custom distro_store.json" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.distro.show",
+            "description": "Get detailed distribution profile by ID.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string", "description": "Distribution profile ID" },
+                    "store_path": { "type": "string", "description": "Optional path to custom distro_store.json" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "required": ["id"],
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.distro.evaluate",
+            "description": "Evaluate distribution profiles against AIOS criteria (binary compatibility, footprint, security).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string", "description": "Optional profile ID to evaluate single profile, or omit to evaluate all" },
+                    "store_path": { "type": "string", "description": "Optional path to custom distro_store.json" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.distro.recommend",
+            "description": "Get the recommended Linux distribution profile for AIOS base system.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "store_path": { "type": "string", "description": "Optional path to custom distro_store.json" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
         tools
     }
 
@@ -621,6 +672,106 @@ impl Server {
                     &mut self.ring, &self.pep,
                     "aios.handoff.cancel", &format!("Cancel handoff {}", id), arguments,
                     Some(&id), grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.distro.list" => {
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = move || -> Result<Value, String> {
+                    let store = match store_path_opt {
+                        Some(ref p) => aiosh_core::distro_service::DistroStore::load_from_path(std::path::Path::new(p))?,
+                        None => aiosh_core::distro_service::DistroStore::new(),
+                    };
+                    let profiles = store.list_profiles();
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.distro.list",
+                        "count": profiles.len(),
+                        "profiles": profiles
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.distro.list", "List distro profiles", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.distro.show" => {
+                let id = match arguments.get("id").and_then(|v| v.as_str()) {
+                    Some(s) => s.to_string(),
+                    None => return json!({ "ok": false, "error": "Missing required field 'id'" }),
+                };
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let id_for_closure = id.clone();
+                let f = move || -> Result<Value, String> {
+                    let store = match store_path_opt {
+                        Some(ref p) => aiosh_core::distro_service::DistroStore::load_from_path(std::path::Path::new(p))?,
+                        None => aiosh_core::distro_service::DistroStore::new(),
+                    };
+                    match store.get_profile(&id_for_closure) {
+                        Some(profile) => Ok(json!({
+                            "ok": true,
+                            "tool": "aios.distro.show",
+                            "profile": profile
+                        })),
+                        None => Err(format!("Distro profile '{}' not found", id_for_closure)),
+                    }
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.distro.show", &format!("Show distro profile {}", id), arguments,
+                    Some(&id), grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.distro.evaluate" => {
+                let id_opt = arguments.get("id").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = move || -> Result<Value, String> {
+                    let store = match store_path_opt {
+                        Some(ref p) => aiosh_core::distro_service::DistroStore::load_from_path(std::path::Path::new(p))?,
+                        None => aiosh_core::distro_service::DistroStore::new(),
+                    };
+                    if let Some(ref id) = id_opt {
+                        let ev = store.evaluate_profile(id)?;
+                        Ok(json!({
+                            "ok": true,
+                            "tool": "aios.distro.evaluate",
+                            "evaluation": ev
+                        }))
+                    } else {
+                        let evals = store.evaluate_all();
+                        Ok(json!({
+                            "ok": true,
+                            "tool": "aios.distro.evaluate",
+                            "evaluations": evals
+                        }))
+                    }
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.distro.evaluate", "Evaluate distro profiles", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.distro.recommend" => {
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = move || -> Result<Value, String> {
+                    let store = match store_path_opt {
+                        Some(ref p) => aiosh_core::distro_service::DistroStore::load_from_path(std::path::Path::new(p))?,
+                        None => aiosh_core::distro_service::DistroStore::new(),
+                    };
+                    match store.get_recommended_profile() {
+                        Some(profile) => Ok(json!({
+                            "ok": true,
+                            "tool": "aios.distro.recommend",
+                            "profile": profile
+                        })),
+                        None => Err("No recommended distribution profile found".into()),
+                    }
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.distro.recommend", "Get recommended distro profile", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
                 )
             }
             "aios.triage.list" => {
@@ -1815,6 +1966,10 @@ mod tests {
         assert!(tool_names.contains(&"aios.repo.health"));
         assert!(tool_names.contains(&"aios.secrets.scan"));
         assert!(tool_names.contains(&"aios.secrets.check"));
+        assert!(tool_names.contains(&"aios.distro.list"));
+        assert!(tool_names.contains(&"aios.distro.show"));
+        assert!(tool_names.contains(&"aios.distro.evaluate"));
+        assert!(tool_names.contains(&"aios.distro.recommend"));
     }
 
     #[test]
@@ -1991,5 +2146,30 @@ mod tests {
         assert_eq!(res_complete.get("ok").and_then(|v| v.as_bool()), Some(true));
 
         let _ = std::fs::remove_file(&store_file);
+    }
+
+    #[test]
+    fn test_mcp_distro_tools() {
+        let mut server = Server::open();
+
+        // 1. aios.distro.list
+        let res_list = server.call_tool("aios.distro.list", &json!({}));
+        assert_eq!(res_list.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert!(res_list.get("count").and_then(|v| v.as_u64()).unwrap_or(0) >= 2);
+
+        // 2. aios.distro.show
+        let res_show = server.call_tool("aios.distro.show", &json!({ "id": "debian-12-minimal-x86_64" }));
+        assert_eq!(res_show.get("ok").and_then(|v| v.as_bool()), Some(true));
+
+        // 3. aios.distro.evaluate
+        let res_eval = server.call_tool("aios.distro.evaluate", &json!({}));
+        assert_eq!(res_eval.get("ok").and_then(|v| v.as_bool()), Some(true));
+
+        let res_eval_one = server.call_tool("aios.distro.evaluate", &json!({ "id": "alpine-319-container-x86_64" }));
+        assert_eq!(res_eval_one.get("ok").and_then(|v| v.as_bool()), Some(true));
+
+        // 4. aios.distro.recommend
+        let res_rec = server.call_tool("aios.distro.recommend", &json!({}));
+        assert_eq!(res_rec.get("ok").and_then(|v| v.as_bool()), Some(true));
     }
 }

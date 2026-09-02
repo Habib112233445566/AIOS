@@ -1012,3 +1012,9 @@
 {"seq":1012,"ts":"2026-09-02T09:30:23Z","event":"completed","task_id":1012,"note":"Specification of Distro Selection & Justification core service","evidence":[]}
 {"seq":1013,"ts":"2026-09-02T09:32:08Z","event":"completed","task_id":1013,"note":"Scaffold Distro Selection & Justification core service","evidence":[]}
 {"seq":1014,"ts":"2026-09-02T09:34:02Z","event":"completed","task_id":1014,"note":"Implementation of Distro Selection & Justification core service","evidence":[]}
+{"seq":1015,"ts":"2026-09-02T19:35:27Z","event":"completed","task_id":1015,"note":"Unit testing of Distro Selection & Justification core service","evidence":[]}
+{"seq":1016,"ts":"2026-09-02T19:51:24Z","event":"completed","task_id":1016,"note":"Integration of Distro Selection & Justification into aiosh CLI and MCP tool surface","evidence":[]}
+{"seq":1017,"ts":"2026-09-02T19:52:05Z","event":"completed","task_id":1017,"note":"Security review of Distro Selection & Justification core service","evidence":[]}
+{"seq":1018,"ts":"2026-09-02T19:53:52Z","event":"completed","task_id":1018,"note":"Hardening of Distro Selection & Justification core service","evidence":[]}
+{"seq":1019,"ts":"2026-09-02T19:55:04Z","event":"completed","task_id":1019,"note":"Documentation of Distro Selection & Justification core service in docs/README.md","evidence":[]}
+{"seq":1020,"ts":"2026-09-02T19:55:48Z","event":"completed","task_id":1020,"note":"Verification and evidence closure for Distro Selection & Justification core service","evidence":[]}

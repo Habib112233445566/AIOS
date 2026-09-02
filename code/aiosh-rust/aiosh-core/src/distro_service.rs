@@ -83,20 +83,36 @@ impl DistroStore {
         self.profiles.values().find(|p| p.recommended)
     }
 
-    /// Saves the registry atomically to disk.
+    /// Maximum allowed file size for a serialized distro store (10MB).
+    pub const MAX_STORE_BYTES: u64 = 10 * 1024 * 1024;
+
+    /// Saves the registry atomically to disk with defensive tempfile cleanup.
     pub fn save_to_path(&self, path: &Path) -> Result<(), String> {
         let json = serde_json::to_string_pretty(self)
             .map_err(|e| format!("Failed to serialize distro store: {}", e))?;
-        let tmp_path = path.with_extension("tmp");
-        fs::write(&tmp_path, json)
-            .map_err(|e| format!("Failed to write tmp distro store: {}", e))?;
-        fs::rename(&tmp_path, path)
-            .map_err(|e| format!("Failed to rename distro store: {}", e))?;
+        let tmp_path = path.with_extension(format!("tmp.{}", std::process::id()));
+        if let Err(e) = fs::write(&tmp_path, json) {
+            let _ = fs::remove_file(&tmp_path);
+            return Err(format!("Failed to write tmp distro store: {}", e));
+        }
+        if let Err(e) = fs::rename(&tmp_path, path) {
+            let _ = fs::remove_file(&tmp_path);
+            return Err(format!("Failed to rename distro store: {}", e));
+        }
         Ok(())
     }
 
-    /// Loads the registry from disk.
+    /// Loads the registry from disk with file size bounds check.
     pub fn load_from_path(path: &Path) -> Result<Self, String> {
+        let metadata = fs::metadata(path)
+            .map_err(|e| format!("Failed to inspect distro store file metadata: {}", e))?;
+        if metadata.len() > Self::MAX_STORE_BYTES {
+            return Err(format!(
+                "Distro store file size {} bytes exceeds maximum limit of {} bytes",
+                metadata.len(),
+                Self::MAX_STORE_BYTES
+            ));
+        }
         let data = fs::read_to_string(path)
             .map_err(|e| format!("Failed to read distro store: {}", e))?;
         let store: Self = serde_json::from_str(&data)

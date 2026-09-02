@@ -48,10 +48,48 @@ def test_d2_core_service_suite():
     return True
 
 
+def test_d3_cli_surface():
+    cmd = [
+        "cargo",
+        "test",
+        "--manifest-path",
+        str(ROOT / "code" / "aiosh-rust" / "Cargo.toml"),
+        "--bin",
+        "aiosh",
+        "test_cmd_distro_flow",
+    ]
+    res = subprocess.run(cmd, capture_output=True, text=True, cwd=str(ROOT), timeout=120)
+    if res.returncode != 0:
+        print(f"[-] D3 cargo test failed:\n{res.stderr}\n{res.stdout}", file=sys.stderr)
+        return False
+    print("[+] D3 distro CLI surface commands & options (list/show/evaluate/recommend)")
+    return True
+
+
+def test_d4_mcp_surface():
+    cmd = [
+        "cargo",
+        "test",
+        "--manifest-path",
+        str(ROOT / "code" / "aiosh-rust" / "Cargo.toml"),
+        "--bin",
+        "aiosh-mcp",
+        "test_mcp_distro_tools",
+    ]
+    res = subprocess.run(cmd, capture_output=True, text=True, cwd=str(ROOT), timeout=120)
+    if res.returncode != 0:
+        print(f"[-] D4 cargo test failed:\n{res.stderr}\n{res.stdout}", file=sys.stderr)
+        return False
+    print("[+] D4 distro MCP tools dispatch & execution (list/show/evaluate/recommend)")
+    return True
+
+
 def main():
     checks = [
         test_d1_data_model_integrity,
         test_d2_core_service_suite,
+        test_d3_cli_surface,
+        test_d4_mcp_surface,
     ]
     all_ok = True
     for c in checks:
@@ -59,7 +97,7 @@ def main():
             all_ok = False
 
     if all_ok:
-        print("\nPASS: distro_suites criteria (D1..D2)")
+        print("\nPASS: distro_suites criteria (D1..D4)")
         return 0
     else:
         print("\nFAIL: distro_suites criteria", file=sys.stderr)

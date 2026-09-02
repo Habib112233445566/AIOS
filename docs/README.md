@@ -777,14 +777,39 @@ AIOS evaluates, specifies, and builds upon a lightweight, reproducible Linux bas
 - Container Base (`Alpine Linux 3.19`): `musl`, ultra-compact footprint (<10MB) for isolated ephemeral worker sandboxes.
 - Production readiness formula: `0.4 * binary_compat + 0.3 * security + 0.3 * footprint >= 0.75`.
 
-**Standalone Test Runner (`tools/test_distro_suites.py`):**
+**Core Service (`DistroStore` in `aiosh-core::distro_service`):**
+- In-memory registry with atomic disk persistence (`save_to_path`, `load_from_path`, `load_or_recover`).
+- Hard size cap of 10 MiB (`MAX_STORE_BYTES`) to prevent memory exhaustion attacks.
+- Atomic file write via `.tmp.<pid>` with defensive error cleanup.
+
+**CLI Surface (`aiosh distro`):**
+```bash
+aiosh distro list [--json] [--store <path>]
+aiosh distro show <id> [--json] [--store <path>]
+aiosh distro evaluate [<id>] [--json] [--store <path>]
+aiosh distro recommend [--json] [--store <path>]
+```
+
+**MCP / JSON-RPC API Surface:**
+- `aios.distro.list`: List all registered distro profiles.
+- `aios.distro.show`: Get detailed profile specification by ID.
+- `aios.distro.evaluate`: Evaluate single profile or all profiles against AIOS criteria.
+- `aios.distro.recommend`: Return the reference production profile.
+
+**Standalone Test Runner (`tools/test_distro_suites.py` & `tools/test_distro_unit.py`):**
 ```bash
 python tools/test_distro_suites.py
 # [+] D1 distro data model integrity & validation invariants
-# PASS: distro_suites criteria (D1)
+# [+] D2 distro store lifecycle, registry querying & persistence
+# [+] D3 distro CLI surface commands & options (list/show/evaluate/recommend)
+# [+] D4 distro MCP tools dispatch & execution (list/show/evaluate/recommend)
+# PASS: distro_suites criteria (D1..D4)
 ```
 
-Evidence: `tasks/evidence/T-01001-data-model-research.md` .. `tasks/evidence/T-01009-data-model-documentation.md`.
+Limitations (honest): Profiles must pass strict semver validation and alphanumeric ID checks; custom profiles do not auto-build target ISO images (handled by downstream image building tasks); file loading is subject to a 10 MiB file cap.
+
+Evidence: `tasks/evidence/T-01001-data-model-research.md` .. `tasks/evidence/T-01019-core-service-documentation.md`.
+
 
 
 ## Documentation invariants (Task Ledger Control, T-00091..T-00100)

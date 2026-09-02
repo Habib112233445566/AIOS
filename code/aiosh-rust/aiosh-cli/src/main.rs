@@ -194,8 +194,9 @@ fn main() {
         Some("secrets") => cmd_secrets(&args[1..]),
         Some("triage") => cmd_triage(&args[1..]),
         Some("handoff") => cmd_handoff(&args[1..]),
+        Some("distro") => cmd_distro(&args[1..]),
         Some("--help") | Some("-h") | None => {
-            println!("aiosh — AIOS shell CLI (Rust)\n\nUsage: aiosh <status|run|agent|audit|grant|pentest|classify|task|ci|release|backup|toolchain|doc|evidence|repo|secrets|triage|handoff> ...\n\n  aiosh task <status|done|block|unblock|skip|rebuild|check>  Task ledger control\n  aiosh ci <show|failures|check|config|metrics> [--file PATH]  CI smoke reports\n  aiosh release generate  Create bootable ISO\n  aiosh backup create  Create system snapshot zip\n  aiosh toolchain check [--config <path>]  Verify host environment against ToolchainManifest\n  aiosh toolchain show [--config <path>]   Display the resolved ToolchainManifest\n  aiosh doc <show|check|search>  Documentation Index Control\n  aiosh evidence <verify|hash|scan>   Evidence & Audit Trail Control\n  aiosh repo <health|check>  Repository Health Diagnostics\n  aiosh secrets <scan|check> [--config <path>]  Secrets & Access Hygiene Scanner\n  aiosh triage <list|show|record|resolve|ingest|check>  Regression Triage Manager\n  aiosh handoff <list|show|initiate|accept|reject|complete|cancel>  Agent Handoff Protocol Manager");
+            println!("aiosh — AIOS shell CLI (Rust)\n\nUsage: aiosh <status|run|agent|audit|grant|pentest|classify|task|ci|release|backup|toolchain|doc|evidence|repo|secrets|triage|handoff|distro> ...\n\n  aiosh task <status|done|block|unblock|skip|rebuild|check>  Task ledger control\n  aiosh ci <show|failures|check|config|metrics> [--file PATH]  CI smoke reports\n  aiosh release generate  Create bootable ISO\n  aiosh backup create  Create system snapshot zip\n  aiosh toolchain check [--config <path>]  Verify host environment against ToolchainManifest\n  aiosh toolchain show [--config <path>]   Display the resolved ToolchainManifest\n  aiosh doc <show|check|search>  Documentation Index Control\n  aiosh evidence <verify|hash|scan>   Evidence & Audit Trail Control\n  aiosh repo <health|check>  Repository Health Diagnostics\n  aiosh secrets <scan|check> [--config <path>]  Secrets & Access Hygiene Scanner\n  aiosh triage <list|show|record|resolve|ingest|check>  Regression Triage Manager\n  aiosh handoff <list|show|initiate|accept|reject|complete|cancel>  Agent Handoff Protocol Manager\n  aiosh distro <list|show|evaluate|recommend>  Linux Distro Selection & Justification Manager");
             0
         }
         Some(other) => {
@@ -204,6 +205,190 @@ fn main() {
         }
     };
     exit(code);
+}
+
+fn cmd_distro(args: &[String]) -> i32 {
+    let mut ctx = open_context();
+    let sub = args.first().map(|s| s.as_str());
+    let rest = if args.len() > 1 { &args[1..] } else { &[] };
+    let is_json = has_flag(rest, "--json");
+
+    let store = if let Some(path_str) = parse_flag(rest, "--store") {
+        match aiosh_core::distro_service::DistroStore::load_from_path(std::path::Path::new(&path_str)) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("Error loading distro store: {}", e);
+                return 1;
+            }
+        }
+    } else {
+        aiosh_core::distro_service::DistroStore::new()
+    };
+
+    match sub {
+        Some("list") => {
+            let profiles = store.list_profiles();
+            classify_and_emit(
+                &mut ctx,
+                "distro",
+                "list",
+                json!({ "count": profiles.len() }),
+                "success",
+                None,
+                Some("Listed distro profiles"),
+                "operator",
+                None,
+            );
+            if is_json {
+                println!("{}", serde_json::to_string_pretty(&profiles).unwrap_or_default());
+            } else {
+                println!("{:<30} {:<10} {:<10} {:<12} NAME", "ID", "FAMILY", "ARCH", "RECOMMENDED");
+                println!("{}", "-".repeat(78));
+                for p in &profiles {
+                    println!("{:<30} {:<10?} {:<10?} {:<12} {}", p.id, p.family, p.arch, p.recommended, p.name);
+                }
+                println!("\nTotal distro profiles: {}", profiles.len());
+            }
+            0
+        }
+        Some("show") => {
+            let id = match rest.first() {
+                Some(id_str) if !id_str.starts_with("--") => id_str.as_str(),
+                _ => {
+                    eprintln!("Usage: aiosh distro show <id> [--json] [--store <path>]");
+                    return 2;
+                }
+            };
+            match store.get_profile(id) {
+                Some(p) => {
+                    classify_and_emit(
+                        &mut ctx,
+                        "distro",
+                        "show",
+                        json!({ "id": p.id }),
+                        "success",
+                        Some(&p.id),
+                        Some("Retrieved distro profile"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", serde_json::to_string_pretty(&p).unwrap_or_default());
+                    } else {
+                        println!("Distribution Profile: {}", p.name);
+                        println!("  ID:             {}", p.id);
+                        println!("  Family:         {:?}", p.family);
+                        println!("  Arch:           {:?}", p.arch);
+                        println!("  Recommended:    {}", p.recommended);
+                        println!("  Init System:    {:?}", p.init_system);
+                        println!("  C Library:      {:?}", p.c_lib);
+                        println!("  Min Kernel:     {}", p.min_kernel_version);
+                        println!("  Packages:       {}", p.default_packages.join(", "));
+                        println!("  Justification:  {}", p.justification);
+                    }
+                    0
+                }
+                None => {
+                    eprintln!("Distro profile '{}' not found", id);
+                    1
+                }
+            }
+        }
+        Some("evaluate") => {
+            let id_opt = rest.first().filter(|s| !s.starts_with("--")).map(|s| s.as_str());
+            if let Some(id) = id_opt {
+                match store.evaluate_profile(id) {
+                    Ok(ev) => {
+                        classify_and_emit(
+                            &mut ctx,
+                            "distro",
+                            "evaluate",
+                            json!({ "id": ev.profile_id, "score": ev.overall_score }),
+                            "success",
+                            Some(&ev.profile_id),
+                            Some("Evaluated distro profile"),
+                            "operator",
+                            None,
+                        );
+                        if is_json {
+                            println!("{}", serde_json::to_string_pretty(&ev).unwrap_or_default());
+                        } else {
+                            println!("Evaluation for '{}' (Score: {:.2}):", ev.profile_id, ev.overall_score);
+                            println!("  Binary Compatibility: {:.2}", ev.binary_compatibility_score);
+                            println!("  Minimal Footprint:    {:.2}", ev.footprint_score);
+                            println!("  Security Hardening:   {:.2}", ev.security_score);
+                            println!("  Production Ready:     {}", ev.is_production_ready);
+                        }
+                        0
+                    }
+                    Err(e) => {
+                        eprintln!("Evaluation error: {}", e);
+                        1
+                    }
+                }
+            } else {
+                let evals = store.evaluate_all();
+                classify_and_emit(
+                    &mut ctx,
+                    "distro",
+                    "evaluate_all",
+                    json!({ "count": evals.len() }),
+                    "success",
+                    None,
+                    Some("Evaluated all distro profiles"),
+                    "operator",
+                    None,
+                );
+                if is_json {
+                    println!("{}", serde_json::to_string_pretty(&evals).unwrap_or_default());
+                } else {
+                    println!("{:<30} {:<14} EVALUATION SUMMARY", "PROFILE ID", "OVERALL SCORE");
+                    println!("{}", "-".repeat(70));
+                    for ev in &evals {
+                        println!("{:<30} {:<14.2} compat={:.2} footprint={:.2} security={:.2} ready={}",
+                            ev.profile_id, ev.overall_score, ev.binary_compatibility_score, ev.footprint_score, ev.security_score, ev.is_production_ready);
+                    }
+                }
+                0
+            }
+        }
+        Some("recommend") => {
+            match store.get_recommended_profile() {
+                Some(p) => {
+                    classify_and_emit(
+                        &mut ctx,
+                        "distro",
+                        "recommend",
+                        json!({ "id": p.id }),
+                        "success",
+                        Some(&p.id),
+                        Some("Retrieved recommended distro profile"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", serde_json::to_string_pretty(&p).unwrap_or_default());
+                    } else {
+                        println!("Recommended Profile: {} ({})", p.name, p.id);
+                        println!("Architecture: {:?} | Family: {:?}", p.arch, p.family);
+                    }
+                    0
+                }
+                None => {
+                    eprintln!("No recommended distribution profile found");
+                    1
+                }
+            }
+        }
+        Some("--help") | Some("-h") | None => {
+            println!("aiosh distro — Linux Distro Selection & Justification Manager\n\nUsage:\n  aiosh distro list [--json] [--store <path>]\n  aiosh distro show <id> [--json] [--store <path>]\n  aiosh distro evaluate [<id>] [--json] [--store <path>]\n  aiosh distro recommend [--json] [--store <path>]");
+            0
+        }
+        Some(other) => {
+            eprintln!("unknown distro subcommand: {}", other);
+            2
+        }
+    }
 }
 
 fn cmd_handoff(args: &[String]) -> i32 {
@@ -3197,5 +3382,35 @@ mod task_cli_tests {
         assert_eq!(code_invalid, 2);
 
         let _ = std::fs::remove_file(&store_file);
+    }
+
+    #[test]
+    fn test_cmd_distro_flow() {
+        let code_list = cmd_distro(&["list".to_string()]);
+        assert_eq!(code_list, 0);
+
+        let code_list_json = cmd_distro(&["list".to_string(), "--json".to_string()]);
+        assert_eq!(code_list_json, 0);
+
+        let code_show = cmd_distro(&["show".to_string(), "debian-12-minimal-x86_64".to_string()]);
+        assert_eq!(code_show, 0);
+
+        let code_show_missing = cmd_distro(&["show".to_string(), "nonexistent".to_string()]);
+        assert_eq!(code_show_missing, 1);
+
+        let code_eval = cmd_distro(&["evaluate".to_string()]);
+        assert_eq!(code_eval, 0);
+
+        let code_eval_single = cmd_distro(&["evaluate".to_string(), "alpine-319-container-x86_64".to_string()]);
+        assert_eq!(code_eval_single, 0);
+
+        let code_rec = cmd_distro(&["recommend".to_string()]);
+        assert_eq!(code_rec, 0);
+
+        let code_help = cmd_distro(&["--help".to_string()]);
+        assert_eq!(code_help, 0);
+
+        let code_invalid = cmd_distro(&["invalid_sub".to_string()]);
+        assert_eq!(code_invalid, 2);
     }
 }
