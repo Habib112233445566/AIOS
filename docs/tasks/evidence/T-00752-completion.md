@@ -1,0 +1,7 @@
+# T-00752 — Phase 0 — Governance, Repo, CI, Task Execution / Secrets & Access Hygiene / configuration: Specification
+
+Completed: 2026-08-31T05:11:00Z
+
+Acceptance criteria:
+- [x] Spec covers happy path, failure path, and audit effects.
+- [x] Spec is reviewable without reading the implementation.

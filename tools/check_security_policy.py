@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 POLICY = ROOT / "SECURITY.md"
 ADVISORY_URL = "https://github.com/Habib112233445566/AIOS/security/advisories/new"
 
-PASS, FAIL = "[✓]", "[✗]"
+PASS, FAIL = "[+]", "[-]"
 
 
 def main() -> int:

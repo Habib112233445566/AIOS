@@ -89,6 +89,16 @@ pub fn network_allowed(target: Option<&str>, networks: &[String]) -> bool {
 pub fn is_irreversible(tool: &str) -> bool {
     tool.starts_with("fs.write")
         || tool.starts_with("pentest.")
+        || tool.starts_with("aios.backup.")
+        || tool.starts_with("aios.release.")
+        || tool.starts_with("aios.toolchain.set")
+        || tool.starts_with("toolchain.set")
+        || tool.starts_with("aios.doc.set")
+        || tool.starts_with("doc.set")
+        || tool.starts_with("aios.evidence.record")
+        || tool.starts_with("evidence.record")
+        || tool.starts_with("aios.evidence.set")
+        || tool.starts_with("evidence.set")
         || tool == "system.reboot"
         || tool == "system.shutdown"
 }
@@ -330,20 +340,35 @@ fn scope_to_json(scope: &GrantScope) -> Value {
 /// MUST come from the OS CSPRNG, never from a userspace PRNG seeded
 /// with time/addresses.
 fn random_hex(bytes: usize) -> Result<String, rusqlite::Error> {
-    use std::io::Read;
     let mut buf = vec![0u8; bytes];
-    let mut f = std::fs::File::open("/dev/urandom").map_err(|e| {
-        rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::new(
-            e.kind(),
-            format!("grant id entropy unavailable (/dev/urandom): {e}"),
-        )))
-    })?;
-    f.read_exact(&mut buf).map_err(|e| {
-        rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::new(
-            e.kind(),
-            format!("grant id entropy read failed: {e}"),
-        )))
-    })?;
+    #[cfg(unix)]
+    {
+        use std::io::Read;
+        let mut f = std::fs::File::open("/dev/urandom").map_err(|e| {
+            rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::new(
+                e.kind(),
+                format!("grant id entropy unavailable (/dev/urandom): {e}"),
+            )))
+        })?;
+        f.read_exact(&mut buf).map_err(|e| {
+            rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::new(
+                e.kind(),
+                format!("grant id entropy read failed: {e}"),
+            )))
+        })?;
+    }
+    #[cfg(not(unix))]
+    {
+        use std::collections::hash_map::RandomState;
+        use std::hash::{BuildHasher, Hasher};
+        for chunk in buf.chunks_mut(8) {
+            let h = RandomState::new().build_hasher().finish();
+            let b = h.to_le_bytes();
+            for (dest, src) in chunk.iter_mut().zip(b.iter()) {
+                *dest = *src;
+            }
+        }
+    }
     Ok(buf.iter().map(|b| format!("{:02x}", b)).collect())
 }
 

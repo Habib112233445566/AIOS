@@ -1,0 +1,6 @@
+{
+  "rust_version": "1.99.0",
+  "python_version": "3.14",
+  "node_version": "v24.18",
+  "enforce_hashes": false
+}

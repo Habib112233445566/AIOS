@@ -31,12 +31,9 @@ REPO = HERE.parent
 SERVICE = HERE / "ci_service.py"
 PASS, FAIL = "[PASS]", "[FAIL]"
 
-NAMES = ("rust_smoke", "classifier_smoke", "mcp_smoke", "task_service_smoke",
-         "task_mcp_smoke", "pentest_smoke", "sandbox_smoke", "retention_smoke",
-         "demo_smoke", "metrics_smoke", "cli_bash_smoke", "task_cli_smoke",
-         "task_config_smoke", "task_matrix_smoke", "security_policy",
-         "task_ledger_unit", "task_ledger_scaffold", "task_docs_unit",
-         "task_docs_scaffold", "ci_service_unit")
+from ci_suites import SUITE_NAMES
+NAMES = SUITE_NAMES
+N_SUITES = len(SUITE_NAMES)
 
 
 def run(*args: str) -> subprocess.CompletedProcess:
@@ -44,7 +41,7 @@ def run(*args: str) -> subprocess.CompletedProcess:
                           capture_output=True, text=True, timeout=30)
 
 
-def make_artifact(path: Path, *, n: int = 20, fail_at: int | None = None,
+def make_artifact(path: Path, *, n: int = N_SUITES, fail_at: int | None = None,
                   **overrides) -> None:
     results = []
     for i in range(n):
@@ -62,7 +59,7 @@ def make_artifact(path: Path, *, n: int = 20, fail_at: int | None = None,
         "started_at": "2026-08-23T00:00:00Z",
         "finished_at": "2026-08-23T00:30:00Z",
         "total": n, "passed": n - failed, "failed": failed,
-        "all_pass": failed == 0 and n == 20, "results": results,
+        "all_pass": failed == 0 and n == N_SUITES, "results": results,
     }
     doc.update(overrides)
     path.write_text(json.dumps(doc), encoding="utf-8")
@@ -78,12 +75,12 @@ def main() -> int:
     ok = (p.returncode == 0
           and p.stdout.startswith("CI run 2026-08-23T00:00:00Z .. "
                                   "2026-08-23T00:30:00Z: PASS")
-          and "suites: 20 run, 20 passed, 0 failed" in p.stdout
+          and f"suites: {N_SUITES} run, {N_SUITES} passed, 0 failed" in p.stdout
           and "  [ok ] 0 rust_smoke (100 ms)" in p.stdout)
     if ok:
         p = run("check", "--file", str(good))
         ok = (p.returncode == 0
-              and p.stdout.strip() == "ci-check: PASS (20/20 suites)")
+              and p.stdout.strip() == f"ci-check: PASS ({N_SUITES}/{N_SUITES} suites)")
     print(f"{PASS if ok else FAIL} X1 show stable lines + check gate exit 0")
     if not ok:
         print(p.stdout, p.stderr)
@@ -93,7 +90,7 @@ def main() -> int:
     bad = tmp / "bad.json"
     make_artifact(bad, fail_at=5)
     p = run("check", "--file", str(bad))
-    ok = p.returncode == 1 and "FAIL (19/20 suites, 1 failed)" in p.stdout
+    ok = p.returncode == 1 and f"FAIL ({N_SUITES-1}/{N_SUITES} suites, 1 failed)" in p.stdout
     if ok:
         p = run("failures", "--file", str(bad))
         ok = (p.returncode == 0
@@ -127,7 +124,7 @@ def main() -> int:
     ok = ok and expect_reject(
         "math", lambda d: d.update(passed=3), "arithmetic incoherence")
     ok = ok and expect_reject(
-        "allpass", lambda d: d.update(failed=1, passed=19, all_pass=True),
+        "allpass", lambda d: d.update(failed=1, passed=N_SUITES - 1, all_pass=True),
         "'all_pass'")
     ok = ok and expect_reject(
         "status", lambda d: d["results"][0].update(status="wat"), "'status'")
@@ -166,9 +163,9 @@ def main() -> int:
     part = tmp / "partial.json"
     make_artifact(part, n=5)
     doc = json.loads(part.read_text())
-    assert doc["all_pass"] is False  # by construction (total<20)
+    assert doc["all_pass"] is False  # by construction (total<N_SUITES)
     p = run("check", "--file", str(part))
-    ok = p.returncode == 1 and "FAIL (5/20 suites" in p.stdout
+    ok = p.returncode == 1 and f"FAIL (5/{N_SUITES} suites" in p.stdout
     print(f"{PASS if ok else FAIL} X5 incomplete-but-clean run fails the gate")
     if not ok:
         print(p.stdout, p.stderr)

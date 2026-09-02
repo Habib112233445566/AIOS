@@ -30,3 +30,8 @@ code/aiosh-mcp/dist/
 
 code/aiosh-rust/target/
 scratch/
+
+# Test build outputs and backup zips
+**/output/
+*.iso
+*.zip

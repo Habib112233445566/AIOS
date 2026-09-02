@@ -35,6 +35,12 @@ open a public issue for an unpatched vulnerability.
   content.
 - Secret exposure through any supported surface.
 - Escaping CI orchestrator process group timeouts or overflowing bounds to cause Denial of Service.
+- Directory traversal escapes outside repository checkout bounds or causing Denial of Service via uncapped document ingestion.
+- Falsifying, forging, or tampering with SHA-256 evidence digests, historical task completion artifacts, or provenance logs.
+- Path traversal escapes or out-of-bounds filesystem discovery during evidence scanning and verification.
+- Exposing plaintext credentials, private keys, API tokens, AWS credentials, or configuration passwords through CLI, MCP, or audit logs.
+- Bypassing secrets scanners or disabling default boundary-preserving redaction filters.
+- Falsifying, forging, tampering with, or bypassing regression triage records to mask blocker or critical regressions.
 
 ## Out of Scope
 
@@ -66,6 +72,6 @@ open a public issue for an unpatched vulnerability.
   (retention) · `T-00017-security.md` (ledger data model) ·
   `T-00027-security.md` (core service MCP) · `T-00037-security.md`
   (CLI) · `T-00047-security.md` (Python MCP) · `T-00057-security.md`
-  (configuration) • `T-00127-security.md` (ci data model) • `T-00147-security.md` (ci mcp) • `T-00157-security.md` (ci config) • `T-00167-security.md` (ci automated tests) • `T-00177-security.md` (ci security policy)
+  (configuration) • `T-00127-security.md` (ci data model) • `T-00147-security.md` (ci mcp) • `T-00157-security.md` (ci config) • `T-00167-security.md` (ci automated tests) • `T-00177-security.md` (ci security policy) • `T-00367-security.md` (toolchain automated tests) • `T-00377-security.md` (toolchain security policy) • `T-00467-security.md` (documentation automated tests) • `T-00477-security.md` (documentation security policy) • `docs/tasks/evidence/T-00567-security.md` (evidence automated tests) • `docs/tasks/evidence/T-00577-security.md` (evidence security policy) • `docs/tasks/evidence/T-00777-security.md` (secrets security policy) • `docs/tasks/evidence/T-00877-security.md` (regression triage security policy)
 - Ledger spec & limitations: `docs/SPEC-TASK-LEDGER.md`
 - Classifier formal spec: `docs/SPEC-CONSTITUTION-CLASSIFIER.md`

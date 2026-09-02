@@ -1,0 +1,7 @@
+# T-00916 — Phase 0 — Governance, Repo, CI, Task Execution / Agent Handoff Protocol / data model: Integration
+
+Completed: 2026-08-31T11:50:00Z
+
+Acceptance criteria:
+- [x] Feature reachable through its production surface.
+- [x] Integration smoke passes end-to-end.

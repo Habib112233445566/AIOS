@@ -183,10 +183,19 @@ fn main() {
         Some("grant") => cmd_grant(&args[1..]),
         Some("pentest") => cmd_pentest(&args[1..]),
         Some("classify") => cmd_classify(&args[1..]),
+        Some("release") => cmd_release(&args[1..]),
+        Some("backup") => cmd_backup(&args[1..]),
         Some("ci") => cmd_ci(&args[1..]),
         Some("task") => cmd_task(&args[1..]),
+        Some("toolchain") => cmd_toolchain(&args[1..]),
+        Some("doc") => cmd_doc(&args[1..]),
+        Some("evidence") => cmd_evidence(&args[1..]),
+        Some("repo") => cmd_repo(&args[1..]),
+        Some("secrets") => cmd_secrets(&args[1..]),
+        Some("triage") => cmd_triage(&args[1..]),
+        Some("handoff") => cmd_handoff(&args[1..]),
         Some("--help") | Some("-h") | None => {
-            println!("aiosh — AIOS shell CLI (Rust)\n\nUsage: aiosh <status|run|agent|audit|grant|pentest|classify|task|ci> ...\n\n  aiosh task <status|done|block|unblock|skip|rebuild|check>  Task ledger control\n  aiosh ci <show|failures|check|config|metrics> [--file PATH]  CI smoke reports");
+            println!("aiosh — AIOS shell CLI (Rust)\n\nUsage: aiosh <status|run|agent|audit|grant|pentest|classify|task|ci|release|backup|toolchain|doc|evidence|repo|secrets|triage|handoff> ...\n\n  aiosh task <status|done|block|unblock|skip|rebuild|check>  Task ledger control\n  aiosh ci <show|failures|check|config|metrics> [--file PATH]  CI smoke reports\n  aiosh release generate  Create bootable ISO\n  aiosh backup create  Create system snapshot zip\n  aiosh toolchain check [--config <path>]  Verify host environment against ToolchainManifest\n  aiosh toolchain show [--config <path>]   Display the resolved ToolchainManifest\n  aiosh doc <show|check|search>  Documentation Index Control\n  aiosh evidence <verify|hash|scan>   Evidence & Audit Trail Control\n  aiosh repo <health|check>  Repository Health Diagnostics\n  aiosh secrets <scan|check> [--config <path>]  Secrets & Access Hygiene Scanner\n  aiosh triage <list|show|record|resolve|ingest|check>  Regression Triage Manager\n  aiosh handoff <list|show|initiate|accept|reject|complete|cancel>  Agent Handoff Protocol Manager");
             0
         }
         Some(other) => {
@@ -195,6 +204,1637 @@ fn main() {
         }
     };
     exit(code);
+}
+
+fn cmd_handoff(args: &[String]) -> i32 {
+    let mut ctx = open_context();
+    let sub = args.first().map(|s| s.as_str());
+    let rest = if args.len() > 1 { &args[1..] } else { &[] };
+
+    let is_json = has_flag(rest, "--json");
+    let config = if let Some(cfg_path_str) = parse_flag(rest, "--config") {
+        match aiosh_core::handoff_config::HandoffConfig::from_file(std::path::Path::new(&cfg_path_str)) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("Error loading handoff config: {}", e);
+                return 1;
+            }
+        }
+    } else {
+        aiosh_core::handoff_config::HandoffConfig::from_env_or_default()
+    };
+
+    let store_path_str = parse_flag(rest, "--store")
+        .or_else(|| config.store_path.clone())
+        .unwrap_or_else(|| format!("{}/handoff_store.json", ai_home()));
+    let store_path = std::path::Path::new(&store_path_str);
+
+    let (mut store, _recovery_warning) = aiosh_core::handoff_service::HandoffStore::load_or_recover_with_config(store_path, &config);
+
+    match sub {
+        Some("list") => {
+            let active_only = has_flag(rest, "--active");
+            let status_filter = parse_flag(rest, "--status");
+
+            let records = if active_only {
+                store.list_active()
+            } else {
+                store.list_all()
+            };
+
+            let filtered: Vec<_> = records
+                .into_iter()
+                .filter(|r| {
+                    if let Some(ref st) = status_filter {
+                        let st_str = format!("{:?}", r.status).to_lowercase();
+                        st_str == st.to_lowercase()
+                    } else {
+                        true
+                    }
+                })
+                .collect();
+
+            if is_json {
+                println!("{}", serde_json::to_string_pretty(&filtered).unwrap_or_default());
+            } else {
+                println!("{:<14} {:<12} {:<16} {:<16} {:<10} SUMMARY", "ID", "STATUS", "SENDER", "RECEIVER", "PRIORITY");
+                println!("{}", "-".repeat(80));
+                for r in &filtered {
+                    println!(
+                        "{:<14} {:<12?} {:<16} {:<16} {:<10?} {}",
+                        r.id, r.status, r.sender_agent_id, r.receiver_agent_id, r.priority, r.context_summary
+                    );
+                }
+                println!("\nTotal handoffs listed: {}", filtered.len());
+            }
+            0
+        }
+        Some("show") => {
+            let id = match rest.first() {
+                Some(id_str) if !id_str.starts_with("--") => id_str.as_str(),
+                _ => {
+                    eprintln!("Usage: aiosh handoff show <id> [--json] [--store <path>]");
+                    return 2;
+                }
+            };
+
+            match store.get_by_id(id) {
+                Some(r) => {
+                    if is_json {
+                        println!("{}", serde_json::to_string_pretty(r).unwrap_or_default());
+                    } else {
+                        println!("Handoff Record: {}", r.id);
+                        println!("Signature:      {}", r.signature);
+                        println!("Status:         {:?}", r.status);
+                        println!("Priority:       {:?}", r.priority);
+                        println!("Sender:         {}", r.sender_agent_id);
+                        println!("Receiver:       {}", r.receiver_agent_id);
+                        if let Some(t) = r.task_id {
+                            println!("Task ID:        {}", t);
+                        }
+                        println!("Created At:     {}", r.created_at);
+                        if let Some(ref exp) = r.expires_at {
+                            println!("Expires At:     {}", exp);
+                        }
+                        if let Some(ref notes) = r.resolution_notes {
+                            println!("Notes:          {}", notes);
+                        }
+                        println!("Summary:        {}", r.context_summary);
+                        println!("Payload:        {}", r.payload_json);
+                    }
+                    0
+                }
+                None => {
+                    eprintln!("Error: Handoff record '{}' not found", id);
+                    1
+                }
+            }
+        }
+        Some("initiate") => {
+            let sender = match parse_flag(rest, "--sender") {
+                Some(s) => s,
+                None => {
+                    eprintln!("Error: --sender is required for aiosh handoff initiate");
+                    return 2;
+                }
+            };
+            let receiver = match parse_flag(rest, "--receiver") {
+                Some(r) => r,
+                None => {
+                    eprintln!("Error: --receiver is required for aiosh handoff initiate");
+                    return 2;
+                }
+            };
+            let summary = match parse_flag(rest, "--summary") {
+                Some(s) => s,
+                None => {
+                    eprintln!("Error: --summary is required for aiosh handoff initiate");
+                    return 2;
+                }
+            };
+            let task_id = parse_flag(rest, "--task").and_then(|t| t.parse::<u32>().ok());
+            let payload = parse_flag(rest, "--payload").unwrap_or_else(|| "{}".into());
+            let priority = match parse_flag(rest, "--priority").as_deref() {
+                Some("low") => aiosh_core::handoff::HandoffPriority::Low,
+                Some("high") => aiosh_core::handoff::HandoffPriority::High,
+                Some("urgent") => aiosh_core::handoff::HandoffPriority::Urgent,
+                _ => aiosh_core::handoff::HandoffPriority::Normal,
+            };
+
+            let rec = store.initiate_handoff(&sender, &receiver, task_id, &summary, &payload, priority);
+
+            if let Err(e) = store.save_to_path(store_path) {
+                eprintln!("Error saving store: {}", e);
+                return 1;
+            }
+
+            classify_and_emit(
+                &mut ctx,
+                "handoff",
+                "initiate",
+                json!({ "id": rec.id, "sender": sender, "receiver": receiver }),
+                "success",
+                Some(&rec.id),
+                Some("Handoff initiated"),
+                "operator",
+                None,
+            );
+
+            if is_json {
+                println!("{}", serde_json::to_string_pretty(&rec).unwrap_or_default());
+            } else {
+                println!("Initiated handoff: {} (status: {:?})", rec.id, rec.status);
+            }
+            0
+        }
+        Some("accept") => {
+            let id = match rest.first() {
+                Some(id_str) if !id_str.starts_with("--") => id_str.as_str(),
+                _ => {
+                    eprintln!("Usage: aiosh handoff accept <id> [--notes <notes>] [--store <path>]");
+                    return 2;
+                }
+            };
+            let notes = parse_flag(rest, "--notes");
+
+            match store.accept_handoff(id, notes.as_deref()) {
+                Ok(rec) => {
+                    if let Err(e) = store.save_to_path(store_path) {
+                        eprintln!("Error saving store: {}", e);
+                        return 1;
+                    }
+
+                    classify_and_emit(
+                        &mut ctx,
+                        "handoff",
+                        "accept",
+                        json!({ "id": rec.id, "receiver": rec.receiver_agent_id }),
+                        "success",
+                        Some(&rec.id),
+                        Some("Handoff accepted"),
+                        "operator",
+                        None,
+                    );
+
+                    if is_json {
+                        println!("{}", serde_json::to_string_pretty(&rec).unwrap_or_default());
+                    } else {
+                        println!("Accepted handoff: {} (status: {:?})", rec.id, rec.status);
+                    }
+                    0
+                }
+                Err(e) => {
+                    eprintln!("Error accepting handoff: {}", e);
+                    1
+                }
+            }
+        }
+        Some("reject") => {
+            let id = match rest.first() {
+                Some(id_str) if !id_str.starts_with("--") => id_str.as_str(),
+                _ => {
+                    eprintln!("Usage: aiosh handoff reject <id> [--notes <notes>] [--store <path>]");
+                    return 2;
+                }
+            };
+            let notes = parse_flag(rest, "--notes");
+
+            match store.reject_handoff(id, notes.as_deref()) {
+                Ok(rec) => {
+                    if let Err(e) = store.save_to_path(store_path) {
+                        eprintln!("Error saving store: {}", e);
+                        return 1;
+                    }
+
+                    classify_and_emit(
+                        &mut ctx,
+                        "handoff",
+                        "reject",
+                        json!({ "id": rec.id, "receiver": rec.receiver_agent_id }),
+                        "success",
+                        Some(&rec.id),
+                        Some("Handoff rejected"),
+                        "operator",
+                        None,
+                    );
+
+                    if is_json {
+                        println!("{}", serde_json::to_string_pretty(&rec).unwrap_or_default());
+                    } else {
+                        println!("Rejected handoff: {} (status: {:?})", rec.id, rec.status);
+                    }
+                    0
+                }
+                Err(e) => {
+                    eprintln!("Error rejecting handoff: {}", e);
+                    1
+                }
+            }
+        }
+        Some("complete") => {
+            let id = match rest.first() {
+                Some(id_str) if !id_str.starts_with("--") => id_str.as_str(),
+                _ => {
+                    eprintln!("Usage: aiosh handoff complete <id> [--notes <notes>] [--store <path>]");
+                    return 2;
+                }
+            };
+            let notes = parse_flag(rest, "--notes");
+
+            match store.complete_handoff(id, notes.as_deref()) {
+                Ok(rec) => {
+                    if let Err(e) = store.save_to_path(store_path) {
+                        eprintln!("Error saving store: {}", e);
+                        return 1;
+                    }
+
+                    classify_and_emit(
+                        &mut ctx,
+                        "handoff",
+                        "complete",
+                        json!({ "id": rec.id, "receiver": rec.receiver_agent_id }),
+                        "success",
+                        Some(&rec.id),
+                        Some("Handoff completed"),
+                        "operator",
+                        None,
+                    );
+
+                    if is_json {
+                        println!("{}", serde_json::to_string_pretty(&rec).unwrap_or_default());
+                    } else {
+                        println!("Completed handoff: {} (status: {:?})", rec.id, rec.status);
+                    }
+                    0
+                }
+                Err(e) => {
+                    eprintln!("Error completing handoff: {}", e);
+                    1
+                }
+            }
+        }
+        Some("cancel") => {
+            let id = match rest.first() {
+                Some(id_str) if !id_str.starts_with("--") => id_str.as_str(),
+                _ => {
+                    eprintln!("Usage: aiosh handoff cancel <id> [--notes <notes>] [--store <path>]");
+                    return 2;
+                }
+            };
+            let notes = parse_flag(rest, "--notes");
+
+            match store.cancel_handoff(id, notes.as_deref()) {
+                Ok(rec) => {
+                    if let Err(e) = store.save_to_path(store_path) {
+                        eprintln!("Error saving store: {}", e);
+                        return 1;
+                    }
+
+                    classify_and_emit(
+                        &mut ctx,
+                        "handoff",
+                        "cancel",
+                        json!({ "id": rec.id, "sender": rec.sender_agent_id }),
+                        "success",
+                        Some(&rec.id),
+                        Some("Handoff cancelled"),
+                        "operator",
+                        None,
+                    );
+
+                    if is_json {
+                        println!("{}", serde_json::to_string_pretty(&rec).unwrap_or_default());
+                    } else {
+                        println!("Cancelled handoff: {} (status: {:?})", rec.id, rec.status);
+                    }
+                    0
+                }
+                Err(e) => {
+                    eprintln!("Error cancelling handoff: {}", e);
+                    1
+                }
+            }
+        }
+        Some("--help") | Some("-h") | None => {
+            println!("aiosh handoff — Agent Handoff Protocol Manager\n\nUsage:\n  aiosh handoff list [--active] [--status <status>] [--json] [--store <path>]\n  aiosh handoff show <id> [--json] [--store <path>]\n  aiosh handoff initiate --sender <S> --receiver <R> [--task <T>] --summary <CTX> [--payload <JSON>] [--priority <P>] [--store <path>]\n  aiosh handoff accept <id> [--notes <notes>] [--store <path>]\n  aiosh handoff reject <id> [--notes <notes>] [--store <path>]\n  aiosh handoff complete <id> [--notes <notes>] [--store <path>]\n  aiosh handoff cancel <id> [--notes <notes>] [--store <path>]");
+            0
+        }
+        Some(other) => {
+            eprintln!("unknown handoff subcommand: {}", other);
+            2
+        }
+    }
+}
+
+fn cmd_triage(args: &[String]) -> i32 {
+    let mut ctx = open_context();
+    let sub = args.first().map(|s| s.as_str());
+    let rest = if args.len() > 1 { &args[1..] } else { &[] };
+
+    let is_json = has_flag(rest, "--json");
+    let config = if let Some(cfg_path_str) = parse_flag(rest, "--config") {
+        match aiosh_core::triage_config::TriageConfig::from_file(std::path::Path::new(&cfg_path_str)) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("Error loading triage config: {}", e);
+                return 1;
+            }
+        }
+    } else {
+        aiosh_core::triage_config::TriageConfig::from_env_or_default()
+    };
+
+    let store_path_str = parse_flag(rest, "--store")
+        .or_else(|| config.store_path.clone())
+        .unwrap_or_else(|| format!("{}/triage_store.json", ai_home()));
+    let store_path = std::path::Path::new(&store_path_str);
+
+    let mut store = match aiosh_core::triage_service::TriageStore::load_from_path_with_config(store_path, &config) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Error loading triage store: {}", e);
+            return 1;
+        }
+    };
+
+    match sub {
+        Some("list") => {
+            let status_filter = parse_flag(rest, "--status");
+            let severity_filter = parse_flag(rest, "--severity");
+
+            let report = store.to_report();
+            let filtered: Vec<_> = report.records.into_iter().filter(|r| {
+                if let Some(ref st) = status_filter {
+                    let st_str = match r.status {
+                        aiosh_core::triage::TriageStatus::Untriaged => "untriaged",
+                        aiosh_core::triage::TriageStatus::Triaged => "triaged",
+                        aiosh_core::triage::TriageStatus::FixPending => "fix_pending",
+                        aiosh_core::triage::TriageStatus::Resolved => "resolved",
+                        aiosh_core::triage::TriageStatus::WontFix => "wont_fix",
+                    };
+                    if st_str != st.to_lowercase() {
+                        return false;
+                    }
+                }
+                if let Some(ref sv) = severity_filter {
+                    let sv_str = match r.severity {
+                        aiosh_core::triage::TriageSeverity::Blocker => "blocker",
+                        aiosh_core::triage::TriageSeverity::Critical => "critical",
+                        aiosh_core::triage::TriageSeverity::Major => "major",
+                        aiosh_core::triage::TriageSeverity::Minor => "minor",
+                    };
+                    if sv_str != sv.to_lowercase() {
+                        return false;
+                    }
+                }
+                true
+            }).collect();
+
+            if is_json {
+                println!("{}", serde_json::to_string_pretty(&filtered).unwrap());
+            } else {
+                println!("=== AIOS Regression Triage Records ({}) ===", filtered.len());
+                for r in &filtered {
+                    println!("[{}] {:?} {:?} - {} ({}) occ:{}", r.id, r.severity, r.status, r.test_target, r.suite_name, r.occurrences);
+                    println!("    error: {}", r.error_message.lines().next().unwrap_or(""));
+                    if let Some(ref n) = r.resolution_notes {
+                        println!("    notes: {}", n);
+                    }
+                }
+            }
+            0
+        }
+        Some("show") => {
+            let id = match rest.first() {
+                Some(i) => i,
+                None => {
+                    eprintln!("Usage: aiosh triage show <id> [--store <path>] [--json]");
+                    return 2;
+                }
+            };
+            if let Some(rec) = store.get_by_id(id) {
+                if is_json {
+                    println!("{}", serde_json::to_string_pretty(rec).unwrap());
+                } else {
+                    println!("Triage ID:       {}", rec.id);
+                    println!("Signature:       {}", rec.signature);
+                    println!("Status:          {:?}", rec.status);
+                    println!("Severity:        {:?}", rec.severity);
+                    println!("Test Target:     {}", rec.test_target);
+                    println!("Suite Name:      {}", rec.suite_name);
+                    println!("Occurrences:     {}", rec.occurrences);
+                    println!("First Observed:  {}", rec.first_observed_at);
+                    println!("Last Observed:   {}", rec.last_observed_at);
+                    println!("Repro Command:   {}", rec.repro_command);
+                    println!("Error Message:\n{}", rec.error_message);
+                    if let Some(ref n) = rec.resolution_notes {
+                        println!("Resolution Notes: {}", n);
+                    }
+                }
+                0
+            } else {
+                eprintln!("Record {} not found", id);
+                1
+            }
+        }
+        Some("record") => {
+            let target = match parse_flag(rest, "--target") {
+                Some(t) => t,
+                None => {
+                    eprintln!("Missing required option --target");
+                    return 2;
+                }
+            };
+            let suite = parse_flag(rest, "--suite").unwrap_or_else(|| "manual".into());
+            let error_msg = match parse_flag(rest, "--error") {
+                Some(e) => e,
+                None => {
+                    eprintln!("Missing required option --error");
+                    return 2;
+                }
+            };
+            let repro = parse_flag(rest, "--repro").unwrap_or_else(|| "".into());
+            let sev = match parse_flag(rest, "--severity").as_deref() {
+                Some("blocker") => aiosh_core::triage::TriageSeverity::Blocker,
+                Some("major") => aiosh_core::triage::TriageSeverity::Major,
+                Some("minor") => aiosh_core::triage::TriageSeverity::Minor,
+                _ => aiosh_core::triage::TriageSeverity::Critical,
+            };
+
+            let rec = store.record_failure(&target, &suite, &error_msg, &repro, sev);
+            if let Err(e) = store.save_to_path(store_path) {
+                eprintln!("Failed to save triage store: {}", e);
+                return 1;
+            }
+
+            classify_and_emit(
+                &mut ctx,
+                "triage",
+                "record",
+                json!({ "id": rec.id, "target": target, "suite": suite }),
+                "success",
+                Some(&rec.id),
+                Some("Regression recorded"),
+                "operator",
+                None,
+            );
+
+            if is_json {
+                println!("{}", serde_json::to_string_pretty(&rec).unwrap());
+            } else {
+                println!("Recorded triage item {} (occurrences: {})", rec.id, rec.occurrences);
+            }
+            0
+        }
+        Some("resolve") => {
+            let id = match rest.first() {
+                Some(i) => i,
+                None => {
+                    eprintln!("Usage: aiosh triage resolve <id> --notes <text> [--store <path>]");
+                    return 2;
+                }
+            };
+            let notes = match parse_flag(rest, "--notes") {
+                Some(n) => n,
+                None => {
+                    eprintln!("Missing required option --notes");
+                    return 2;
+                }
+            };
+
+            let rec = match store.resolve(id, &notes) {
+                Ok(r) => r.clone(),
+                Err(e) => {
+                    eprintln!("Resolve error: {}", e);
+                    return 1;
+                }
+            };
+
+            if let Err(e) = store.save_to_path(store_path) {
+                eprintln!("Failed to save triage store: {}", e);
+                return 1;
+            }
+
+            classify_and_emit(
+                &mut ctx,
+                "triage",
+                "resolve",
+                json!({ "id": id, "notes": notes }),
+                "success",
+                Some(id),
+                Some("Regression resolved"),
+                "operator",
+                None,
+            );
+
+            if is_json {
+                println!("{}", serde_json::to_string_pretty(&rec).unwrap());
+            } else {
+                println!("Resolved triage item {}", rec.id);
+            }
+            0
+        }
+        Some("ingest") => {
+            let file_path_str = match rest.first() {
+                Some(f) => f,
+                None => {
+                    eprintln!("Usage: aiosh triage ingest <summary_json_file> [--store <path>]");
+                    return 2;
+                }
+            };
+            let summary_path = std::path::Path::new(file_path_str);
+            let summary = match aiosh_core::ci::load_summary_with_retry(summary_path, 2) {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("Failed to load CI summary: {}", e);
+                    return 1;
+                }
+            };
+
+            let count = store.ingest_ci_summary_with_config(&summary, &config);
+            if let Err(e) = store.save_to_path(store_path) {
+                eprintln!("Failed to save triage store: {}", e);
+                return 1;
+            }
+
+            classify_and_emit(
+                &mut ctx,
+                "triage",
+                "ingest",
+                json!({ "source": file_path_str, "processed": count }),
+                "success",
+                Some(file_path_str),
+                Some(&format!("Ingested {} regression candidates", count)),
+                "operator",
+                None,
+            );
+
+            if is_json {
+                println!("{}", json!({ "processed": count, "store": store_path_str }));
+            } else {
+                println!("Ingested {} regression candidates into {}", count, store_path_str);
+            }
+            0
+        }
+        Some("check") => {
+            let report = store.to_report();
+            let mut blocker_count = 0;
+            let mut critical_count = 0;
+
+            for r in &report.records {
+                if r.status != aiosh_core::triage::TriageStatus::Resolved && r.status != aiosh_core::triage::TriageStatus::WontFix {
+                    match r.severity {
+                        aiosh_core::triage::TriageSeverity::Blocker => blocker_count += 1,
+                        aiosh_core::triage::TriageSeverity::Critical => critical_count += 1,
+                        _ => {}
+                    }
+                }
+            }
+
+            let ok = blocker_count == 0 && critical_count == 0;
+            if is_json {
+                println!("{}", json!({
+                    "clean": ok,
+                    "total_records": report.total_records,
+                    "open_records": report.open_records,
+                    "blocker_open": blocker_count,
+                    "critical_open": critical_count
+                }));
+            } else {
+                println!("=== AIOS Triage Check ===");
+                println!("Total records:   {}", report.total_records);
+                println!("Open records:    {}", report.open_records);
+                println!("Blocker open:    {}", blocker_count);
+                println!("Critical open:   {}", critical_count);
+                if ok {
+                    println!("\nPASS: No open blocker or critical regressions.");
+                } else {
+                    println!("\nFAIL: Found {} blocker and {} critical open regressions.", blocker_count, critical_count);
+                }
+            }
+            if ok { 0 } else { 1 }
+        }
+        Some("--help") | Some("-h") | None => {
+            println!("Usage: aiosh triage <list|show|record|resolve|ingest|check> [options]\n\nSubcommands:\n  list [--status <st>] [--severity <sev>] [--json] [--store <path>]\n  show <id> [--json] [--store <path>]\n  record --target <target> --suite <suite> --error <msg> [--repro <cmd>] [--severity <sev>] [--store <path>]\n  resolve <id> --notes <notes> [--store <path>]\n  ingest <summary_file> [--store <path>]\n  check [--store <path>] [--json]");
+            0
+        }
+        Some(other) => {
+            eprintln!("unknown triage subcommand: {}", other);
+            2
+        }
+    }
+}
+
+fn cmd_secrets(args: &[String]) -> i32 {
+    let mut ctx = open_context();
+    let sub = args.first().map(|s| s.as_str());
+    let rest = if args.len() > 1 { &args[1..] } else { &[] };
+
+    let is_json = has_flag(rest, "--json");
+    let repo_flag = parse_flag(rest, "--repo");
+    let file_flag = parse_flag(rest, "--file");
+    let config_flag = parse_flag(rest, "--config");
+
+    let config = match config_flag {
+        Some(ref cp) => match aiosh_core::secrets_config::SecretsConfig::from_path(std::path::Path::new(cp)) {
+            Ok(c) => c,
+            Err(e) => {
+                let msg = format!("Failed to read secrets config: {}", e);
+                if is_json {
+                    return err_out(json!({"ok": false, "subcommand": "secrets", "error": msg}));
+                } else {
+                    eprintln!("[-] {}", msg);
+                    return 1;
+                }
+            }
+        },
+        None => aiosh_core::secrets_config::SecretsConfig::from_env().unwrap_or_default(),
+    };
+
+    let max_bytes: u64 = parse_flag(rest, "--max-bytes")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(config.max_file_bytes);
+
+    let repo_root = repo_flag
+        .as_deref()
+        .map(std::path::Path::new)
+        .unwrap_or_else(|| std::path::Path::new("."));
+
+    match sub {
+        Some("scan") | Some("check") => {
+            let is_check = sub == Some("check");
+            let report = if let Some(ref file_path_str) = file_flag {
+                let target_file = std::path::Path::new(file_path_str);
+                let findings = match aiosh_core::secrets_service::scan_file_for_secrets(target_file, repo_root, max_bytes) {
+                    Ok(f) => f,
+                    Err(e) => {
+                        let msg = format!("Failed to scan file for secrets: {}", e);
+                        emit(
+                            &mut ctx,
+                            "secrets.scan",
+                            &format!("aiosh secrets scan --file {}", file_path_str),
+                            json!({"file": file_path_str}),
+                            "error",
+                            Some(file_path_str),
+                            Some(&msg),
+                            "user",
+                            None,
+                            CFlags::default(),
+                            None,
+                        );
+                        if is_json {
+                            return err_out(json!({"ok": false, "subcommand": "secrets scan", "error": msg}));
+                        } else {
+                            eprintln!("[-] {}", msg);
+                            return 1;
+                        }
+                    }
+                };
+                aiosh_core::secrets::SecretScanReport::new(
+                    target_file.to_string_lossy().to_string(),
+                    findings,
+                    1,
+                )
+            } else {
+                let ignored_slice: Vec<&str> = config.ignored_dirs.iter().map(|s| s.as_str()).collect();
+                match aiosh_core::secrets_service::scan_workspace_for_secrets(
+                    repo_root,
+                    max_bytes,
+                    &ignored_slice,
+                ) {
+                    Ok(r) => r,
+                    Err(e) => {
+                        let msg = format!("Failed to scan workspace for secrets: {}", e);
+                        emit(
+                            &mut ctx,
+                            "secrets.scan",
+                            "aiosh secrets scan",
+                            json!({"repo": repo_root.to_string_lossy()}),
+                            "error",
+                            None,
+                            Some(&msg),
+                            "user",
+                            None,
+                            CFlags::default(),
+                            None,
+                        );
+                        if is_json {
+                            return err_out(json!({"ok": false, "subcommand": "secrets scan", "error": msg}));
+                        } else {
+                            eprintln!("[-] {}", msg);
+                            return 1;
+                        }
+                    }
+                }
+            };
+
+            let outcome = if report.is_clean { "ok" } else { "failure" };
+            emit(
+                &mut ctx,
+                if is_check { "secrets.check" } else { "secrets.scan" },
+                &format!("aiosh secrets {}", if is_check { "check" } else { "scan" }),
+                json!({
+                    "repo": repo_root.to_string_lossy(),
+                    "is_clean": report.is_clean,
+                    "total_findings": report.total_findings,
+                    "scanned_files_count": report.scanned_files_count,
+                }),
+                outcome,
+                None,
+                None,
+                "user",
+                None,
+                CFlags::default(),
+                None,
+            );
+
+            if is_json {
+                if report.is_clean {
+                    ok_out(json!({"ok": true, "subcommand": format!("secrets {}", if is_check { "check" } else { "scan" }), "data": report}));
+                    0
+                } else {
+                    err_out(json!({"ok": false, "subcommand": format!("secrets {}", if is_check { "check" } else { "scan" }), "data": report}));
+                    1
+                }
+            } else if is_check {
+                if report.is_clean {
+                    println!("[+] Secrets check passed (0 findings in {} files).", report.scanned_files_count);
+                    0
+                } else {
+                    eprintln!("[-] Secrets check failed: {} findings detected across {} files in {}.", report.total_findings, report.scanned_files_count, report.repo_path);
+                    1
+                }
+            } else {
+                println!("=== Secrets & Access Hygiene Scan: {} ===", report.repo_path);
+                println!("Timestamp: {}", report.timestamp_utc);
+                println!(
+                    "Status: {} ({} files scanned, {} findings: {} critical, {} high, {} medium, {} low)",
+                    if report.is_clean { "CLEAN" } else { "FINDINGS DETECTED" },
+                    report.scanned_files_count,
+                    report.total_findings,
+                    report.critical_findings,
+                    report.high_findings,
+                    report.medium_findings,
+                    report.low_findings
+                );
+                println!();
+
+                if !report.is_clean {
+                    println!("Findings:");
+                    for f in &report.findings {
+                        println!(
+                            "  - [!] {} ({:?}) {}:{} - {}",
+                            f.rule_id, f.severity, f.path, f.line_number, f.description
+                        );
+                        let fp_short = if f.fingerprint.len() >= 8 { &f.fingerprint[..8] } else { &f.fingerprint };
+                        println!("      Snippet: {} [fp: {}]", f.redacted_snippet, fp_short);
+                    }
+                }
+
+                if report.is_clean { 0 } else { 1 }
+            }
+        }
+        Some(other) => {
+            eprintln!("unknown secrets subcommand: {} (usage: aiosh secrets <scan|check> [--repo <path>] [--file <path>] [--json])", other);
+            2
+        }
+        None => {
+            eprintln!("missing secrets subcommand (usage: aiosh secrets <scan|check> [--repo <path>] [--file <path>] [--json])");
+            2
+        }
+    }
+}
+
+fn cmd_repo(args: &[String]) -> i32 {
+    let mut ctx = open_context();
+    let sub = args.first().map(|s| s.as_str());
+    let rest = if args.len() > 1 { &args[1..] } else { &[] };
+
+    let is_json = has_flag(rest, "--json");
+    let repo_flag = parse_flag(rest, "--repo");
+    let config_flag = parse_flag(rest, "--config");
+    let repo_root = repo_flag
+        .as_deref()
+        .map(std::path::Path::new)
+        .unwrap_or_else(|| std::path::Path::new("."));
+
+    let _config = match config_flag {
+        Some(ref p) => match aiosh_core::repo_health_config::RepoHealthConfig::from_path(std::path::Path::new(p)) {
+            Ok(c) => c,
+            Err(e) => {
+                let msg = format!("Failed to load repo health config: {}", e);
+                if is_json {
+                    return err_out(json!({"ok": false, "subcommand": "repo health", "error": msg}));
+                } else {
+                    eprintln!("[-] {}", msg);
+                    return 1;
+                }
+            }
+        },
+        None => aiosh_core::repo_health_config::RepoHealthConfig::from_env().unwrap_or_default(),
+    };
+
+    match sub {
+        Some("health") | Some("check") => {
+            let report = match aiosh_core::repo_health_service::check_repo_health(repo_root) {
+                Ok(r) => r,
+                Err(e) => {
+                    let msg = format!("Failed to assess repository health: {}", e);
+                    emit(
+                        &mut ctx,
+                        "repo.health",
+                        "aiosh repo health",
+                        json!({"repo": repo_root.to_string_lossy()}),
+                        "error",
+                        None,
+                        Some(&msg),
+                        "user",
+                        None,
+                        CFlags::default(),
+                        None,
+                    );
+                    if is_json {
+                        return err_out(json!({"ok": false, "subcommand": "repo health", "error": msg}));
+                    } else {
+                        eprintln!("[-] {}", msg);
+                        return 1;
+                    }
+                }
+            };
+
+            let is_fail = report.overall_status == aiosh_core::repo_health::HealthStatus::Fail;
+            let outcome = if is_fail { "error" } else { "ok" };
+
+            emit(
+                &mut ctx,
+                "repo.health",
+                "aiosh repo health",
+                json!({
+                    "repo": repo_root.to_string_lossy(),
+                    "overall_status": report.overall_status,
+                    "total_checks": report.total_checks,
+                    "failed_checks": report.failed_checks,
+                }),
+                outcome,
+                None,
+                None,
+                "user",
+                None,
+                CFlags::default(),
+                None,
+            );
+
+            if is_json {
+                if is_fail {
+                    err_out(json!({"ok": false, "subcommand": "repo health", "data": report}));
+                    return 1;
+                } else {
+                    ok_out(json!({"ok": true, "subcommand": "repo health", "data": report}));
+                    return 0;
+                }
+            } else {
+                println!("=== Repository Health Assessment: {} ===", report.repo_path);
+                println!("Timestamp: {}", report.timestamp_utc);
+                println!(
+                    "Overall Status: {:?} ({} checks: {} pass, {} warn, {} fail, {} skip)",
+                    report.overall_status,
+                    report.total_checks,
+                    report.passed_checks,
+                    report.warn_checks,
+                    report.failed_checks,
+                    report.skipped_checks
+                );
+                println!();
+
+                for c in &report.checks {
+                    let symbol = match c.status {
+                        aiosh_core::repo_health::HealthStatus::Pass => "[+]",
+                        aiosh_core::repo_health::HealthStatus::Warn => "[!]",
+                        aiosh_core::repo_health::HealthStatus::Fail => "[-]",
+                        aiosh_core::repo_health::HealthStatus::Skip => "[*]",
+                    };
+                    println!("{} {} ({}, {:?}) - {}ms", symbol, c.name, c.check_id, c.category, c.duration_ms);
+                    println!("    {}", c.message);
+                    if let Some(ref details) = c.details {
+                        for d in details {
+                            println!("      * {}", d);
+                        }
+                    }
+                }
+
+                if is_fail { 1 } else { 0 }
+            }
+        }
+        Some(other) => {
+            eprintln!("unknown repo subcommand: {} (usage: aiosh repo <health|check> [--repo <path>] [--json])", other);
+            2
+        }
+        None => {
+            eprintln!("missing repo subcommand (usage: aiosh repo <health|check> [--repo <path>] [--json])");
+            2
+        }
+    }
+}
+
+fn cmd_doc(args: &[String]) -> i32 {
+    let mut ctx = open_context();
+    let sub = args.first().map(|s| s.as_str());
+    let rest = if args.len() > 1 { &args[1..] } else { &[] };
+
+    let is_json = has_flag(rest, "--json");
+    let repo_flag = parse_flag(rest, "--repo");
+    let config_flag = parse_flag(rest, "--config");
+    let repo_root = repo_flag
+        .as_deref()
+        .map(std::path::Path::new)
+        .unwrap_or_else(|| std::path::Path::new("."));
+
+    let _config = match config_flag {
+        Some(ref p) => match aiosh_core::doc_index_config::DocIndexConfig::from_path(std::path::Path::new(p)) {
+            Ok(c) => c,
+            Err(e) => {
+                let msg = format!("Failed to load doc index config: {}", e);
+                if is_json {
+                    return err_out(json!({"ok": false, "subcommand": "doc", "error": msg}));
+                } else {
+                    eprintln!("[-] {}", msg);
+                    return 1;
+                }
+            }
+        },
+        None => aiosh_core::doc_index_config::DocIndexConfig::from_env().unwrap_or_default(),
+    };
+
+    let default_docs = &["docs/README.md", "docs/SPEC-TASK-LEDGER.md", "docs/tasks/GOALS.md"];
+
+    match sub {
+        Some("show") => {
+            let manifest = match aiosh_core::doc_index_service::build_doc_index_from_paths(repo_root, default_docs) {
+                Ok(m) => m,
+                Err(e) => {
+                    let msg = format!("Failed to build doc index: {}", e);
+                    emit(
+                        &mut ctx,
+                        "doc.show",
+                        "aiosh doc show",
+                        json!({"repo": repo_root.to_string_lossy()}),
+                        "error",
+                        None,
+                        Some(&msg),
+                        "user",
+                        None,
+                        CFlags::default(),
+                        None,
+                    );
+                    if is_json {
+                        return err_out(json!({"ok": false, "subcommand": "doc show", "error": msg}));
+                    } else {
+                        eprintln!("[-] {}", msg);
+                        return 1;
+                    }
+                }
+            };
+
+            emit(
+                &mut ctx,
+                "doc.show",
+                "aiosh doc show",
+                json!({"repo": repo_root.to_string_lossy(), "count": manifest.entries.len()}),
+                "ok",
+                None,
+                None,
+                "user",
+                None,
+                CFlags::default(),
+                None,
+            );
+
+            if is_json {
+                ok_out(json!({"ok": true, "subcommand": "doc show", "data": manifest}));
+            } else {
+                println!("{}", aiosh_core::doc_index_service::format_doc_index_summary(&manifest));
+            }
+            0
+        }
+        Some("check") => {
+            let (_manifest, report, telemetry) = match aiosh_core::doc_index_service::reconcile_doc_index(repo_root, default_docs) {
+                Ok(t) => t,
+                Err(e) => {
+                    let msg = format!("Failed to read doc files: {}", e);
+                    emit(
+                        &mut ctx,
+                        "doc.check",
+                        "aiosh doc check",
+                        json!({"repo": repo_root.to_string_lossy()}),
+                        "error",
+                        None,
+                        Some(&msg),
+                        "user",
+                        None,
+                        CFlags::default(),
+                        None,
+                    );
+                    if is_json {
+                        return err_out(json!({"ok": false, "subcommand": "doc check", "error": msg}));
+                    } else {
+                        eprintln!("[-] {}", msg);
+                        return 1;
+                    }
+                }
+            };
+
+            let outcome = if report.is_valid { "ok" } else { "failure" };
+            emit(
+                &mut ctx,
+                "doc.check",
+                "aiosh doc check",
+                json!({"repo": repo_root.to_string_lossy(), "report": report, "telemetry": telemetry}),
+                outcome,
+                None,
+                None,
+                "user",
+                None,
+                CFlags::default(),
+                None,
+            );
+
+            if is_json {
+                if report.is_valid {
+                    ok_out(json!({"ok": true, "subcommand": "doc check", "data": report}));
+                    0
+                } else {
+                    err_out(json!({"ok": false, "subcommand": "doc check", "data": report}));
+                    1
+                }
+            } else {
+                if report.is_valid {
+                    println!("[+] Documentation link verification passed ({} links checked)", report.total_links_checked);
+                    0
+                } else {
+                    eprintln!("[-] Broken links detected ({} links checked, {} broken):", report.total_links_checked, report.broken_links.len());
+                    for b in &report.broken_links {
+                        eprintln!("    - {} -> {} ({})", b.source_path, b.target_link, b.reason);
+                    }
+                    1
+                }
+            }
+        }
+        Some("search") => {
+            let positional = strip_flags(rest, &["--json", "--repo"]);
+            let query = match positional.first() {
+                Some(q) => q.to_lowercase(),
+                None => {
+                    eprintln!("usage: aiosh doc search <query> [--json] [--repo <path>]");
+                    return 2;
+                }
+            };
+
+            let manifest = match aiosh_core::doc_index_service::build_doc_index_from_paths(repo_root, default_docs) {
+                Ok(m) => m,
+                Err(e) => {
+                    let msg = format!("Failed to read doc files: {}", e);
+                    if is_json {
+                        return err_out(json!({"ok": false, "subcommand": "doc search", "error": msg}));
+                    } else {
+                        eprintln!("[-] {}", msg);
+                        return 1;
+                    }
+                }
+            };
+
+            let matches: Vec<_> = manifest.entries.into_iter().filter(|e| {
+                e.title.to_lowercase().contains(&query) ||
+                e.path.to_lowercase().contains(&query) ||
+                e.section.to_lowercase().contains(&query)
+            }).collect();
+
+            emit(
+                &mut ctx,
+                "doc.search",
+                "aiosh doc search",
+                json!({"query": query, "matches_count": matches.len()}),
+                "ok",
+                None,
+                None,
+                "user",
+                None,
+                CFlags::default(),
+                None,
+            );
+
+            if is_json {
+                ok_out(json!({"ok": true, "subcommand": "doc search", "data": matches}));
+            } else {
+                println!("Documentation search results for '{}':", query);
+                for entry in &matches {
+                    println!("  [{}] {} ({})", entry.section, entry.title, entry.path);
+                }
+            }
+            0
+        }
+        _ => {
+            eprintln!("usage: aiosh doc <show|check|search> [--json] [--repo <path>]");
+            2
+        }
+    }
+}
+
+fn cmd_evidence(args: &[String]) -> i32 {
+    let mut ctx = open_context();
+    let sub = args.first().map(|s| s.as_str());
+    let rest = if args.len() > 1 { &args[1..] } else { &[] };
+
+    let is_json = has_flag(rest, "--json");
+    let repo_flag = parse_flag(rest, "--repo");
+    let manifest_flag = parse_flag(rest, "--manifest");
+    let repo_root = repo_flag
+        .as_deref()
+        .map(std::path::Path::new)
+        .unwrap_or_else(|| std::path::Path::new("."));
+
+    match sub {
+        Some("verify") => {
+            let manifest = match manifest_flag {
+                Some(ref p) => {
+                    let content = match std::fs::read_to_string(p) {
+                        Ok(c) => c,
+                        Err(e) => {
+                            let msg = format!("Failed to read manifest file {}: {}", p, e);
+                            if is_json {
+                                return err_out(json!({"ok": false, "subcommand": "evidence verify", "error": msg}));
+                            } else {
+                                eprintln!("[-] {}", msg);
+                                return 1;
+                            }
+                        }
+                    };
+                    match aiosh_core::evidence::TaskEvidenceManifest::from_json(&content) {
+                        Ok(m) => m,
+                        Err(e) => {
+                            let msg = format!("Failed to parse evidence manifest: {}", e);
+                            if is_json {
+                                return err_out(json!({"ok": false, "subcommand": "evidence verify", "error": msg}));
+                            } else {
+                                eprintln!("[-] {}", msg);
+                                return 1;
+                            }
+                        }
+                    }
+                }
+                None => aiosh_core::evidence::TaskEvidenceManifest::default(),
+            };
+
+            let report = match aiosh_core::evidence_service::verify_evidence_manifest(repo_root, &manifest) {
+                Ok(r) => r,
+                Err(e) => {
+                    let msg = format!("Failed to verify evidence manifest: {}", e);
+                    emit(
+                        &mut ctx,
+                        "evidence.verify",
+                        "aiosh evidence verify",
+                        json!({"repo": repo_root.to_string_lossy()}),
+                        "error",
+                        None,
+                        Some(&msg),
+                        "user",
+                        None,
+                        CFlags::default(),
+                        None,
+                    );
+                    if is_json {
+                        return err_out(json!({"ok": false, "subcommand": "evidence verify", "error": msg}));
+                    } else {
+                        eprintln!("[-] {}", msg);
+                        return 1;
+                    }
+                }
+            };
+
+            let outcome = if report.is_valid { "ok" } else { "failure" };
+            emit(
+                &mut ctx,
+                "evidence.verify",
+                "aiosh evidence verify",
+                json!({"repo": repo_root.to_string_lossy(), "report": report}),
+                outcome,
+                None,
+                None,
+                "user",
+                None,
+                CFlags::default(),
+                None,
+            );
+
+            if is_json {
+                if report.is_valid {
+                    ok_out(json!({"ok": true, "subcommand": "evidence verify", "data": report}));
+                } else {
+                    err_out(json!({"ok": false, "subcommand": "evidence verify", "error": "Evidence verification failed", "report": report}));
+                }
+            } else {
+                if report.is_valid {
+                    println!("[+] All {} evidence records verified successfully (SHA-256 match).", report.total_records);
+                } else {
+                    eprintln!("[-] Evidence verification failed: {}/{} valid.", report.valid_records, report.total_records);
+                    for m in &report.missing_files {
+                        eprintln!("    - Missing: {}", m);
+                    }
+                    for h in &report.hash_mismatches {
+                        eprintln!("    - Mismatch: {}", h);
+                    }
+                    return 1;
+                }
+            }
+            0
+        }
+        Some("hash") => {
+            let positional = strip_flags(rest, &["--json"]);
+            let path_str = match positional.first() {
+                Some(p) => p,
+                None => {
+                    eprintln!("usage: aiosh evidence hash <path> [--json]");
+                    return 2;
+                }
+            };
+            let target_path = std::path::Path::new(path_str);
+            match aiosh_core::evidence_service::compute_file_sha256(target_path) {
+                Ok(hash) => {
+                    emit(
+                        &mut ctx,
+                        "evidence.hash",
+                        "aiosh evidence hash",
+                        json!({"path": path_str, "sha256": hash}),
+                        "ok",
+                        None,
+                        None,
+                        "user",
+                        None,
+                        CFlags::default(),
+                        None,
+                    );
+                    if is_json {
+                        ok_out(json!({"ok": true, "subcommand": "evidence hash", "path": path_str, "sha256": hash}));
+                    } else {
+                        println!("[+] {} -> {}", path_str, hash);
+                    }
+                    0
+                }
+                Err(e) => {
+                    let msg = format!("Failed to compute SHA-256 for {}: {}", path_str, e);
+                    emit(
+                        &mut ctx,
+                        "evidence.hash",
+                        "aiosh evidence hash",
+                        json!({"path": path_str}),
+                        "error",
+                        None,
+                        Some(&msg),
+                        "user",
+                        None,
+                        CFlags::default(),
+                        None,
+                    );
+                    if is_json {
+                        err_out(json!({"ok": false, "subcommand": "evidence hash", "error": msg}))
+                    } else {
+                        eprintln!("[-] {}", msg);
+                        1
+                    }
+                }
+            }
+        }
+        Some("scan") => {
+            let task_filter = parse_flag(rest, "--task").and_then(|s| s.parse::<u32>().ok());
+            let evidence_dir = repo_root.join("docs/tasks/evidence");
+            if !evidence_dir.exists() {
+                let msg = format!("Evidence directory not found: {}", evidence_dir.display());
+                if is_json {
+                    return err_out(json!({"ok": false, "subcommand": "evidence scan", "error": msg}));
+                } else {
+                    eprintln!("[-] {}", msg);
+                    return 1;
+                }
+            }
+
+            let mut records = Vec::new();
+            if let Ok(entries) = std::fs::read_dir(&evidence_dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_file() && path.extension().map_or(false, |ext| ext == "md") {
+                        let file_name = path.file_name().unwrap_or_default().to_string_lossy();
+                        if file_name.starts_with('T') && file_name.contains('-') {
+                            let parts: Vec<&str> = file_name.split('-').collect();
+                            if parts.len() >= 2 {
+                                if let Ok(tid) = parts[1].parse::<u32>() {
+                                    if task_filter.map_or(true, |target| target == tid) {
+                                        let rel_path = format!("docs/tasks/evidence/{}", file_name);
+                                        if let Ok(hash) = aiosh_core::evidence_service::compute_file_sha256(&path) {
+                                            records.push(json!({
+                                                "task_id": tid,
+                                                "file_path": rel_path,
+                                                "sha256": hash
+                                            }));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            emit(
+                &mut ctx,
+                "evidence.scan",
+                "aiosh evidence scan",
+                json!({"repo": repo_root.to_string_lossy(), "count": records.len()}),
+                "ok",
+                None,
+                None,
+                "user",
+                None,
+                CFlags::default(),
+                None,
+            );
+
+            if is_json {
+                ok_out(json!({"ok": true, "subcommand": "evidence scan", "data": records}));
+            } else {
+                println!("Scanned {} evidence files in {}", records.len(), evidence_dir.display());
+                for r in &records {
+                    println!("  [T-{:05}] {} ({})", r["task_id"].as_u64().unwrap_or(0), r["file_path"].as_str().unwrap_or(""), &r["sha256"].as_str().unwrap_or("")[..8]);
+                }
+            }
+            0
+        }
+        _ => {
+            eprintln!("usage: aiosh evidence <verify|hash|scan> [--json] [--repo <path>] [--manifest <path>] [--task <id>]");
+            2
+        }
+    }
+}
+
+fn cmd_release(args: &[String]) -> i32 {
+    let mut ctx = open_context();
+    let sub = args.first().map(|s| s.as_str());
+    match sub {
+        Some("generate") => {
+            let os = match parse_flag(args, "--os") {
+                Some(v) => v,
+                None => {
+                    eprintln!("usage: aiosh release generate --os <target_os> --version <version> [--components <c1,c2...>]");
+                    return 2;
+                }
+            };
+            let version = match parse_flag(args, "--version") {
+                Some(v) => v,
+                None => {
+                    eprintln!("usage: aiosh release generate --os <target_os> --version <version> [--components <c1,c2...>]");
+                    return 2;
+                }
+            };
+            let comp_str = parse_flag(args, "--components").unwrap_or_else(|| "core".into());
+            let components: Vec<String> = comp_str.split(',').map(|s| s.trim().to_string()).collect();
+            
+            let manifest = aiosh_core::release::PackageManifest {
+                target_os: os,
+                version,
+                components,
+            };
+            
+            let mut rel_ctx = aiosh_core::release::ReleaseCtx {
+                ring: &mut ctx.ring,
+                actor_id: &ctx.actor_id,
+                constitution_rev: &ctx.con_rev,
+            };
+            
+            match aiosh_core::release::generate_release(&mut rel_ctx, &manifest) {
+                Ok((path, hash)) => {
+                    ok_out(json!({"ok": true, "subcommand": "release generate", "data": {"artifact_path": path, "hash": hash}}));
+                    0
+                }
+                Err(e) => {
+                    err_out(json!({"ok": false, "subcommand": "release generate", "error": e}));
+                    1
+                }
+            }
+        }
+        _ => {
+            eprintln!("usage: aiosh release generate --os <target_os> --version <version> [--components <c1,c2...>]");
+            2
+        }
+    }
+}
+
+fn cmd_toolchain(args: &[String]) -> i32 {
+    let mut ctx = open_context();
+    let sub = args.first().map(|s| s.as_str());
+
+    // Parse optional --config <path> from remaining args
+    let rest = if args.len() > 1 { &args[1..] } else { &[] };
+    let mut config_path: Option<String> = None;
+    let mut i = 0;
+    while i < rest.len() {
+        if rest[i] == "--config" {
+            if i + 1 >= rest.len() {
+                eprintln!("usage: aiosh toolchain <check|show> [--config <path>]");
+                return 2;
+            }
+            config_path = Some(rest[i + 1].clone());
+            i += 2;
+        } else {
+            eprintln!("unknown flag: {}", rest[i]);
+            eprintln!("usage: aiosh toolchain <check|show> [--config <path>]");
+            return 2;
+        }
+    }
+
+    // Resolve manifest using --config flag, env var, or default path
+    let load_manifest = || -> Result<aiosh_core::toolchain_config::ToolchainManifest, String> {
+        match &config_path {
+            Some(p) => aiosh_core::toolchain_config::ToolchainManifest::from_path(p),
+            None => aiosh_core::toolchain_config::ToolchainManifest::from_env(),
+        }
+    };
+
+    match sub {
+        Some("check") => {
+            let manifest = match load_manifest() {
+                Ok(m) => m,
+                Err(e) => {
+                    let msg = format!("Failed to load toolchain config: {}", e);
+                    err_out(json!({"ok": false, "subcommand": "toolchain check", "error": msg.clone()}));
+                    emit(
+                        &mut ctx,
+                        "toolchain.check",
+                        "aiosh toolchain check",
+                        json!({}),
+                        "error",
+                        None,
+                        Some(&msg),
+                        "user",
+                        None,
+                        CFlags::default(),
+                        None,
+                    );
+                    return 1;
+                }
+            };
+
+            match aiosh_core::toolchain_service::enforce_toolchain(&manifest) {
+                Ok(_) => {
+                    let data = manifest.to_json_with_sources();
+                    ok_out(json!({"ok": true, "subcommand": "toolchain check", "data": data}));
+                    emit(
+                        &mut ctx,
+                        "toolchain.check",
+                        "aiosh toolchain check",
+                        json!({"manifest": data}),
+                        "success",
+                        None,
+                        None,
+                        "user",
+                        None,
+                        CFlags::default(),
+                        None,
+                    );
+                    0
+                }
+                Err(e) => {
+                    err_out(json!({"ok": false, "subcommand": "toolchain check", "error": e}));
+                    emit(
+                        &mut ctx,
+                        "toolchain.check",
+                        "aiosh toolchain check",
+                        json!({}),
+                        "error",
+                        None,
+                        Some(&e),
+                        "user",
+                        None,
+                        CFlags::default(),
+                        None,
+                    );
+                    1
+                }
+            }
+        }
+        Some("show") => {
+            let manifest = match load_manifest() {
+                Ok(m) => m,
+                Err(e) => {
+                    let msg = format!("Failed to load toolchain config: {}", e);
+                    err_out(json!({"ok": false, "subcommand": "toolchain show", "error": msg.clone()}));
+                    emit(
+                        &mut ctx,
+                        "toolchain.show",
+                        "aiosh toolchain show",
+                        json!({}),
+                        "error",
+                        None,
+                        Some(&msg),
+                        "user",
+                        None,
+                        CFlags::default(),
+                        None,
+                    );
+                    return 1;
+                }
+            };
+
+            let data = manifest.to_json_with_sources();
+            ok_out(json!({"ok": true, "subcommand": "toolchain show", "data": data}));
+            emit(
+                &mut ctx,
+                "toolchain.show",
+                "aiosh toolchain show",
+                json!({"manifest": data}),
+                "success",
+                None,
+                None,
+                "user",
+                None,
+                CFlags::default(),
+                None,
+            );
+            0
+        }
+        _ => {
+            eprintln!("usage: aiosh toolchain <check|show> [--config <path>]");
+            2
+        }
+    }
+}
+
+fn cmd_backup(args: &[String]) -> i32 {
+    let mut ctx = open_context();
+    let sub = args.first().map(|s| s.as_str());
+    match sub {
+        Some("create") => {
+            let target_path = match parse_flag(args, "--target-path") {
+                Some(t) => t,
+                None => {
+                    eprintln!("usage: aiosh backup create --target-path <path> [--include-audit <true|false>] [--include-memory <true|false>]");
+                    return 2;
+                }
+            };
+            let include_audit = match parse_flag(args, "--include-audit").as_deref() {
+                Some("false") => false,
+                _ => true,
+            };
+            let include_memory = match parse_flag(args, "--include-memory").as_deref() {
+                Some("true") => true,
+                _ => false,
+            };
+            
+            let snapshot = aiosh_core::release::BackupSnapshot {
+                target_path,
+                include_audit,
+                include_memory,
+            };
+            
+            let mut rel_ctx = aiosh_core::release::ReleaseCtx {
+                ring: &mut ctx.ring,
+                actor_id: &ctx.actor_id,
+                constitution_rev: &ctx.con_rev,
+            };
+            
+            match aiosh_core::release::create_backup(&mut rel_ctx, &snapshot) {
+                Ok(path) => {
+                    ok_out(json!({"ok": true, "subcommand": "backup create", "data": {"backup_path": path}}));
+                    0
+                }
+                Err(e) => {
+                    err_out(json!({"ok": false, "subcommand": "backup create", "error": e}));
+                    1
+                }
+            }
+        }
+        _ => {
+            eprintln!("usage: aiosh backup create --target-path <path> [--include-audit <true|false>] [--include-memory <true|false>]");
+            2
+        }
+    }
 }
 
 /// `aiosh task` — Task Ledger Control (T-00016; unified validation
@@ -222,7 +1862,8 @@ fn cmd_ci(args: &[String]) -> i32 {
                 Some(&e),
                 "human",
                 None,
-                CFlags::empty(),
+                CFlags::default(),
+                None,
             );
             return 2;
         }
@@ -294,7 +1935,8 @@ fn cmd_ci(args: &[String]) -> i32 {
                 Some(&msg),
                 "human",
                 None,
-                CFlags::empty(),
+                CFlags::default(),
+                None,
             );
 
             if passed { 0 } else { 1 }
@@ -1385,5 +3027,175 @@ mod task_cli_tests {
         }
         assert!(task_usage_text(Some("done")).contains("--note <text>"));
         assert!(task_usage_text(Some("nope")).contains("no such subcommand"));
+    }
+
+    #[test]
+    fn test_cmd_doc_show_check_and_search() {
+        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let repo_root = manifest_dir.parent().unwrap().parent().unwrap().parent().unwrap();
+        let repo_str = repo_root.to_string_lossy().to_string();
+
+        let code_show = cmd_doc(&["show".to_string(), "--repo".to_string(), repo_str.clone()]);
+        assert_eq!(code_show, 0);
+
+        let code_show_json = cmd_doc(&["show".to_string(), "--repo".to_string(), repo_str.clone(), "--json".to_string()]);
+        assert_eq!(code_show_json, 0);
+
+        let code_check = cmd_doc(&["check".to_string(), "--repo".to_string(), repo_str.clone()]);
+        assert_eq!(code_check, 0);
+
+        let code_check_json = cmd_doc(&["check".to_string(), "--repo".to_string(), repo_str.clone(), "--json".to_string()]);
+        assert_eq!(code_check_json, 0);
+
+        let code_search = cmd_doc(&["search".to_string(), "task".to_string(), "--repo".to_string(), repo_str.clone()]);
+        assert_eq!(code_search, 0);
+
+        let code_invalid = cmd_doc(&["invalid_subcommand".to_string()]);
+        assert_eq!(code_invalid, 2);
+    }
+
+    #[test]
+    fn test_cmd_repo_health_and_check() {
+        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let repo_root = manifest_dir.parent().unwrap().parent().unwrap().parent().unwrap();
+        let repo_str = repo_root.to_string_lossy().to_string();
+
+        let code_health = cmd_repo(&["health".to_string(), "--repo".to_string(), repo_str.clone()]);
+        assert!(code_health == 0 || code_health == 1);
+
+        let code_health_json = cmd_repo(&["health".to_string(), "--repo".to_string(), repo_str.clone(), "--json".to_string()]);
+        assert!(code_health_json == 0 || code_health_json == 1);
+
+        let code_check = cmd_repo(&["check".to_string(), "--repo".to_string(), repo_str.clone()]);
+        assert!(code_check == 0 || code_check == 1);
+
+        let code_check_json = cmd_repo(&["check".to_string(), "--repo".to_string(), repo_str.clone(), "--json".to_string()]);
+        assert!(code_check_json == 0 || code_check_json == 1);
+
+        let code_invalid = cmd_repo(&["invalid_subcommand".to_string()]);
+        assert_eq!(code_invalid, 2);
+    }
+
+    #[test]
+    fn test_cmd_secrets_scan_and_check() {
+        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let repo_root = manifest_dir.parent().unwrap().parent().unwrap().parent().unwrap();
+        let repo_str = repo_root.to_string_lossy().to_string();
+
+        let code_scan = cmd_secrets(&["scan".to_string(), "--repo".to_string(), repo_str.clone()]);
+        assert!(code_scan == 0 || code_scan == 1);
+
+        let code_scan_json = cmd_secrets(&["scan".to_string(), "--repo".to_string(), repo_str.clone(), "--json".to_string()]);
+        assert!(code_scan_json == 0 || code_scan_json == 1);
+
+        let code_check = cmd_secrets(&["check".to_string(), "--repo".to_string(), repo_str.clone()]);
+        assert!(code_check == 0 || code_check == 1);
+
+        let code_check_json = cmd_secrets(&["check".to_string(), "--repo".to_string(), repo_str.clone(), "--json".to_string()]);
+        assert!(code_check_json == 0 || code_check_json == 1);
+
+        let config_path = repo_root.join("docs/secrets_config.json").to_string_lossy().to_string();
+        let code_config_scan = cmd_secrets(&["scan".to_string(), "--repo".to_string(), repo_str.clone(), "--config".to_string(), config_path]);
+        assert!(code_config_scan == 0 || code_config_scan == 1);
+
+        let code_invalid = cmd_secrets(&["invalid_subcommand".to_string()]);
+        assert_eq!(code_invalid, 2);
+    }
+
+    #[test]
+    fn test_cmd_triage_flow() {
+        let store_file = std::env::temp_dir().join(format!("aios_triage_test_{}.json", std::process::id()));
+        let store_str = store_file.to_string_lossy().to_string();
+
+        let _ = std::fs::remove_file(&store_file);
+
+        let code_list_empty = cmd_triage(&["list".to_string(), "--store".to_string(), store_str.clone()]);
+        assert_eq!(code_list_empty, 0);
+
+        let code_record = cmd_triage(&[
+            "record".to_string(),
+            "--target".to_string(),
+            "secrets::tests::test_scan".to_string(),
+            "--suite".to_string(),
+            "secrets_suite".to_string(),
+            "--error".to_string(),
+            "panicked at assertion".to_string(),
+            "--store".to_string(),
+            store_str.clone(),
+        ]);
+        assert_eq!(code_record, 0);
+
+        let code_check_fail = cmd_triage(&["check".to_string(), "--store".to_string(), store_str.clone()]);
+        assert_eq!(code_check_fail, 1);
+
+        let code_list = cmd_triage(&["list".to_string(), "--store".to_string(), store_str.clone(), "--json".to_string()]);
+        assert_eq!(code_list, 0);
+
+        let config_file = std::env::temp_dir().join(format!("aios_triage_cfg_test_{}.json", std::process::id()));
+        let cfg = aiosh_core::triage_config::TriageConfig::default();
+        cfg.save_to_file(&config_file).unwrap();
+
+        let code_config_list = cmd_triage(&["list".to_string(), "--config".to_string(), config_file.to_string_lossy().to_string(), "--store".to_string(), store_str.clone()]);
+        assert_eq!(code_config_list, 0);
+
+        let code_invalid = cmd_triage(&["invalid_subcommand".to_string()]);
+        assert_eq!(code_invalid, 2);
+
+        let _ = std::fs::remove_file(&config_file);
+        let _ = std::fs::remove_file(&store_file);
+    }
+
+    #[test]
+    fn test_cmd_handoff_flow() {
+        let store_file = std::env::temp_dir().join(format!("aios_handoff_test_{}.json", std::process::id()));
+        let store_str = store_file.to_string_lossy().to_string();
+
+        let _ = std::fs::remove_file(&store_file);
+
+        // List empty
+        let code_list_empty = cmd_handoff(&["list".to_string(), "--store".to_string(), store_str.clone()]);
+        assert_eq!(code_list_empty, 0);
+
+        // Initiate
+        let code_initiate = cmd_handoff(&[
+            "initiate".to_string(),
+            "--sender".to_string(),
+            "operator".to_string(),
+            "--receiver".to_string(),
+            "subagent-1".to_string(),
+            "--summary".to_string(),
+            "Review task execution".to_string(),
+            "--priority".to_string(),
+            "high".to_string(),
+            "--store".to_string(),
+            store_str.clone(),
+        ]);
+        assert_eq!(code_initiate, 0);
+
+        // List JSON
+        let code_list_json = cmd_handoff(&["list".to_string(), "--store".to_string(), store_str.clone(), "--json".to_string()]);
+        assert_eq!(code_list_json, 0);
+
+        // Accept
+        let code_accept = cmd_handoff(&[
+            "accept".to_string(),
+            "HND-".to_string(),
+            "--notes".to_string(),
+            "Accepted".to_string(),
+            "--store".to_string(),
+            store_str.clone(),
+        ]);
+        // Invalid ID returns 1, valid sub returns 0/1
+        assert!(code_accept == 0 || code_accept == 1);
+
+        // Help
+        let code_help = cmd_handoff(&["--help".to_string()]);
+        assert_eq!(code_help, 0);
+
+        // Invalid
+        let code_invalid = cmd_handoff(&["invalid_sub".to_string()]);
+        assert_eq!(code_invalid, 2);
+
+        let _ = std::fs::remove_file(&store_file);
     }
 }

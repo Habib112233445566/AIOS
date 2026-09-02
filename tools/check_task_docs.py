@@ -30,7 +30,7 @@ LEDGER_JSONL = ROOT / "docs" / "tasks" / "MASTER_TASK_LEDGER.jsonl"
 GOALS = ROOT / "docs" / "tasks" / "GOALS.md"
 DOCS_README = ROOT / "docs" / "README.md"
 
-PASS, FAIL = "[✓]", "[✗]"
+PASS, FAIL = "[+]", "[-]"
 
 #: Frozen epic ranges per §8.x subsection (spec C2).
 COMPONENT_SECTIONS: dict[str, str] = {

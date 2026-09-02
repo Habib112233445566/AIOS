@@ -1,5 +1,793 @@
 # Progress Log
 
+## 2026-09-01 — T-01001..T-01010 SHIPPED: Distro Selection & Justification Data Model CLOSED (Phase 1 Inception, Criteria D1, 10/10 tasks)
+
+**What shipped:**
+- Created `DistroProfile`, `DistroEvaluation`, `DistroFamily`, `InitSystem`, `ArchTarget`, and `CLibrary` in `code/aiosh-rust/aiosh-core/src/distro.rs`.
+- Implemented `validate_distro_profile` enforcing semver kernel parsing, profile ID character whitelisting, and field bounds.
+- Implemented `DistroEvaluation::evaluate` with weighted multi-criteria scoring algorithm.
+- Created standalone test runner `tools/test_distro_suites.py` with criterion `D1`.
+- Created behavioral unit test suite `tools/test_distro_unit.py` (U01..U04).
+- Updated documentation in `docs/README.md`.
+
+**Verified:**
+- `python tools/check_security_policy.py` (S1..S5 PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- `python tools/check_evidence.py` (E1..E4 PASS across 2400+ evidence files).
+- `python tools/test_distro_suites.py` (D1 PASS).
+- `python tools/test_distro_unit.py` (U01..U04 PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --lib distro` (PASS).
+- Evidence chain: `docs/tasks/evidence/T-01001-data-model-research.md` … `T-01010-verify.md`.
+- Milestone: **Distro Selection & Justification / data model CLOSED — 10/10 tasks** (T-01001..T-01010). Pointer $\to$ **T-01011** (`Distro Selection & Justification / core service: Research`).
+
+
+## 2026-08-31 — T-00991..T-01000 SHIPPED: Agent Handoff Protocol Documentation CLOSED (Full Epic Complete 100/100, Criteria H1..H8, TASK 1000 ACHIEVED!)
+
+**What shipped:**
+- Completed comprehensive documentation across `docs/README.md` covering all 8 criteria of Agent Handoff Protocol:
+  - Data Model (`H1`), Core Service Store (`H2`), CLI Surface (`H3`), MCP/API Surface (`H4`), Configuration (`H5`), Automated Tests (`H6`), Security Policy (`H7`), and Observability (`H8`).
+- Verified all rot-proof documentation invariants C1..C6 with zero errors.
+- Completed the entire **Agent Handoff Protocol Epic (`T-00911..T-01000` — 100/100 tasks)**.
+- Reached **1,000 tasks completed (10.00% of master task ledger)**!
+
+**Verified:**
+- `python tools/check_security_policy.py` (S1..S5 PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- `python tools/check_evidence.py` (E1..E4 PASS across 2350+ evidence files).
+- `python tools/test_handoff_suites.py` (H1..H8 PASS).
+- `python tools/test_handoff_unit.py` (U01..U17 PASS).
+- Evidence chain: `docs/tasks/evidence/T-00991-documentation-research.md` … `T-01000-verify.md`.
+- Milestone: **Agent Handoff Protocol Epic CLOSED — 100/100 tasks (T-00911..T-01000)**. Pointer $\to$ **T-01001** (`Phase 0 / Agent Coordination Protocol / data model: Research`).
+
+
+## 2026-08-31 — T-00981..T-00990 SHIPPED: Agent Handoff Protocol Observability CLOSED (HandoffReport & Metrics, Criteria H1..H8, 10/10 tasks)
+
+**What shipped:**
+- Implemented status aggregation and report generation in `code/aiosh-rust/aiosh-core/src/handoff.rs`:
+  - `HandoffReport` with `timestamp_utc`, `total_handoffs`, `active_handoffs`, `completed_handoffs`.
+  - Invariant validator `validate_handoff_report` asserting total arithmetic integrity.
+- Extended standalone test runner `tools/test_handoff_suites.py` with criterion `H8`.
+- Updated behavioral unit test suite `tools/test_handoff_unit.py` (U01..U17).
+- Updated documentation in `docs/README.md`.
+
+**Verified:**
+- `python tools/check_security_policy.py` (S1..S5 PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- `python tools/check_evidence.py` (E1..E4 PASS across 2300+ evidence files).
+- `python tools/test_handoff_suites.py` (H1..H8 PASS).
+- `python tools/test_handoff_unit.py` (U01..U17 PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --lib test_handoff_report_validation_and_serde` (PASS).
+- Evidence chain: `docs/tasks/evidence/T-00981-observability-research.md` … `T-00990-verify.md`.
+- Milestone: **Agent Handoff Protocol / observability CLOSED — 10/10 tasks** (T-00981..T-00990). Pointer $\to$ **T-00991** (`Agent Handoff Protocol / documentation: Research`).
+
+
+## 2026-08-31 — T-00971..T-00980 SHIPPED: Agent Handoff Protocol Security Policy CLOSED (PEP Matrix, Criteria H1..H7, 10/10 tasks)
+
+**What shipped:**
+- Implemented actor authorization validation in `code/aiosh-rust/aiosh-core/src/handoff.rs`:
+  - `can_agent_act` and `verify_handoff_authorization` methods.
+  - Role-based policy: Receiver agents only for accept/reject/complete, sender agents only for cancel, universal override for operators/admins.
+- Updated `HandoffStore` in `code/aiosh-rust/aiosh-core/src/handoff_service.rs` with actor-verified transitions.
+- Extended standalone test runner `tools/test_handoff_suites.py` with criterion `H7`.
+- Updated behavioral unit test suite `tools/test_handoff_unit.py` (U01..U15).
+- Updated documentation in `docs/README.md`.
+
+**Verified:**
+- `python tools/check_security_policy.py` (S1..S5 PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- `python tools/check_evidence.py` (E1..E4 PASS across 2300+ evidence files).
+- `python tools/test_handoff_suites.py` (H1..H7 PASS).
+- `python tools/test_handoff_unit.py` (U01..U15 PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --lib test_handoff_authorization_matrix` (PASS).
+- Evidence chain: `docs/tasks/evidence/T-00971-security-policy-research.md` … `T-00980-verify.md`.
+- Milestone: **Agent Handoff Protocol / security policy CLOSED — 10/10 tasks** (T-00971..T-00980). Pointer $\to$ **T-00981** (`Agent Handoff Protocol / observability: Research`).
+
+
+## 2026-08-31 — T-00961..T-00970 SHIPPED: Agent Handoff Protocol Automated Tests CLOSED (State Matrix & Fuzzing, Criteria H1..H6, 10/10 tasks)
+
+**What shipped:**
+- Implemented edge-case validation, lifecycle state matrix tests, and batch fuzzing in `code/aiosh-rust/aiosh-core/src/handoff_service.rs`:
+  - `test_handoff_automated_edge_cases`: Full rejection paths, cancellations, terminal state immutability, batch processing of 50+ concurrent requests.
+- Extended standalone test runner `tools/test_handoff_suites.py` with criterion `H6`.
+- Updated behavioral unit test suite `tools/test_handoff_unit.py` (U01..U13).
+- Updated documentation in `docs/README.md`.
+
+**Verified:**
+- `python tools/check_security_policy.py` (S1..S5 PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- `python tools/check_evidence.py` (E1..E4 PASS across 2200+ evidence files).
+- `python tools/test_handoff_suites.py` (H1..H6 PASS).
+- `python tools/test_handoff_unit.py` (U01..U13 PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --lib test_handoff_automated_edge_cases` (PASS).
+- Evidence chain: `docs/tasks/evidence/T-00961-automated-tests-research.md` … `T-00970-verify.md`.
+- Milestone: **Agent Handoff Protocol / automated tests CLOSED — 10/10 tasks** (T-00961..T-00970). Pointer $\to$ **T-00971** (`Agent Handoff Protocol / security policy: Research`).
+
+
+## 2026-08-31 — T-00951..T-00960 SHIPPED: Agent Handoff Protocol Configuration CLOSED (HandoffConfig, Criteria H1..H5, 10/10 tasks)
+
+**What shipped:**
+- Implemented `HandoffConfig` in `code/aiosh-rust/aiosh-core/src/handoff_config.rs`:
+  - `max_store_bytes`, `default_priority`, `default_ttl_seconds`, `allow_auto_accept`, and `store_path` settings.
+  - Fail-safe configuration loading from CLI flag, environment variables (`AIOSH_HANDOFF_CONFIG`, `AIOSH_HANDOFF_STORE`), and fallback default file `docs/handoff_config.json`.
+- Updated `HandoffStore` in `code/aiosh-rust/aiosh-core/src/handoff_service.rs` with `load_from_path_with_config` and `load_or_recover_with_config`.
+- Extended standalone test runner `tools/test_handoff_suites.py` with criterion `H5`.
+- Updated behavioral unit test suite `tools/test_handoff_unit.py` (U01..U11).
+- Updated documentation in `docs/README.md`.
+
+**Verified:**
+- `python tools/check_security_policy.py` (S1..S5 PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- `python tools/check_evidence.py` (E1..E4 PASS across 2200+ evidence files).
+- `python tools/test_handoff_suites.py` (H1..H5 PASS).
+- `python tools/test_handoff_unit.py` (U01..U11 PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --lib handoff_config` (PASS).
+- Evidence chain: `docs/tasks/evidence/T-00951-configuration-research.md` … `T-00960-verify.md`.
+- Milestone: **Agent Handoff Protocol / configuration CLOSED — 10/10 tasks** (T-00951..T-00960). Pointer $\to$ **T-00961** (`Agent Handoff Protocol / automated tests: Research`).
+
+
+## 2026-08-31 — T-00941..T-00950 SHIPPED: Agent Handoff Protocol MCP/API Surface CLOSED (aiosh-mcp tools, Criteria H1..H4, 10/10 tasks)
+
+**What shipped:**
+- Implemented `aiosh-mcp` tools in `code/aiosh-rust/aiosh-mcp/src/main.rs`:
+  - `aios.handoff.list`: Model tool to list active/historical handoffs.
+  - `aios.handoff.show`: Model tool to retrieve handoff context and payload.
+  - `aios.handoff.initiate`: Model tool to enqueue inter-agent handoff requests.
+  - `aios.handoff.accept / reject / complete / cancel`: Model tools for handoff state transitions.
+  - Automatic PEP authorization and SQLite WAL audit logging via `dispatch::recorded_call`.
+- Extended standalone test runner `tools/test_handoff_suites.py` with criterion `H4`.
+- Updated behavioral unit test suite `tools/test_handoff_unit.py` (U01..U09).
+- Updated documentation in `docs/README.md`.
+
+**Verified:**
+- `python tools/check_security_policy.py` (S1..S5 PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- `python tools/check_evidence.py` (E1..E4 PASS across 2200+ evidence files).
+- `python tools/test_handoff_suites.py` (H1..H4 PASS).
+- `python tools/test_handoff_unit.py` (U01..U09 PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --bin aiosh-mcp test_mcp_handoff_tools` (PASS).
+- Evidence chain: `docs/tasks/evidence/T-00941-mcp-api-surface-research.md` … `T-00950-verify.md`.
+- Milestone: **Agent Handoff Protocol / MCP/API surface CLOSED — 10/10 tasks** (T-00941..T-00950). Pointer $\to$ **T-00951** (`Agent Handoff Protocol / configuration: Research`).
+
+
+## 2026-08-31 — T-00931..T-00940 SHIPPED: Agent Handoff Protocol CLI Surface CLOSED (aiosh handoff, Audit Trail, Criteria H1..H3, 10/10 tasks)
+
+**What shipped:**
+- Implemented `aiosh handoff` CLI surface in `code/aiosh-rust/aiosh-cli/src/main.rs`:
+  - `aiosh handoff list`: List active and historical handoffs with optional status/active filtering and JSON output.
+  - `aiosh handoff show`: Inspect full details and context payload of a single handoff record.
+  - `aiosh handoff initiate`: Enqueue handoff between sender and receiver agents with context summary, priority, and task ID.
+  - `aiosh handoff accept / reject / complete / cancel`: Lifecycle state transitions with resolution notes.
+  - Synchronous audit row emission on state modifications via `classify_and_emit`.
+- Extended standalone test runner `tools/test_handoff_suites.py` with criterion `H3`.
+- Updated behavioral unit test suite `tools/test_handoff_unit.py` (U01..U07).
+- Updated documentation in `docs/README.md`.
+
+**Verified:**
+- `python tools/check_security_policy.py` (S1..S5 PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- `python tools/check_evidence.py` (E1..E4 PASS across 2200+ evidence files).
+- `python tools/test_handoff_suites.py` (H1..H3 PASS).
+- `python tools/test_handoff_unit.py` (U01..U07 PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --bin aiosh test_cmd_handoff_flow` (PASS).
+- Evidence chain: `docs/tasks/evidence/T-00931-cli-surface-research.md` … `T-00940-verify.md`.
+- Milestone: **Agent Handoff Protocol / CLI surface CLOSED — 10/10 tasks** (T-00931..T-00940). Pointer $\to$ **T-00941** (`Agent Handoff Protocol / MCP/API surface: Research`).
+
+
+## 2026-08-31 — T-00921..T-00930 SHIPPED: Agent Handoff Protocol Core Service CLOSED (HandoffStore, State Transitions, Criteria H1..H2, 10/10 tasks)
+
+**What shipped:**
+- Implemented `HandoffStore` in `code/aiosh-rust/aiosh-core/src/handoff_service.rs`:
+  - Lifecycle state machine transitions: `initiate_handoff`, `accept_handoff`, `reject_handoff`, `complete_handoff`, `cancel_handoff`.
+  - Duplicate in-flight detection and non-replayable indexing via SHA-256 signatures.
+  - Active queue filtering and aggregated `HandoffReport` compilation.
+  - Atomic persistence (`.tmp` write + rename) and corruption recovery (`load_or_recover`).
+- Extended standalone test runner `tools/test_handoff_suites.py` with criterion `H2`.
+- Updated behavioral unit test suite `tools/test_handoff_unit.py` (U01..U05).
+- Updated documentation in `docs/README.md`.
+
+**Verified:**
+- `python tools/check_security_policy.py` (S1..S5 PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- `python tools/check_evidence.py` (E1..E4 PASS across 2200+ evidence files).
+- `python tools/test_handoff_suites.py` (H1..H2 PASS).
+- `python tools/test_handoff_unit.py` (U01..U05 PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --lib handoff_service` (All tests PASS).
+- Evidence chain: `docs/tasks/evidence/T-00921-core-service-research.md` … `T-00930-verify.md`.
+- Milestone: **Agent Handoff Protocol / core service CLOSED — 10/10 tasks** (T-00921..T-00930). Pointer $\to$ **T-00931** (`Agent Handoff Protocol / CLI surface: Research`).
+
+
+## 2026-08-31 — T-00911..T-00920 SHIPPED: Agent Handoff Protocol Data Model CLOSED (HandoffRecord, HandoffReport, Criteria H1, 10/10 tasks)
+
+**What shipped:**
+- Implemented core data primitives in `code/aiosh-rust/aiosh-core/src/handoff.rs`:
+  - `HandoffRecord`: Cryptographically signed, bounded handoff data container (`HND-<hash>`).
+  - `HandoffReport`: Aggregated report tracking active vs completed handoff distributions.
+  - `HandoffStatus`: `Pending`, `Accepted`, `Rejected`, `Completed`, `Cancelled`, `Expired`.
+  - `HandoffPriority`: `Low`, `Normal`, `High`, `Urgent`.
+  - `compute_handoff_signature`: Deterministic SHA-256 fingerprinting.
+  - `validate_handoff_record` & `validate_handoff_report`: Invariant validation engines.
+- Built standalone test runner `tools/test_handoff_suites.py` validating criterion `H1`.
+- Built behavioral unit suite `tools/test_handoff_unit.py` (U01..U03).
+- Added `## Agent Handoff Protocol (T-00911..T-01000)` documentation to `docs/README.md`.
+
+**Verified:**
+- `python tools/check_security_policy.py` (S1..S5 PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- `python tools/check_evidence.py` (E1..E4 PASS across 2170+ evidence files).
+- `python tools/test_handoff_suites.py` (H1 PASS).
+- `python tools/test_handoff_unit.py` (U01..U03 PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --lib handoff` (All tests PASS).
+- Evidence chain: `docs/tasks/evidence/T-00911-data-model-research.md` … `T-00920-verify.md`.
+- Milestone: **Agent Handoff Protocol / data model CLOSED — 10/10 tasks** (T-00911..T-00920). Pointer $\to$ **T-00921** (`Agent Handoff Protocol / core service: Research`).
+
+
+## 2026-08-31 — T-00901..T-00910 SHIPPED: Regression Triage Recovery & Validation CLOSED (validate_triage_record, load_or_recover, Criteria T1..T8, EPIC 100/100 CLOSED)
+
+**What shipped:**
+- Implemented `validate_triage_record` structural checks (prefix `TRG-`, 64-char SHA-256 signature, non-empty fields, occurrence bounds) in `aiosh-core::triage`.
+- Implemented `TriageStore::load_or_recover` in `aiosh-core::triage_service` for fault-tolerant corruption recovery and honest diagnostic emission.
+- Added criterion `T8` to `tools/test_triage_suites.py`.
+- Updated unit test suite `tools/test_triage_unit.py` (U01..U09).
+- Documented recovery procedures and validation engine in `docs/README.md`.
+- **EPIC COMPLETE**: **Regression Triage (T-00811..T-00910) 100/100 tasks CLOSED**.
+
+**Verified:**
+- `python tools/check_security_policy.py` (S1..S5 PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- `python tools/check_evidence.py` (E1..E4 PASS across 2150+ evidence files).
+- `python tools/test_triage_suites.py` (T1..T8 PASS).
+- `python tools/test_triage_unit.py` (U01..U09 PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --lib triage` (All 13 tests PASS).
+- Evidence chain: `docs/tasks/evidence/T-00901-recovery-validation-research.md` … `T-00910-verify.md`.
+- Milestone: **Regression Triage / recovery & validation CLOSED — 10/10 tasks** (T-00901..T-00910). Pointer $\to$ **T-00911** (`Agent Handoff Protocol / data model: Research`).
+
+
+## 2026-08-31 — T-00891..T-00900 SHIPPED: Regression Triage Documentation CLOSED (Comprehensive Docs, Invariants C1..C6, 10/10 tasks)
+
+**What shipped:**
+- Comprehensive documentation for Regression Triage in `docs/README.md`:
+  - Data model and deterministic SHA-256 failure fingerprints.
+  - Triage store persistence, atomic saving, and CI test summary ingestion.
+  - CLI commands (`list`, `show`, `record`, `resolve`, `ingest`, `check`).
+  - MCP JSON-RPC API tools and SQLite WAL audit logging.
+  - `TriageConfig` schema, size bounds (16 KiB .. 64 MiB), and suite filters.
+  - Test runner criteria `T1..T7` in `tools/test_triage_suites.py` and behavioral unit tests in `tools/test_triage_unit.py`.
+  - Security policy invariants in `SECURITY.md`.
+  - Observability metric breakdowns and summary strings.
+- Verified rot-proof documentation invariants C1..C6 via `tools/check_task_docs.py`.
+
+**Verified:**
+- `python tools/check_security_policy.py` (S1..S5 PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- `python tools/check_evidence.py` (E1..E4 PASS across 2120+ evidence files).
+- `python tools/test_triage_suites.py` (T1..T7 PASS).
+- `python tools/test_triage_unit.py` (U01..U08 PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --lib triage` (All 12 tests PASS).
+- Evidence chain: `docs/tasks/evidence/T-00891-documentation-research.md` … `T-00900-verify.md`.
+- Milestone: **Regression Triage / documentation CLOSED — 10/10 tasks** (T-00891..T-00900). Pointer $\to$ **T-00901** (`recovery & validation: Research`).
+
+
+## 2026-08-31 — T-00881..T-00890 SHIPPED: Regression Triage Observability CLOSED (Summary Metrics, Diagnostics, T1..T7 Suite, 10/10 tasks)
+
+**What shipped:**
+- Implemented `TriageReport` observability metrics methods in `aiosh-core::triage`:
+  - `status_counts()`: Counts across Untriaged, Triaged, FixPending, Resolved, and WontFix.
+  - `severity_counts()`: Counts across Blocker, Critical, Major, and Minor.
+  - `summary_line()`: Human-readable single-line summary string for CLI and log outputs.
+- Extended standalone test runner `tools/test_triage_suites.py` with criterion `T7`.
+- Updated unit test suite `tools/test_triage_unit.py` (U01..U08).
+- Updated `docs/README.md` with observability section.
+
+**Verified:**
+- `python tools/check_security_policy.py` (S1..S5 PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- `python tools/check_evidence.py` (E1..E4 PASS across 2080+ evidence files).
+- `python tools/test_triage_suites.py` (T1..T7 PASS).
+- `python tools/test_triage_unit.py` (U01..U08 PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --lib triage` (All 12 tests PASS).
+- Evidence chain: `docs/tasks/evidence/T-00881-observability-research.md` … `T-00890-verify.md`.
+- Milestone: **Regression Triage / observability CLOSED — 10/10 tasks** (T-00881..T-00890). Pointer $\to$ **T-00891** (`documentation: Research`).
+
+
+## 2026-08-31 — T-00871..T-00880 SHIPPED: Regression Triage Security Policy CLOSED (SECURITY.md Integration, Review Evidence, 10/10 tasks)
+
+**What shipped:**
+- Integrated formal Regression Triage vulnerability classifications into `SECURITY.md`.
+- Prohibited falsifying, forging, or bypassing regression triage records to mask blocker or critical regressions.
+- Mandated SQLite WAL audit logging for all state-changing triage operations.
+- Linked security review evidence `docs/tasks/evidence/T-00877-security.md` into `SECURITY.md` § Security Knowledge Index.
+
+**Verified:**
+- `python tools/check_security_policy.py` (S1..S5 PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- `python tools/check_evidence.py` (E1..E4 PASS across 2050+ evidence files).
+- `python tools/test_triage_suites.py` (T1..T6 PASS).
+- `python tools/test_triage_unit.py` (U01..U07 PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --lib triage` (All 11 tests PASS).
+- Evidence chain: `docs/tasks/evidence/T-00871-security-policy-research.md` … `T-00880-verify.md`.
+- Milestone: **Regression Triage / security policy CLOSED — 10/10 tasks** (T-00871..T-00880). Pointer $\to$ **T-00881** (`observability: Research`).
+
+
+## 2026-08-31 — T-00861..T-00870 SHIPPED: Regression Triage Automated Tests CLOSED (Criteria T1..T6, test_triage_unit.py, 10/10 tasks)
+
+**What shipped:**
+- Complete automated test suite in `tools/test_triage_suites.py` asserting criteria `T1..T6`:
+  - `T1`: Data model integrity and failure fingerprinting.
+  - `T2`: `TriageStore` persistence, deduplication, and CI summary ingestion.
+  - `T3`: CLI `aiosh triage` subcommands, parameters, and exit codes.
+  - `T4`: MCP `aios.triage.*` JSON-RPC tools and SQLite WAL audit logging.
+  - `T5`: `TriageConfig` validation, parameter bounds, and wildcard filtering.
+  - `T6`: End-to-end regression triage lifecycle and recurrence reopening.
+- Created standalone behavioral unit test suite `tools/test_triage_unit.py`.
+- Documentation in `docs/README.md` updated.
+
+**Verified:**
+- `python tools/check_security_policy.py` (S1..S5 PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- `python tools/check_evidence.py` (E1..E4 PASS across 2020+ evidence files).
+- `python tools/test_triage_suites.py` (T1..T6 PASS).
+- `python tools/test_triage_unit.py` (U01..U07 PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --lib triage` (All 11 tests PASS).
+- Evidence chain: `docs/tasks/evidence/T-00861-automated-tests-research.md` … `T-00870-verify.md`.
+- Milestone: **Regression Triage / automated tests CLOSED — 10/10 tasks** (T-00861..T-00870). Pointer $\to$ **T-00871** (`security policy: Research`).
+
+
+## 2026-08-31 — T-00851..T-00860 SHIPPED: Regression Triage Configuration CLOSED (TriageConfig, CLI --config, Ingestion Filters, T1..T5 Suite)
+
+**What shipped:**
+- Implemented `TriageConfig` in `aiosh-core::triage_config`:
+  - Enforced bounded store sizes (`MIN_STORE_BYTES` = 16 KiB .. `MAX_STORE_BYTES` = 64 MiB), retention days ($\ge 1$), auto-ingest suite wildcard filtering (`should_ingest_suite`), and config file read ceiling (`MAX_CONFIG_FILE_BYTES` = 64 KiB).
+  - Integration with `TriageStore`: `load_from_path_with_config` and `ingest_ci_summary_with_config`.
+- Extended CLI `aiosh triage` with `--config <path>` support and environment variable `$AIOS_TRIAGE_CONFIG`.
+- Standalone test runner `tools/test_triage_suites.py` extended with criterion `T5`.
+- Documentation in `docs/README.md` and default config `docs/triage_config.json` updated.
+
+**Verified:**
+- `python tools/check_security_policy.py` (S1..S5 PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- `python tools/check_evidence.py` (E1..E4 PASS across 1990+ evidence files).
+- `python tools/test_triage_suites.py` (T1..T5 PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --lib triage` (All 11 tests PASS).
+- Evidence chain: `docs/tasks/evidence/T-00851-configuration-research.md` … `T-00860-verify.md`.
+- Milestone: **Regression Triage / configuration CLOSED — 10/10 tasks** (T-00851..T-00860). Pointer $\to$ **T-00861** (`automated tests: Research`).
+
+
+## 2026-08-31 — T-00841..T-00850 SHIPPED: Regression Triage MCP/API Surface CLOSED (5 MCP Tools, T1..T4 Suite)
+
+**What shipped:**
+- Registered and implemented 5 MCP JSON-RPC 2.0 tools in `aiosh-mcp::Server`:
+  - `aios.triage.list`: List triage records with optional status/severity filtering and custom `store_path`.
+  - `aios.triage.show`: Show detailed record metadata and repro steps by TRG ID.
+  - `aios.triage.record`: Record a test failure (`test_target`, `suite_name`, `error_message`, `repro_command`, `severity`).
+  - `aios.triage.resolve`: Mark a regression as resolved with notes (`id`, `notes`).
+  - `aios.triage.check`: Cleanliness check verifying that no open blocker/critical regressions exist.
+  - Audit logging: All tool calls route through `dispatch::recorded_call`, writing immutable audit rows to SQLite WAL.
+- Standalone test runner `tools/test_triage_suites.py` extended with criterion `T4`.
+- Documentation in `docs/README.md` updated.
+
+**Verified:**
+- `python tools/check_security_policy.py` (S1..S5 PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- `python tools/check_evidence.py` (E1..E4 PASS across 1962+ evidence files).
+- `python tools/test_triage_suites.py` (T1..T4 PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml -p aiosh-mcp --bin aiosh-mcp -- test_mcp_triage_tools` (PASS).
+- Evidence chain: `docs/tasks/evidence/T-00841-mcp-api-research.md` … `T-00850-verify.md`.
+- Milestone: **Regression Triage / MCP/API surface CLOSED — 10/10 tasks** (T-00841..T-00850). Pointer $\to$ **T-00851** (`Fingerprinting & dedup: Research`).
+
+
+## 2026-08-31 — T-00831..T-00840 SHIPPED: Regression Triage CLI Surface CLOSED (aiosh triage list/show/record/resolve/ingest/check, T1..T3 Suite)
+
+**What shipped:**
+- Complete CLI command `aiosh triage` in `aiosh-cli::main`:
+  - `aiosh triage list`: Filter by status (`--status`) and severity (`--severity`) with `--json`.
+  - `aiosh triage show <id>`: View granular metadata, repro steps, and error stacktraces.
+  - `aiosh triage record`: Record a test failure (`--target`, `--suite`, `--error`, `--repro`, `--severity`).
+  - `aiosh triage resolve <id> --notes <notes>`: Resolve regressions with resolution notes.
+  - `aiosh triage ingest <summary_file>`: Automatically parse and ingest test failures from CI summaries.
+  - `aiosh triage check`: Health check returning exit code 1 if unaddressed blocker/critical regressions exist.
+  - Audit logging: State-changing subcommands emit structured audit rows via `classify_and_emit`.
+- Standalone test runner `tools/test_triage_suites.py` extended with criterion `T3`.
+- Documentation in `docs/README.md` updated.
+
+**Verified:**
+- `python tools/check_security_policy.py` (S1..S5 PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- `python tools/check_evidence.py` (E1..E4 PASS across 1931+ evidence files).
+- `python tools/test_triage_suites.py` (T1..T3 PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml -p aiosh-cli --bin aiosh -- test_cmd_triage_flow` (PASS).
+- Evidence chain: `docs/tasks/evidence/T-00831-cli-research.md` … `T-00840-verify.md`.
+- Milestone: **Regression Triage / CLI surface CLOSED — 10/10 tasks** (T-00831..T-00840). Pointer $\to$ **T-00841** (`MCP/API: Research`).
+
+
+## 2026-08-31 — T-00821..T-00830 SHIPPED: Regression Triage Core Service CLOSED (TriageStore, Ingestion, Deduplication, T1..T2 Suite)
+
+**What shipped:**
+- In-memory and disk-backed `TriageStore` in `aiosh-core::triage_service`:
+  - Deduplicated failure tracking keyed by SHA-256 signatures with `TRG-xxxxxxxx` ID indexing.
+  - `ingest_ci_summary`: Automated ingestion of test suite failures from `ci::RunSummary`.
+  - Resolution mutations (`resolve`, `update_status`) with automatic regression reopening on recurrence.
+  - Disk persistence (`save_to_path`, `load_from_path`) with 1 MiB hard size capping.
+- Standalone test runner `tools/test_triage_suites.py` extended with criterion `T2`.
+- Documentation in `docs/README.md` updated.
+
+**Verified:**
+- `python tools/check_security_policy.py` (S1..S5 PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- `python tools/check_evidence.py` (E1..E4 PASS across 1900+ evidence files).
+- `python tools/test_triage_suites.py` (T1..T2 PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --lib triage_service::tests` (All 3 tests PASS).
+- Evidence chain: `docs/tasks/evidence/T-00821-core-service-research.md` … `T-00830-verify.md`.
+- Milestone: **Regression Triage / core service CLOSED — 10/10 tasks** (T-00821..T-00830). Pointer $\to$ **T-00831** (`CLI: Research`).
+
+
+## 2026-08-31 — T-00811..T-00820 SHIPPED: Regression Triage Data Model CLOSED (TriageStatus, TriageSeverity, TriageRecord, TriageReport, T1 Suite)
+
+**What shipped:**
+- Foundational Regression Triage data model in `aiosh-core::triage`:
+  - `TriageStatus`: Enum tracking lifecycle state (`Untriaged`, `Triaged`, `FixPending`, `Resolved`, `WontFix`).
+  - `TriageSeverity`: Impact classification (`Blocker` / P0, `Critical` / P1, `Major` / P2, `Minor` / P3).
+  - `TriageRecord`: Granular record struct with deterministic SHA-256 deduplication signatures and occurrences counter.
+  - `TriageReport`: Report struct tracking total vs open vs resolved records with `validate_triage_report` validation.
+  - Hardening: String bounds (`MAX_ERROR_MSG_BYTES`, `MAX_REPRO_CMD_BYTES`, `MAX_TEST_TARGET_BYTES`) and saturating arithmetic.
+- Dedicated test runner `tools/test_triage_suites.py` validating criterion `T1`.
+- Architecture reference updated in `docs/README.md`.
+
+**Verified:**
+- `python tools/check_security_policy.py` (S1..S5 PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- `python tools/check_evidence.py` (E1..E4 PASS across 1869+ evidence files).
+- `python tools/test_triage_suites.py` (T1 PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --lib triage::tests` (All 4 tests PASS).
+- Evidence chain: `docs/tasks/evidence/T-00811-data-model-research.md` … `T-00820-verify.md`.
+- Milestone: **Regression Triage / data model CLOSED — 10/10 tasks** (T-00811..T-00820). Pointer $\to$ **T-00821** (`core service: Research`).
+
+
+## 2026-08-31 — T-00801..T-00810 SHIPPED: Secrets & Access Hygiene Recovery & Validation CLOSED — EPIC COMPLETE (100/100 tasks T-00711..T-00810)
+
+**What shipped:**
+- Recovery & validation protocols for Secrets & Access Hygiene in `aiosh-core::secrets`:
+  - `validate_secret_report` verifying mathematical and structural invariants across reports.
+  - Fault-tolerant scanning skipping inaccessible paths while retaining full scan coverage.
+  - Contaminated repository recovery guidelines in `docs/README.md`.
+- Standalone test runner `tools/test_secrets_suites.py` validating criteria `K1..K9`.
+- **EPIC COMPLETE**: Phase 0 — Secrets & Access Hygiene (T-00711..T-00810) CLOSED across all 10 sub-epics (data model, file format, core service, CLI, MCP/API, config, automated tests, security policy, observability, recovery & validation).
+
+**Verified:**
+- `python tools/check_security_policy.py` (S1..S5 PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- `python tools/check_evidence.py` (E1..E4 PASS across 1838+ evidence files).
+- `python tools/test_secrets_suites.py` (K1..K9 PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml` (All tests PASS).
+- Evidence chain: `docs/tasks/evidence/T-00801-recovery-validation-research.md` … `T-00810-verify.md`.
+- Milestone: **Secrets & Access Hygiene / recovery & validation CLOSED — 10/10 tasks** (T-00801..T-00810). Pointer $\to$ **T-00811**.
+
+
+## 2026-08-31 — T-00791..T-00800 SHIPPED: Secrets & Access Hygiene Documentation CLOSED (Architecture, CLI, MCP, Config, C1..C6)
+
+**What shipped:**
+- Comprehensive Secrets & Access Hygiene reference in `docs/README.md`:
+  - Complete architecture covering `aiosh-core::secrets`, `secrets_service`, `secrets_config`, `aiosh-cli::cmd_secrets`, and `aiosh-mcp::main`.
+  - CLI usage guidelines, JSON-RPC 2.0 tool definitions, and schema bounds.
+  - Automated test runner documentation and security policy integration.
+- Full verification of documentation invariants C1..C6 via `tools/check_task_docs.py`.
+
+**Verified:**
+- `python tools/check_security_policy.py` (S1..S5 PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- `python tools/check_evidence.py` (E1..E4 PASS across 1807+ evidence files).
+- `python tools/test_secrets_suites.py` (K1..K8 PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml` (All tests PASS).
+- Evidence chain: `docs/tasks/evidence/T-00791-documentation-research.md` … `T-00800-verify.md`.
+- Milestone: **Secrets & Access Hygiene / documentation CLOSED — 10/10 tasks** (T-00791..T-00800). Pointer $\to$ **T-00801** (`recovery & validation: Research`).
+
+
+## 2026-08-31 — T-00781..T-00790 SHIPPED: Secrets & Access Hygiene Observability CLOSED (Severity Counts, Summary Line, K1..K8 Suite)
+
+**What shipped:**
+- Observability and telemetry methods in `aiosh-core::secrets`:
+  - `SecretScanReport::severity_counts()` returning quantitative severity breakdowns `(critical, high, medium, low)`.
+  - `SecretScanReport::summary_line()` generating standardized diagnostic summary strings.
+- Standalone test runner `tools/test_secrets_suites.py` extended with criterion `K8` (observability & scan telemetry).
+- Reference manual in `docs/README.md` updated with observability documentation.
+
+**Verified:**
+- `python tools/check_security_policy.py` (S1..S5 PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- `python tools/check_evidence.py` (E1..E4 PASS across 1776+ evidence files).
+- `python tools/test_secrets_suites.py` (K1..K8 PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml` (All tests PASS).
+- Evidence chain: `docs/tasks/evidence/T-00781-observability-research.md` … `T-00790-verify.md`.
+- Milestone: **Secrets & Access Hygiene / observability CLOSED — 10/10 tasks** (T-00781..T-00790). Pointer $\to$ **T-00791** (`documentation: Research`).
+
+
+## 2026-08-31 — T-00771..T-00780 SHIPPED: Secrets & Access Hygiene Security Policy CLOSED (SECURITY.md, S1..S5 Invariants, Disclosure)
+
+**What shipped:**
+- Secrets & Access Hygiene security policy integration in root `SECURITY.md`:
+  - Formalized vulnerability criteria prohibiting plaintext credential emission and scanner bypass.
+  - Linked Secrets security review in `docs/tasks/evidence/T-00777-security.md`.
+- Automated OpenSSF Scorecard checker `tools/check_security_policy.py` validating criteria S1..S5.
+- Reference manual in `docs/README.md` updated with security policy details.
+
+**Verified:**
+- `python tools/check_security_policy.py` (S1..S5 PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- `python tools/check_evidence.py` (E1..E4 PASS across 1745+ evidence files).
+- `python tools/test_secrets_suites.py` (K1..K7 PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml` (All tests PASS).
+- Evidence chain: `docs/tasks/evidence/T-00771-security-policy-research.md` … `T-00780-verify.md`.
+- Milestone: **Secrets & Access Hygiene / security policy CLOSED — 10/10 tasks** (T-00771..T-00780). Pointer $\to$ **T-00781** (`observability: Research`).
+
+
+## 2026-08-31 — T-00761..T-00770 SHIPPED: Secrets & Access Hygiene Automated Tests CLOSED (K1..K7 Runner, Isolated Sandboxes, Timeouts)
+
+**What shipped:**
+- Automated test suite orchestrator in `tools/test_secrets_suites.py`:
+  - Criteria coverage across K1 (Data model), K2 (Private keys), K3 (API tokens), K4 (Config credentials), K5 (CLI surface), K6 (MCP server), K7 (Configuration schema).
+  - Hardened execution with subprocess timeouts (120s), isolated test environments, and comprehensive error logging.
+- Reference manual in `docs/README.md` updated with automated test documentation.
+
+**Verified:**
+- `python tools/check_security_policy.py` (S1..S5 PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- `python tools/check_evidence.py` (E1..E4 PASS across 1714+ evidence files).
+- `python tools/test_secrets_suites.py` (K1..K7 PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml` (All tests PASS).
+- Evidence chain: `docs/tasks/evidence/T-00761-automated-tests-research.md` … `T-00770-verify.md`.
+- Milestone: **Secrets & Access Hygiene / automated tests CLOSED — 10/10 tasks** (T-00761..T-00770). Pointer $\to$ **T-00771** (`security policy: Research`).
+
+
+## 2026-08-31 — T-00751..T-00760 SHIPPED: Secrets & Access Hygiene Configuration CLOSED (SecretsConfig, JSON Schema, Validation)
+
+**What shipped:**
+- Secrets & Access Hygiene configuration in `aiosh-core::secrets_config`:
+  - `SecretsConfig`: Versioning, bounded file/line limits, ignored directories, and allowlist patterns with strict schema validation.
+  - Multi-tier precedence loading: `--config` $\to$ `AIOS_SECRETS_CONFIG` $\to$ `docs/secrets_config.json` $\to$ `SecretsConfig::default()`.
+  - Default configuration file at `docs/secrets_config.json`.
+- CLI `--config` integration in `aiosh-cli::cmd_secrets` and `aiosh-core::secrets_service::scan_workspace_with_config`.
+- Automated test runner `tools/test_secrets_suites.py` validating criteria `K1..K7`.
+- Unit test suites in `secrets_config::tests` (3/3 PASS) and `aiosh-cli::task_cli_tests` (16/16 PASS).
+- Reference manual in `docs/README.md` updated with configuration specification.
+
+**Verified:**
+- `python tools/check_security_policy.py` (S1..S5 PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- `python tools/check_evidence.py` (E1..E4 PASS across 1683+ evidence files).
+- `python tools/test_secrets_suites.py` (K1..K7 PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml` (All tests PASS).
+- Evidence chain: `docs/tasks/evidence/T-00751-configuration-research.md` … `T-00760-verify.md`.
+- Milestone: **Secrets & Access Hygiene / configuration CLOSED — 10/10 tasks** (T-00751..T-00760). Pointer $\to$ **T-00761** (`automated tests: Research`).
+
+
+## 2026-08-31 — T-00741..T-00750 SHIPPED: Secrets & Access Hygiene MCP/API Surface CLOSED (Scan, Check, JSON-RPC, Redaction)
+
+**What shipped:**
+- Secrets & Access Hygiene MCP tools in `code/aiosh-rust/aiosh-mcp`:
+  - `aios.secrets.scan`: JSON-RPC 2.0 tool scanning workspace or single file for exposed secrets without exposing raw credentials.
+  - `aios.secrets.check`: Fast boolean cleanliness check returning `{ "ok": true, "tool": "aios.secrets.check", "is_clean": bool, "total_findings": u32, "report": SecretScanReport }`.
+- Automated test runner `tools/test_secrets_suites.py` validating criteria `K1..K6`.
+- Unit test suite in `aiosh_mcp::tests` passing 4/4.
+- Reference manual in `docs/README.md` updated with MCP tool integration.
+
+**Verified:**
+- `python tools/check_security_policy.py` (S1..S5 PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- `python tools/check_evidence.py` (E1..E4 PASS across 1652+ evidence files).
+- `python tools/test_secrets_suites.py` (K1..K6 PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --bin aiosh-mcp` (4/4 PASS).
+- Evidence chain: `docs/tasks/evidence/T-00741-mcp-api-surface-research.md` … `T-00750-verify.md`.
+- Milestone: **Secrets & Access Hygiene / MCP/API surface CLOSED — 10/10 tasks** (T-00741..T-00750). Pointer $\to$ **T-00751** (`configuration: Research`).
+
+
+## 2026-08-31 — T-00731..T-00740 SHIPPED: Secrets & Access Hygiene CLI Surface CLOSED (Scan, Check, Json, Formatting)
+
+**What shipped:**
+- Secrets & Access Hygiene CLI surface in `code/aiosh-rust/aiosh-cli`:
+  - `aiosh secrets scan [--repo <path>] [--file <path>] [--json] [--max-bytes <n>]`: Detailed scan outputting finding cards with redacted snippets and sha256 fingerprints.
+  - `aiosh secrets check [--repo <path>] [--json]`: Fast boolean pass/fail verification for CI gates.
+- Automated test runner `tools/test_secrets_suites.py` validating criteria `K1..K5`.
+- Unit test suite in `aiosh-cli::task_cli_tests` passing 16/16.
+- Reference manual in `docs/README.md` updated with CLI subcommand surface.
+
+**Verified:**
+- `python tools/check_security_policy.py` (S1..S5 PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- `python tools/check_evidence.py` (E1..E4 PASS across 1621+ evidence files).
+- `python tools/test_secrets_suites.py` (K1..K5 PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --bin aiosh` (16/16 PASS).
+- Evidence chain: `docs/tasks/evidence/T-00731-cli-surface-research.md` … `T-00740-verify.md`.
+- Milestone: **Secrets & Access Hygiene / CLI surface CLOSED — 10/10 tasks** (T-00731..T-00740). Pointer $\to$ **T-00741** (`MCP server surface: Research`).
+
+
+## 2026-08-31 — T-00721..T-00730 SHIPPED: Secrets & Access Hygiene Core Service CLOSED (File Scanner, Workspace Scanner, Serde)
+
+**What shipped:**
+- Secrets & Access Hygiene core service in `aiosh-core::secrets_service`:
+  - `scan_file_for_secrets`: Scans target files for private keys (`SEC-001`), AWS Access Key IDs (`SEC-002`), GitHub PATs (`SEC-003`), Generic API keys (`SEC-004`), and password assignments in configs (`SEC-005`), skipping binary files via null-byte sniffing.
+  - `scan_workspace_for_secrets`: Recursively traverses directory trees ignoring standard build/vcs folders (`.git`, `target`, `node_modules`, `.venv`, `dist`) and aggregates findings into a validated `SecretScanReport`.
+- Automated test runner `tools/test_secrets_suites.py` validating criteria `K1..K4`.
+- Unit test suite in `secrets_service::tests` passing 7/7.
+- Reference manual in `docs/README.md` updated with core service operations.
+
+**Verified:**
+- `python tools/check_security_policy.py` (S1..S5 PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- `python tools/check_evidence.py` (E1..E4 PASS across 1590+ evidence files).
+- `python tools/test_secrets_suites.py` (K1..K4 PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --lib secrets_service::tests` (7/7 PASS).
+- Evidence chain: `docs/tasks/evidence/T-00721-service-ingest-research.md` … `T-00730-verify.md`.
+- Milestone: **Secrets & Access Hygiene / core service CLOSED — 10/10 tasks** (T-00721..T-00730). Pointer $\to$ **T-00731** (`CLI surface: Research`).
+
+
+## 2026-08-30 — T-00711..T-00720 SHIPPED: Secrets & Access Hygiene Data Model CLOSED (Data Model, Redaction, Serde)
+
+**What shipped:**
+- Secrets & Access Hygiene data model in `aiosh-core::secrets`:
+  - `SecretSeverity`: `Critical`, `High`, `Medium`, `Low`, `Info`.
+  - `SecretPatternKind`: `PrivateKey`, `ApiToken`, `AwsCredentials`, `PasswordInConfig`, `HighEntropyGeneric`.
+  - `SecretFinding`: Granular finding record with `rule_id`, `path`, `line_number`, `severity`, `pattern_kind`, `description`, `redacted_snippet`, and `fingerprint`.
+  - `SecretScanReport`: Aggregated report tracking `repo_path`, `timestamp_utc`, `is_clean`, findings counts, and findings list.
+  - `redact_secret_value`: Safe redaction helper preserving 4 prefix / 4 suffix characters for strings $\ge 12$ chars with `****` masking and full multi-byte Unicode boundary handling.
+  - `validate_secret_report`: Invariant validation asserting total findings match severity breakdowns.
+- Automated test runner `tools/test_secrets_suites.py` validating criteria `K1`.
+- Reference manual in `docs/README.md` updated with `## Secrets & Access Hygiene (T-00711..T-00810)`.
+
+**Verified:**
+- `python tools/check_security_policy.py` (S1..S5 PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- `python tools/check_evidence.py` (E1..E4 PASS across 1559+ evidence files).
+- `python tools/test_secrets_suites.py` (K1 PASS).
+- `python tools/test_repo_health_suites.py` (H1..H7 PASS).
+- `python tools/test_ci_suites.py` (W1..W7 PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --lib secrets::tests` (5/5 PASS).
+- Evidence chain: `docs/tasks/evidence/T-00711-data-model-research.md` … `T-00720-verify.md`.
+- Milestone: **Secrets & Access Hygiene / data model CLOSED — 10/10 tasks** (T-00711..T-00720). Pointer $\to$ **T-00721** (`service & ingest: Research`).
+
+
+## 2026-08-30 — T-00611..T-00710 SHIPPED: Repository Health GRAND COMPONENT CLOSED (100/100 Tasks Complete)
+
+**What shipped:**
+- Complete **Repository Health Diagnostics** subsystem across all 10 sub-epics:
+  - Data Model & Schema (T-00611..T-00620): `RepoHealthReport`, `RepoHealthCheck`, `HealthStatus`, `HealthCategory`.
+  - Service & Ingestion (T-00621..T-00630): `check_git_working_tree`, `check_file_bounds`, `check_security_governance`.
+  - CLI Subcommand Surface (T-00631..T-00640): `aiosh repo health` and `aiosh repo check [--json]`.
+  - MCP Tool Integration (T-00641..T-00650): `aios.repo.health` and `aios.repo.check` JSON-RPC tools.
+  - Configuration & Overrides (T-00651..T-00660): `RepoHealthConfig`, Twelve-Factor env resolution, and 64 KiB security bounds.
+  - Automated Tests (T-00661..T-00670): Standalone test runner `tools/test_repo_health_suites.py` asserting criteria `H1..H7`.
+  - Security Policy & Governance (T-00671..T-00680): OpenSSF compliance and immutable audit emission.
+  - Observability & Timing (T-00681..T-00690): Sub-millisecond `duration_ms` per-check and aggregate telemetry counters.
+  - Documentation & Formatter (T-00691..T-00700): `format_repo_health_summary` with 50-item detail clamping.
+  - Recovery & Validation (T-00701..T-00710): `recover_default_repo_health_config`, `reconstruct_repo_health_report`, `validate_repo_health_report`, `reconcile_repo_health`.
+- Reference manual and specification documentation in `docs/README.md` passing all mechanical rot checks (`tools/check_task_docs.py` C1..C6).
+
+**Verified:**
+- `python tools/check_security_policy.py` (S1..S5 PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- `python tools/check_evidence.py` (E1..E4 PASS across 1528+ evidence files).
+- `python tools/test_repo_health_suites.py` (H1..H7 PASS).
+- `python tools/test_ci_suites.py` (W1..W7 PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --lib repo_health_service::tests` (12/12 PASS).
+- Evidence chain: `docs/tasks/evidence/T-00611-data-model-research.md` … `T-00710-verify.md`.
+- Grand Component Milestone: **Repository Health GRAND COMPONENT CLOSED — 100/100 tasks** (T-00611..T-00710). Pointer $\to$ **T-00711**.
+
+
+## 2026-08-30 — T-00691..T-00700 SHIPPED: Repository Health Documentation CLOSED (Summary Formatter, Detail Clamping, Operator Docs)
+
+**What shipped:**
+- Human-readable repository health summary formatter (`format_repo_health_summary`) in `aiosh-core::repo_health_service`.
+- Detailed status formatting with elapsed timing (`<N>ms`), status badges, and defensive detail truncation clamping (`take(50)` with explicit truncation notice).
+- Documentation updates in `docs/README.md` passing all C1..C6 structural doc invariants (`tools/check_task_docs.py`).
+- Comprehensive unit tests in `repo_health_service::tests` covering normal reports, empty boundary conditions, fail/skip statuses, and truncation.
+
+**Verified:**
+- `python tools/check_security_policy.py` (S1..S5 PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- `python tools/check_evidence.py` (E1..E4 PASS across 1497+ evidence files).
+- `python tools/test_repo_health_suites.py` (H1..H7 PASS).
+- `python tools/test_ci_suites.py` (W1..W7 PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --lib repo_health_service::tests` (9/9 PASS).
+- Evidence chain: `docs/tasks/evidence/T-00691-documentation-research.md` … `T-00700-verify.md`.
+- Milestone: **Repository Health / documentation CLOSED — 10/10 tasks** (T-00691..T-00700). Pointer $\to$ **T-00701** (`recovery & validation: Research`).
+
+
+## 2026-08-29 — T-00681..T-00690 SHIPPED: Repository Health Observability CLOSED (Duration Timing, Aggregate Metrics, Telemetry)
+
+**What shipped:**
+- Structured observability metrics and execution timing (`duration_ms`, `timestamp_utc`, `total_checks`, `passed_checks`, `warn_checks`, `failed_checks`, `skipped_checks`) across `RepoHealthReport` and `RepoHealthCheck`.
+- Read-only diagnostics integration across CLI (`aiosh repo health [--json]`) and MCP (`aios.repo.health`).
+- Hardening against untrusted subprocess inputs, heavy directory exclusion, and detail clamping.
+- Documentation updates in `docs/README.md` passing all C1..C6 structural doc invariants (`tools/check_task_docs.py`).
+
+**Verified:**
+- `python tools/check_security_policy.py` (S1..S5 PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- `python tools/check_evidence.py` (E1..E4 PASS across 1467 evidence files).
+- `python tools/test_repo_health_suites.py` (H1..H7 PASS).
+- `python tools/test_ci_suites.py` (W1..W7 PASS).
+- Evidence chain: `docs/tasks/evidence/T-00681-observability-research.md` … `T-00690-verify.md`.
+- Milestone: **Repository Health / observability CLOSED — 10/10 tasks** (T-00681..T-00690). Pointer $\to$ **T-00691** (`documentation: Research`).
+
+## 2026-08-29 — T-00511..T-00610 SHIPPED: Evidence & Audit Trail GRAND COMPONENT CLOSED (100/100 Tasks Complete)
+
+**What shipped:**
+- Complete **Evidence & Audit Trail** subsystem across 10 distinct sub-epics (Data Model, Scaffold & Schema, Service & Ingestion, CLI Subcommands, MCP Server Tools, Configuration & Defaults, Automated Invariant Checkers, Security Policy & PEP, Observability & Diagnostics, Documentation & Formatter, Recovery & Validation).
+- Recovery helpers in `aiosh-core::evidence_service` (`recover_default_evidence_config`, `reconstruct_evidence_manifest`, `scan_evidence_directory`, `reconcile_evidence_manifest`).
+- Reference manual and specification documentation in `docs/README.md` passing all mechanical rot checks (`tools/check_task_docs.py` C1..C6).
+- Security policy compliance with OpenSSF Scorecard criteria (`tools/check_security_policy.py` S1..S5).
+
+**Verified:**
+- `python tools/check_security_policy.py` (S1..S5 PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- `python tools/test_check_evidence.py` (15/15 PASS).
+- `python tools/check_evidence.py` (E1..E4 PASS).
+- `python tools/test_ci_suites.py` (W1..W7 PASS).
+- `python code/aiosh-cli/tests/test_evidence_cli_smoke.py` (8/8 PASS).
+- `python code/aiosh-mcp/tests/test_evidence_mcp_smoke.py` (8/8 PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --test test_evidence_e2e` (2/2 PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --lib evidence_service::tests` (10/10 PASS).
+- Evidence chain: `docs/tasks/evidence/T-00511-data-model-research.md` … `T-00610-verify.md`.
+- Grand Component Milestone: **Evidence & Audit Trail GRAND COMPONENT CLOSED — 100/100 tasks** (T-00511..T-00610). Pointer $\to$ **T-00611**.
+
+## 2026-08-29 — T-00581..T-00590 SHIPPED: Evidence & Audit Trail Observability CLOSED (EvidenceTelemetry, Diagnostics, Hardening)
+
+**What shipped:**
+- `EvidenceTelemetry` data model (`total_records`, `valid_records`, `missing_files_count`, `hash_mismatches_count`, `is_healthy`) in `code/aiosh-rust/aiosh-core/src/evidence.rs`.
+- `collect_evidence_telemetry` diagnostic helper and unit tests (`test_collect_evidence_telemetry`) in `code/aiosh-rust/aiosh-core/src/evidence_service.rs` covering healthy states, degraded states, empty boundary conditions, all-missing states, and JSON serialization roundtrips.
+- Defensive hardening: 512-byte outcome string clamping (`clamp_str`), 10,000-record manifest validation bounds, and 16 MiB checksum read limits.
+- Operator reference manual updates in `docs/README.md` passing all C1..C6 structural doc invariants (`tools/check_task_docs.py`).
+
+**Verified:**
+- `python tools/check_security_policy.py` (S1..S5 PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- `python tools/test_check_evidence.py` (15/15 PASS).
+- `python tools/check_evidence.py` (E1..E4 PASS).
+- `python tools/test_ci_suites.py` (W1..W7 PASS).
+- `python code/aiosh-cli/tests/test_evidence_cli_smoke.py` (8/8 PASS).
+- `python code/aiosh-mcp/tests/test_evidence_mcp_smoke.py` (8/8 PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --test test_evidence_e2e` (2/2 PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --lib evidence_service::tests::test_collect_evidence_telemetry` (PASS).
+- Evidence chain: `docs/tasks/evidence/T-00581-research.md` … `T-00590-verify.md`.
+- Milestone: **Evidence & Audit Trail / observability CLOSED — 10/10 tasks** (T-00581..T-00590). Pointer $\to$ **T-00591** (`documentation: Research`).
+
+## 2026-08-29 — T-00571..T-00580 SHIPPED: Evidence & Audit Trail Security Policy CLOSED (PEP Gating, Invariants, S1..S5)
+
+**What shipped:**
+- Root `SECURITY.md` formal vulnerability classifications covering evidence tampering, checksum forgery, and out-of-bounds artifact traversal, verified continuously via `tools/check_security_policy.py` (criteria S1..S5).
+- PEP authorization validation (`check_evidence_policy` in `evidence_service.rs` / `pep.rs`) gating all mutating actions (`aios.evidence.record`, `evidence.record`, `aios.evidence.set`, `evidence.set`) behind verified PEP grant tokens with fail-closed default, while permitting unauthenticated read-only operations (`hash`, `scan`, `verify`).
+- Honest refusal audit records appended to SQLite WAL on policy violation (`outcome="refused"`).
+- Behavioral unit tests in `evidence_service::tests::test_check_evidence_policy_enforcement` covering valid tokens, missing tokens, and whitespace token rejection.
+- Operator reference manual updates in `docs/README.md` passing all C1..C6 structural doc invariants (`tools/check_task_docs.py`).
+
+**Verified:**
+- `python tools/check_security_policy.py` (S1..S5 PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- `python tools/test_check_evidence.py` (15/15 PASS).
+- `python tools/check_evidence.py` (E1..E4 PASS).
+- `python tools/test_ci_suites.py` (W1..W7 PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --lib evidence_service::tests::test_check_evidence_policy_enforcement` (PASS).
+- Evidence chain: `docs/tasks/evidence/T-00571-research.md` … `T-00580-verify.md`.
+- Milestone: **Evidence & Audit Trail / security policy CLOSED — 10/10 tasks** (T-00571..T-00580). Pointer $\to$ **T-00581** (`observability: Research`).
+
+## 2026-08-29 — T-00561..T-00570 SHIPPED: Evidence & Audit Trail Automated Tests CLOSED (CI, Unit Tests, Live Invariants)
+
+**What shipped:**
+- `tools/check_evidence.py`: Deterministic stdlib-only invariant verification checker (`E1` directory health, `E2` ledger consistency, `E3` 16 MiB size bounds & UTF-8 validation, `E4` deterministic SHA-256 digests).
+- `tools/test_check_evidence.py`: 15 behavioral unit tests (U01..U14 + S01) testing positive paths, missing directories, empty files, oversized files, invalid UTF-8 bytes, malformed JSON, and mutation sensitivity in temporary isolated sandboxes.
+- Central CI registry integration (`tools/ci_suites.py` & `tools/test_ci_suites.py`): 4 new suites registered (`evidence_cli_smoke`, `evidence_mcp_smoke`, `evidence_checker`, `evidence_unit`) maintaining stable 29-suite canonical order.
+- Rust end-to-end integration test (`test_evidence_e2e.rs`): 10-step lifecycle manifest verification, tampering detection, and missing artifact reporting.
+- Documentation & Invariants: Comprehensive operator manuals and examples in `docs/README.md` passing all C1..C6 structural doc invariants (`tools/check_task_docs.py`).
+
+**Verified:**
+- `python tools/test_ci_suites.py` (W1..W7 PASS).
+- `python tools/test_check_evidence.py` (15/15 PASS).
+- `python tools/check_evidence.py` (E1..E4 PASS across 1,110+ artifacts).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- `python code/aiosh-cli/tests/test_evidence_cli_smoke.py` (8/8 PASS).
+- `python code/aiosh-mcp/tests/test_evidence_mcp_smoke.py` (8/8 PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --test test_evidence_e2e` (2/2 PASS).
+- Evidence chain: `docs/tasks/evidence/T-00561-automated-tests-research.md` … `T-00570-verify.md`.
+- Milestone: **Evidence & Audit Trail / automated tests CLOSED — 10/10 tasks** (T-00561..T-00570). Pointer $\to$ **T-00571** (`security policy: Research`).
+
 ## 2026-08-23 — T-00111..T-00120 SHIPPED: CI Smoke Orchestration data model CLOSED
 
 **What shipped:** `tools/ci_suites.py` (SuiteDef/ResultRecord/RunSummary;

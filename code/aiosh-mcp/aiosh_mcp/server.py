@@ -211,6 +211,77 @@ def aios_audit_verify(full: bool = False) -> dict:
 
 
 @mcp.tool()
+def aios_release_generate(target_os: str, components: list[str], version: str, grant_id: str | None = None) -> dict:
+    """Package an AIOS release ISO through the classifier/audit gate. Requires PEP grant."""
+    tool = "aios.release.generate"
+    args = {"target_os": target_os, "components": components, "version": version}
+
+    verdict, _ = dispatch_mod.dispatch(
+        tool=tool, command=f"release.generate {target_os} {version}", args=args, target=None,
+        grant_id=grant_id, require_grant=True,
+    )
+    if not verdict["ok"]:
+        return verdict
+    try:
+        from .release import generate_release, PackageManifest
+        manifest = PackageManifest(target_os=target_os, components=components, version=version)
+        path, hash_val = generate_release(
+            manifest, actor_id="agent:mcp@aiosh-mcp", constitution_rev=dispatch_mod.active_constitution_rev(),
+            grant_id=grant_id, policy_revision=verdict.get("policy_revision"),
+            classify_rule_ids=verdict.get("classify_rule_ids"), classify_evidence=verdict.get("classify_evidence"),
+            classify_overall_verdict=verdict.get("classify_overall_verdict"), classify_verdict_reason=verdict.get("classify_verdict_reason")
+        )
+        return {"ok": True, "tool": tool, "path": path, "hash": hash_val, "classifier_policy_revision": verdict.get("policy_revision")}
+    except Exception as exc:
+        detail = str(exc)
+        row = dispatch_mod.commit(
+            tool=tool, command=f"release.generate {target_os} {version}", args=args, target=None,
+            grant_id=grant_id, outcome="error", outcome_detail=detail,
+            policy_revision=verdict.get("policy_revision"), classify_rule_ids=verdict.get("classify_rule_ids"),
+            classify_evidence=verdict.get("classify_evidence"), classify_overall_verdict=verdict.get("classify_overall_verdict"),
+            classify_verdict_reason=verdict.get("classify_verdict_reason")
+        )
+        return {"ok": False, "tool": tool, "error": detail, "audit_id": row.id}
+
+
+@mcp.tool()
+def aios_backup_create(target_path: str, include_audit: bool = True, include_memory: bool = False, grant_id: str | None = None) -> dict:
+    """Create a system snapshot backup through the classifier/audit gate. Requires PEP grant."""
+    tool = "aios.backup.create"
+    args = {"target_path": target_path, "include_audit": include_audit, "include_memory": include_memory}
+
+    verdict, _ = dispatch_mod.dispatch(
+        tool=tool, command=f"backup.create {target_path}", args=args, target=target_path,
+        grant_id=grant_id, require_grant=True,
+    )
+    if not verdict["ok"]:
+        return verdict
+    try:
+        from .release import create_backup, BackupSnapshot
+        snapshot = BackupSnapshot(target_path=target_path, include_audit=include_audit, include_memory=include_memory)
+        path = create_backup(
+            snapshot, actor_id="agent:mcp@aiosh-mcp", constitution_rev=dispatch_mod.active_constitution_rev(),
+            grant_id=grant_id, policy_revision=verdict.get("policy_revision"),
+            classify_rule_ids=verdict.get("classify_rule_ids"), classify_evidence=verdict.get("classify_evidence"),
+            classify_overall_verdict=verdict.get("classify_overall_verdict"), classify_verdict_reason=verdict.get("classify_verdict_reason")
+        )
+        return {"ok": True, "tool": tool, "path": path, "classifier_policy_revision": verdict.get("policy_revision")}
+    except Exception as exc:
+        detail = str(exc)
+        row = dispatch_mod.commit(
+            tool=tool, command=f"backup.create {target_path}", args=args, target=target_path,
+            grant_id=grant_id, outcome="error", outcome_detail=detail,
+            policy_revision=verdict.get("policy_revision"), classify_rule_ids=verdict.get("classify_rule_ids"),
+            classify_evidence=verdict.get("classify_evidence"), classify_overall_verdict=verdict.get("classify_overall_verdict"),
+            classify_verdict_reason=verdict.get("classify_verdict_reason")
+        )
+        return {"ok": False, "tool": tool, "error": detail, "audit_id": row.id}
+
+
+# -----------------------------------------------------------------------
+
+
+@mcp.tool()
 def aios_audit_rotate(keep_rows: int = 0, grant_id: str | None = None) -> dict:
     """Seal the oldest live audit rows into an archived segment
     (checkpoint + JSONL archive + bloom filter), keeping the newest
@@ -565,6 +636,13 @@ def aios_task(
 # Each tool routes through `_dispatch.dispatch()` to enforce PEP + audit.
 # -----------------------------------------------------------------------
 pentest_mod.register_pentest_tools(mcp)
+
+# -----------------------------------------------------------------------
+# Phase 0: Register Release Packaging & Backup endpoints
+# -----------------------------------------------------------------------
+from . import release as release_mod
+release_mod.register_release_tools(mcp)
+
 
 
 # -----------------------------------------------------------------------

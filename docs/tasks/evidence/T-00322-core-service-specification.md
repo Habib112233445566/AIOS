@@ -1,0 +1,93 @@
+# T-00322 — Dependency & Toolchain Pinning: core service Specification
+
+## 1. Overview
+This specification defines the contract for the core service that enforces the `ToolchainManifest` constraints. The service verifies that the host environment's active toolchains (Rust, Python, Node.js) strictly match the versions pinned in the manifest.
+
+## 2. Inputs & Data Model Contract
+
+### 2.1 Interface Definition
+The core service exposes a primary enforcement function in the `aiosh_core::toolchain_service` module (AIOS-specific).
+
+```rust
+use crate::toolchain_config::ToolchainManifest;
+
+/// Verifies that the host environment matches the provided ToolchainManifest.
+///
+/// Executes ecosystem-specific binaries (`rustc`, `python`, `node`) and
+/// compares their version outputs to the pinned versions in the manifest.
+pub fn enforce_toolchain(manifest: &ToolchainManifest) -> Result<(), String>
+```
+
+### 2.2 Inputs
+- **`manifest`**: A reference to a loaded `ToolchainManifest` containing:
+  - `rust_version`: e.g. `"1.80.0"`
+  - `python_version`: e.g. `"3.10"`
+  - `node_version`: e.g. `Some("20")`
+  - `enforce_hashes`: `bool` (Not actively enforced by this component, deferred to package managers, but available for inspection).
+
+## 3. Behaviors and Outputs
+
+### 3.1 Happy Path
+1. The service spawns `rustc -V` and captures its standard output. It parses the version string and verifies it starts with or exactly matches `rust_version`.
+2. The service spawns `python3 -V` (or `python -V` as fallback) and verifies the version matches `python_version`.
+3. If `node_version` is `Some`, the service spawns `node -v` and verifies it matches the required version.
+4. If all checks pass, it returns `Ok(())`.
+
+### 3.2 Error Cases (Failure Paths)
+1. **Binary Not Found**: If a required binary (e.g. `rustc` or `python3`) cannot be found or spawned, it returns `Err("toolchain binary not found: rustc")`.
+2. **Version Mismatch**: If the parsed version from the binary does not match the manifest, it returns a descriptive error: `Err("toolchain mismatch: expected python 3.10, found 3.9")`.
+3. **Execution Failure**: If the command returns a non-zero exit code or stdout cannot be read, it returns an error detailing the process failure.
+
+## 4. Reused vs New Interfaces
+- **Reused**: The `ToolchainManifest` struct from `aiosh_core::toolchain_config` is reused as the input. The `std::process::Command` standard library module is reused for process execution, mirroring patterns from `pentest.rs`.
+- **New**: The `enforce_toolchain` function is an entirely new AIOS-specific service interface. No upstream APIs are being invented.
+
+## 5. Persistence & Audit Effects
+- **Stateless Execution**: The core service itself does not write to the file system, database, or task ledger. It is purely an inspection and validation mechanism.
+- **Audit Implications**: By returning a `Result<(), String>`, callers (like `task_service.rs` or `release.rs`) can halt execution. When an agent attempts a restricted action, the failure will be passed back up the call stack and eventually logged to the `task.ledger` or `audit.log` by the invoking dispatch gate.
+
+## 6. Parsing Strictness
+To maximize security and predictability, version matching will be strict (prefix matching):
+- A requirement of `"1.80.0"` requires the output to contain `1.80.0`.
+- A requirement of `"3.10"` requires the output to contain `3.10`.
+
+## 7. Implementation & Usage Details (Shipped in Sprint 3)
+
+### 7.1 How to Invoke
+The service is wired into the AIOS shell (`aiosh-cli`) as the `aiosh toolchain check` subcommand.
+
+**Example Command (Copy-Pasteable):**
+```bash
+cargo run --bin aiosh -- toolchain check
+```
+*Note: A configuration file must exist at `config/toolchain.json` (or the path set by `AIOSH_TOOLCHAIN_CONFIG`).*
+
+**Example JSON Response:**
+```json
+{
+  "data": {
+    "enforce_hashes": { "source": "default", "value": false },
+    "node_version": { "source": "default", "value": "v24.18" },
+    "python_version": { "source": "default", "value": "3.14" },
+    "rust_version": { "source": "default", "value": "1.99.0" }
+  },
+  "ok": true,
+  "subcommand": "toolchain check"
+}
+```
+
+### 7.2 Constraints & Limitations
+- **Process execution delays**: Command checking relies on spawning external processes (`rustc -V`, `python3 -V`). Timeouts are capped at 5000ms.
+- **Path Spoofing**: The service checks exactly what is on the `PATH`. If the host system's `PATH` is compromised by malicious scripts imitating `python3` or `rustc`, the toolchain check could be spoofed.
+- **Hash Enforcement**: The `enforce_hashes` directive exists in the data model but is currently a no-op (deferred to the package manager layer).
+- **Node.js**: The Node check is optional. If omitted in the JSON manifest, no error is thrown for missing node binaries.
+
+### 7.3 Task Evidence Links
+- [T-00322 - Specification](T-00322-core-service-specification.md)
+- [T-00323 - Configuration Logic](T-00323-core-service-config.md)
+- [T-00324 - Business Logic](T-00324-core-service-business-logic.md)
+- [T-00325 - Unit Testing](T-00325-core-service-unit-test.md)
+- [T-00326 - Integration](T-00326-core-service-integration.md)
+- [T-00327 - Security Review](T-00327-core-service-security-review.md)
+- [T-00328 - Hardening](T-00328-core-service-hardening.md)
+- [T-00329 - Documentation](T-00329-core-service-documentation.md)

@@ -29,8 +29,8 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
 MODULE_PATH = HERE / "ci_suites.py"
 
-PASS = "[✓]"
-FAIL = "[✗]"
+PASS = "[+]"
+FAIL = "[-]"
 
 
 def load():
@@ -50,7 +50,10 @@ CANONICAL_ORDER = (
     "demo_smoke", "metrics_smoke", "cli_bash_smoke", "task_cli_smoke",
     "task_config_smoke", "task_matrix_smoke", "security_policy",
     "task_ledger_unit", "task_ledger_scaffold", "task_docs_unit",
-    "task_docs_scaffold", "ci_service_unit",
+    "task_docs_scaffold", "ci_service_unit", "toolchain_cli_smoke",
+    "toolchain_mcp_smoke", "doc_cli_smoke", "doc_mcp_smoke",
+    "doc_index_suites", "evidence_cli_smoke", "evidence_mcp_smoke",
+    "evidence_checker", "evidence_unit",
 )
 
 
@@ -59,7 +62,7 @@ def main() -> int:
 
     # ---- W1 — registry IS the single source; bash is a delegating shim
     bash = (REPO / "ci" / "run_all_smokes.sh").read_text(encoding="utf-8")
-    ok = (len(cs.SUITES) == 20
+    ok = (len(cs.SUITES) == 29
           and cs.SUITE_NAMES == CANONICAL_ORDER
           and "tools/ci_run.py" in bash)
     if ok:

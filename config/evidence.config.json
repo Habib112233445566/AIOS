@@ -1,0 +1,10 @@
+{
+  "evidence_dir": "docs/tasks/evidence",
+  "max_file_bytes": 16777216,
+  "allowed_extensions": [
+    ".md",
+    ".json"
+  ],
+  "enforce_checksum": true,
+  "require_all_steps": false
+}

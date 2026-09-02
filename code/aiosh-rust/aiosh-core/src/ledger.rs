@@ -14,6 +14,7 @@
 use serde_json::{json, Map, Value};
 use std::fs::{File, OpenOptions};
 use std::io::Write;
+#[cfg(unix)]
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 
@@ -141,6 +142,16 @@ pub fn read_events(events_path: &Path) -> Result<Vec<Value>, String> {
     Ok(events)
 }
 
+fn open_options_644() -> OpenOptions {
+    let opts = OpenOptions::new();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.mode(0o644);
+    }
+    opts
+}
+
 /// Append one JSONL event line (flush + fsync), assigning seq.
 pub fn append_event(
     events_path: &Path,
@@ -172,10 +183,9 @@ pub fn append_event(
     }
     let record = Value::Object(record);
     let line = serde_json::to_string(&record).map_err(|e| e.to_string())? + "\n";
-    let mut f = OpenOptions::new()
+    let mut f = open_options_644()
         .create(true)
         .append(true)
-        .mode(0o644)
         .open(events_path)
         .map_err(|e| format!("open events: {}", e))?;
     f.write_all(line.as_bytes()).map_err(|e| e.to_string())?;
@@ -260,10 +270,9 @@ pub fn save_state_atomic(state: &Value, state_path: &Path) -> Result<(), String>
     cleanup_stale_tmp(state_path);
     let tmp = format!("{}.tmp.{}", state_path.display(), std::process::id());
     let data = serde_json::to_string_pretty(state).map_err(|e| e.to_string())? + "\n";
-    let mut f = OpenOptions::new()
+    let mut f = open_options_644()
         .write(true)
         .create_new(true)
-        .mode(0o644)
         .open(&tmp)
         .map_err(|e| format!("open tmp state: {}", e))?;
     let write = f.write_all(data.as_bytes()).and_then(|_| f.sync_all());
@@ -605,15 +614,17 @@ fn ensure_evidence_stub(p: &LedgerPaths, task_id: u64, task: &Value) -> Result<S
 /// (T-00028 hardening: previously `flock(LOCK_EX)` could block forever
 /// on a stuck holder, hanging the CLI or the MCP server).
 pub const LOCK_TIMEOUT_SECS: u64 = 5; // DEFAULT; overridden by AIOSH_LEDGER_LOCK_TIMEOUT_SECS
+#[allow(dead_code)]
 const LOCK_POLL_MS: u64 = 50;
 
+#[allow(dead_code)]
 struct FileLock(File);
 
+#[cfg(unix)]
 fn acquire_lock_timeout(lock_path: &Path, timeout: std::time::Duration) -> Result<FileLock, String> {
-    let f = OpenOptions::new()
+    let f = open_options_644()
         .create(true)
         .write(true)
-        .mode(0o644)
         .open(lock_path)
         .map_err(|e| format!("open lock: {}", e))?;
     let fd = std::os::unix::io::AsRawFd::as_raw_fd(&f);
@@ -639,6 +650,16 @@ fn acquire_lock_timeout(lock_path: &Path, timeout: std::time::Duration) -> Resul
     }
 }
 
+#[cfg(not(unix))]
+fn acquire_lock_timeout(lock_path: &Path, _timeout: std::time::Duration) -> Result<FileLock, String> {
+    let f = open_options_644()
+        .create(true)
+        .write(true)
+        .open(lock_path)
+        .map_err(|e| format!("open lock: {}", e))?;
+    Ok(FileLock(f))
+}
+
 fn acquire_lock(lock_path: &Path) -> Result<FileLock, String> {
     let secs = crate::ledger_config::LedgerConfig::from_env()?.lock_timeout_secs;
     acquire_lock_timeout(lock_path, std::time::Duration::from_secs(secs))
@@ -646,6 +667,7 @@ fn acquire_lock(lock_path: &Path) -> Result<FileLock, String> {
 
 impl Drop for FileLock {
     fn drop(&mut self) {
+        #[cfg(unix)]
         unsafe {
             libc::flock(std::os::unix::io::AsRawFd::as_raw_fd(&self.0), libc::LOCK_UN);
         }
@@ -1051,6 +1073,7 @@ mod tests {
         assert!(find_ancestor_tasks_dir(empty.path()).is_none());
     }
 
+    #[cfg(unix)]
     #[test]
     fn lock_contention_times_out_with_explicit_error() {
         use std::os::unix::io::AsRawFd;

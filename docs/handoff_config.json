@@ -1,0 +1,7 @@
+{
+  "max_store_bytes": 1048576,
+  "default_priority": "Normal",
+  "default_ttl_seconds": 86400,
+  "allow_auto_accept": false,
+  "store_path": null
+}

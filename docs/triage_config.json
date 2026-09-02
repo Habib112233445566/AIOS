@@ -1,0 +1,8 @@
+{
+  "max_store_bytes": 1048576,
+  "default_severity": "Critical",
+  "auto_ingest_suites": ["*"],
+  "retention_days": 90,
+  "notify_blockers": true,
+  "store_path": null
+}

@@ -133,6 +133,36 @@ SUITES: list[SuiteDef] = [
     {"name": "ci_service_unit",
      "command": _py("tools/test_ci_service.py"),
      "timeout_s": DEFAULT_TIMEOUT_S},
+    # T-00366: Toolchain Pinning automated smoke test suites
+    {"name": "toolchain_cli_smoke",
+     "command": _py("code/aiosh-cli/tests/test_toolchain_cli_smoke.py"),
+     "timeout_s": DEFAULT_TIMEOUT_S},
+    {"name": "toolchain_mcp_smoke",
+     "command": _py("code/aiosh-mcp/tests/test_toolchain_mcp_smoke.py"),
+     "timeout_s": DEFAULT_TIMEOUT_S},
+    # T-00466: Documentation Index Control automated test suites
+    {"name": "doc_cli_smoke",
+     "command": _py("code/aiosh-cli/tests/test_doc_cli_smoke.py"),
+     "timeout_s": DEFAULT_TIMEOUT_S},
+    {"name": "doc_mcp_smoke",
+     "command": _py("code/aiosh-mcp/tests/test_doc_mcp_smoke.py"),
+     "timeout_s": DEFAULT_TIMEOUT_S},
+    {"name": "doc_index_suites",
+     "command": _py("tools/test_doc_index_suites.py"),
+     "timeout_s": DEFAULT_TIMEOUT_S},
+    # T-00566: Evidence & Audit Trail automated test suites
+    {"name": "evidence_cli_smoke",
+     "command": _py("code/aiosh-cli/tests/test_evidence_cli_smoke.py"),
+     "timeout_s": DEFAULT_TIMEOUT_S},
+    {"name": "evidence_mcp_smoke",
+     "command": _py("code/aiosh-mcp/tests/test_evidence_mcp_smoke.py"),
+     "timeout_s": DEFAULT_TIMEOUT_S},
+    {"name": "evidence_checker",
+     "command": _py("tools/check_evidence.py"),
+     "timeout_s": DEFAULT_TIMEOUT_S},
+    {"name": "evidence_unit",
+     "command": _py("tools/test_check_evidence.py"),
+     "timeout_s": DEFAULT_TIMEOUT_S},
 ]
 
 # Import-time validation (spec §5): fail at load, never mid-run.

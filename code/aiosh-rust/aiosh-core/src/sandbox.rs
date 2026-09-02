@@ -19,17 +19,27 @@ pub const DEFAULT_DENYLIST: &[&str] = &[
     "setreuid", "setregid", "setresuid", "setresgid", "chroot", "pivot_root",
 ];
 
-// x86_64 syscall numbers.
+// x86_64 syscall numbers (Linux).
+#[cfg(target_os = "linux")]
 const SYS_PRCTL: libc::c_long = 157;
+#[cfg(target_os = "linux")]
 const SYS_SECCOMP: libc::c_long = 317;
+#[cfg(target_os = "linux")]
 const SYS_LANDLOCK_CREATE_RULESET: libc::c_long = 444;
+#[cfg(target_os = "linux")]
 const SYS_LANDLOCK_ADD_RULE: libc::c_long = 445;
+#[cfg(target_os = "linux")]
 const SYS_LANDLOCK_RESTRICT_SELF: libc::c_long = 446;
 
+#[cfg(target_os = "linux")]
 const PR_SET_NO_NEW_PRIVS: libc::c_int = 38;
+#[cfg(target_os = "linux")]
 const SECCOMP_SET_MODE_FILTER: libc::c_uint = 1;
+#[cfg(target_os = "linux")]
 const LANDLOCK_RULE_PATH_BENEATH: libc::c_uint = 1;
+#[cfg(target_os = "linux")]
 const AT_FDCWD: libc::c_int = -100;
+#[cfg(target_os = "linux")]
 const LANDLOCK_CREATE_RULESET_VERSION: libc::c_uint = 1;
 
 // Landlock FS access bits (linux/landlock.h).
@@ -206,6 +216,7 @@ fn build_blacklist_bpf(denied: &[i64], arch: u32) -> Vec<SockFilter> {
     stmts
 }
 
+#[cfg(target_os = "linux")]
 fn apply_seccomp_blacklist(denied_syscalls: &[i64]) -> (bool, String) {
     if denied_syscalls.is_empty() {
         return (false, "no denylist provided; seccomp not installed".into());
@@ -219,6 +230,15 @@ fn apply_seccomp_blacklist(denied_syscalls: &[i64]) -> (bool, String) {
         return (false, format!("seccomp(SET_MODE_FILTER) failed: {}", err));
     }
     (true, format!("seccomp-bpf installed: deny {} syscalls", denied_syscalls.len()))
+}
+
+#[cfg(not(target_os = "linux"))]
+fn apply_seccomp_blacklist(denied_syscalls: &[i64]) -> (bool, String) {
+    if denied_syscalls.is_empty() {
+        (false, "no denylist provided; seccomp not installed".into())
+    } else {
+        (false, "seccomp-bpf unsupported on non-Linux".into())
+    }
 }
 
 // ---------------------------------------------------------------------
@@ -269,6 +289,7 @@ fn path_access_bits(rule: &PathRule) -> u64 {
     bits
 }
 
+#[cfg(target_os = "linux")]
 fn apply_landlock(rules: &[PathRule]) -> (bool, String) {
     // 1. Probe the ABI version (flag LANDLOCK_CREATE_RULESET_VERSION).
     //    With this flag the kernel returns the highest supported ABI
@@ -359,16 +380,31 @@ fn apply_landlock(rules: &[PathRule]) -> (bool, String) {
     }
 }
 
+#[cfg(not(target_os = "linux"))]
+fn apply_landlock(rules: &[PathRule]) -> (bool, String) {
+    if rules.is_empty() {
+        (false, "no path rules provided".into())
+    } else {
+        (false, "landlock unsupported on non-Linux".into())
+    }
+}
+
 // ---------------------------------------------------------------------
 // prctl
 // ---------------------------------------------------------------------
 
+#[cfg(target_os = "linux")]
 fn apply_no_new_privs() -> (bool, String) {
     let rc = unsafe { libc::syscall(SYS_PRCTL, PR_SET_NO_NEW_PRIVS as libc::c_long, 1, 0, 0, 0) };
     if rc < 0 {
         return (false, format!("prctl(PR_SET_NO_NEW_PRIVS) failed: {}", std::io::Error::last_os_error()));
     }
     (true, "no-new-privs set".into())
+}
+
+#[cfg(not(target_os = "linux"))]
+fn apply_no_new_privs() -> (bool, String) {
+    (false, "no-new-privs unsupported on non-Linux".into())
 }
 
 // ---------------------------------------------------------------------
@@ -454,6 +490,7 @@ pub fn execve_path(argv0: &str) -> String {
     argv0.to_string()
 }
 
+#[cfg(target_os = "linux")]
 /// Fork; in the child apply the sandbox then execve; parent reaps.
 /// Returns the child's exit code.
 pub fn sandbox_exec(argv: &[String], policy: &SandboxPolicy) -> i32 {
@@ -491,6 +528,24 @@ pub fn sandbox_exec(argv: &[String], policy: &SandboxPolicy) -> i32 {
         128 + sig
     } else {
         1
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn sandbox_exec(argv: &[String], policy: &SandboxPolicy) -> i32 {
+    if argv.is_empty() {
+        eprintln!("sandbox_exec: empty argv");
+        return 2;
+    }
+    let abs_argv0 = execve_path(&argv[0]);
+    let log = apply_in_child(&abs_argv0, policy);
+    emit_sandbox_applied(&log);
+    match std::process::Command::new(&argv[0]).args(&argv[1..]).status() {
+        Ok(status) => status.code().unwrap_or(1),
+        Err(e) => {
+            eprintln!("sandbox: exec failed: {}", e);
+            126
+        }
     }
 }
 
