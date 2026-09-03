@@ -1128,3 +1128,13 @@
 {"seq":1128,"ts":"2026-09-03T15:48:59Z","event":"completed","task_id":1128,"note":"Hardening of aiosh image CLI against control characters and malformed input","evidence":[]}
 {"seq":1129,"ts":"2026-09-03T15:49:58Z","event":"completed","task_id":1129,"note":"Documentation of aiosh image CLI surface commands and options","evidence":[]}
 {"seq":1130,"ts":"2026-09-03T15:52:21Z","event":"completed","task_id":1130,"note":"Verification and evidence closure for Base Image Build CLI surface sub-epic","evidence":[]}
+{"seq":1131,"ts":"2026-09-03T15:53:16Z","event":"completed","task_id":1131,"note":"Research into Base Image Build MCP/API surface","evidence":[]}
+{"seq":1132,"ts":"2026-09-03T15:54:01Z","event":"completed","task_id":1132,"note":"Specification of Base Image Build MCP tools and schemas","evidence":[]}
+{"seq":1133,"ts":"2026-09-03T15:57:41Z","event":"completed","task_id":1133,"note":"Scaffold Base Image Build MCP tools in aiosh-mcp","evidence":[]}
+{"seq":1134,"ts":"2026-09-03T15:58:40Z","event":"completed","task_id":1134,"note":"Implementation of Base Image Build MCP tools in aiosh-mcp","evidence":[]}
+{"seq":1135,"ts":"2026-09-03T16:00:18Z","event":"completed","task_id":1135,"note":"Unit testing of Base Image Build MCP tools in aiosh-mcp","evidence":[]}
+{"seq":1136,"ts":"2026-09-03T16:01:29Z","event":"completed","task_id":1136,"note":"Integration of Base Image Build MCP tools into test_image_suites.py criterion B4","evidence":[]}
+{"seq":1137,"ts":"2026-09-03T16:02:02Z","event":"completed","task_id":1137,"note":"Security review of Base Image Build MCP tools","evidence":[]}
+{"seq":1138,"ts":"2026-09-03T16:04:18Z","event":"completed","task_id":1138,"note":"Hardening of Base Image Build MCP tools with input validation and tests","evidence":[]}
+{"seq":1139,"ts":"2026-09-03T16:05:35Z","event":"completed","task_id":1139,"note":"Documentation of Base Image Build MCP tools in README.md","evidence":[]}
+{"seq":1140,"ts":"2026-09-03T16:06:33Z","event":"completed","task_id":1140,"note":"Verification and evidence closure for Base Image Build MCP/API surface sub-epic","evidence":[]}

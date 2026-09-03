@@ -872,16 +872,23 @@ Evidence: `tasks/evidence/T-01001-data-model-research.md` .. `tasks/evidence/T-0
 - `aiosh image filter [--format <fmt>] [--distro <id>] [--json] [--store <path>]`: Filter image registry by format or distribution ID.
 - Security Hardening: Strict ASCII printable graphic character validation on target identifiers; control characters rejected with exit code 2.
 
+**MCP Tool Surface (`aiosh-mcp`):**
+- `aios.image.list`: Enumerate registered base image manifests with optional `format` and `distro_id` filters.
+- `aios.image.get`: Retrieve complete `BaseImageManifest` by `id`.
+- `aios.image.plan`: Generate discrete 4-stage `BuildPlan` for image `id`.
+- Security Hardening: Enforces strict length bounds (128-char `id`, 4096-char `store_path`) and graphic ASCII printable sanitization. PEP authenticated.
+
 **Standalone Test Runner (`tools/test_image_suites.py`):**
 ```bash
 python tools/test_image_suites.py
 # [+] B1 base image data model integrity & invariant validation
 # [+] B2 base image store registry, persistence & build plan synthesis
 # [+] B3 base image CLI surface commands & options (list/show/plan/filter)
-# PASS: image_suites criteria (B1..B3)
+# [+] B4 base image MCP surface tools (list/get/plan)
+# PASS: image_suites criteria (B1..B4)
 ```
 
-Evidence: `tasks/evidence/T-01101-base-image-data-model-research.md` .. `tasks/evidence/T-01129-base-image-cli-documentation.md`.
+Evidence: `tasks/evidence/T-01101-base-image-data-model-research.md` .. `tasks/evidence/T-01139-base-image-mcp-documentation.md`.
 
 
 

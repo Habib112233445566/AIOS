@@ -494,6 +494,48 @@ impl Server {
                 "additionalProperties": false
             }
         }));
+        tools.push(json!({
+            "name": "aios.image.list",
+            "description": "List registered Linux base image manifests with optional format or distro filters.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "format": { "type": "string", "description": "Optional format filter (raw, qcow2, iso, tarball)" },
+                    "distro_id": { "type": "string", "description": "Optional distro identifier filter" },
+                    "store_path": { "type": "string", "description": "Optional path to custom image_store.json" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.image.get",
+            "description": "Retrieve detailed base image manifest by ID.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string", "description": "Image target identifier" },
+                    "store_path": { "type": "string", "description": "Optional path to custom image_store.json" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "required": ["id"],
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.image.plan",
+            "description": "Generate reproducible 4-stage build execution plan for base image by ID.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string", "description": "Image target identifier" },
+                    "store_path": { "type": "string", "description": "Optional path to custom image_store.json" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "required": ["id"],
+                "additionalProperties": false
+            }
+        }));
         tools
     }
 
@@ -904,6 +946,115 @@ impl Server {
                     &mut self.ring, &self.pep,
                     "aios.distro.check", "Validate distro store health", arguments,
                     None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.image.list" => {
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                if let Some(ref p) = store_path_opt {
+                    if p.len() > 4096 {
+                        return json!({ "ok": false, "error": "store_path exceeds maximum length of 4096 characters" });
+                    }
+                }
+                let format_opt = arguments.get("format").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let distro_opt = arguments.get("distro_id").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = move || -> Result<Value, String> {
+                    let store = match store_path_opt {
+                        Some(ref p) => aiosh_core::base_image_service::ImageStore::load_from_path(std::path::Path::new(p))?,
+                        None => aiosh_core::base_image_service::ImageStore::new(),
+                    };
+                    let mut images = store.list_images();
+                    if let Some(ref fmt_str) = format_opt {
+                        let fmt = match fmt_str.to_lowercase().as_str() {
+                            "raw" => aiosh_core::base_image::ImageFormat::Raw,
+                            "qcow2" => aiosh_core::base_image::ImageFormat::Qcow2,
+                            "iso" => aiosh_core::base_image::ImageFormat::Iso,
+                            "tarball" | "tar" => aiosh_core::base_image::ImageFormat::Tarball,
+                            other => return Err(format!("Unknown image format '{}'", other)),
+                        };
+                        images.retain(|img| img.format == fmt);
+                    }
+                    if let Some(ref distro) = distro_opt {
+                        images.retain(|img| img.rootfs.distro_id == *distro);
+                    }
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.image.list",
+                        "images": images,
+                        "count": images.len()
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.image.list", "List base image manifests", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.image.get" => {
+                let id = match arguments.get("id").and_then(|v| v.as_str()) {
+                    Some(s) => s.to_string(),
+                    None => return json!({ "ok": false, "error": "Missing required field 'id'" }),
+                };
+                if id.is_empty() || id.len() > 128 || !id.chars().all(|c| c.is_ascii_graphic()) {
+                    return json!({ "ok": false, "error": "Invalid image id: must be 1..128 printable ASCII characters" });
+                }
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                if let Some(ref p) = store_path_opt {
+                    if p.len() > 4096 {
+                        return json!({ "ok": false, "error": "store_path exceeds maximum length of 4096 characters" });
+                    }
+                }
+                let id_for_closure = id.clone();
+                let f = move || -> Result<Value, String> {
+                    let store = match store_path_opt {
+                        Some(ref p) => aiosh_core::base_image_service::ImageStore::load_from_path(std::path::Path::new(p))?,
+                        None => aiosh_core::base_image_service::ImageStore::new(),
+                    };
+                    match store.get_image(&id_for_closure) {
+                        Some(img) => Ok(json!({
+                            "ok": true,
+                            "tool": "aios.image.get",
+                            "image": img
+                        })),
+                        None => Err(format!("Base image '{}' not found", id_for_closure)),
+                    }
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.image.get", &format!("Get base image manifest {}", id), arguments,
+                    Some(&id), grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.image.plan" => {
+                let id = match arguments.get("id").and_then(|v| v.as_str()) {
+                    Some(s) => s.to_string(),
+                    None => return json!({ "ok": false, "error": "Missing required field 'id'" }),
+                };
+                if id.is_empty() || id.len() > 128 || !id.chars().all(|c| c.is_ascii_graphic()) {
+                    return json!({ "ok": false, "error": "Invalid image id: must be 1..128 printable ASCII characters" });
+                }
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                if let Some(ref p) = store_path_opt {
+                    if p.len() > 4096 {
+                        return json!({ "ok": false, "error": "store_path exceeds maximum length of 4096 characters" });
+                    }
+                }
+                let id_for_closure = id.clone();
+                let f = move || -> Result<Value, String> {
+                    let store = match store_path_opt {
+                        Some(ref p) => aiosh_core::base_image_service::ImageStore::load_from_path(std::path::Path::new(p))?,
+                        None => aiosh_core::base_image_service::ImageStore::new(),
+                    };
+                    let plan = store.generate_build_plan(&id_for_closure)?;
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.image.plan",
+                        "plan": plan
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.image.plan", &format!("Generate build plan for image {}", id), arguments,
+                    Some(&id), grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
                 )
             }
             "aios.triage.list" => {
@@ -2321,5 +2472,57 @@ mod tests {
         assert_eq!(res_check.get("ok").and_then(|v| v.as_bool()), Some(true));
         let healthy = res_check.pointer("/report/healthy").and_then(|v| v.as_bool()).unwrap_or(false);
         assert!(healthy);
+    }
+
+    #[test]
+    fn test_mcp_image_tools() {
+        let mut server = Server::open();
+
+        // 1. aios.image.list
+        let res_list = server.call_tool("aios.image.list", &json!({}));
+        assert_eq!(res_list.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_list.get("count").and_then(|v| v.as_u64()), Some(4));
+
+        // Format filter
+        let res_list_filter = server.call_tool("aios.image.list", &json!({ "format": "raw" }));
+        assert_eq!(res_list_filter.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_list_filter.get("count").and_then(|v| v.as_u64()), Some(1));
+
+        // 2. aios.image.get
+        let res_get = server.call_tool("aios.image.get", &json!({ "id": "debian-12-minimal-raw" }));
+        assert_eq!(res_get.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_get.pointer("/image/format").and_then(|v| v.as_str()), Some("raw"));
+
+        // Negative: not found
+        let res_get_missing = server.call_tool("aios.image.get", &json!({ "id": "nonexistent" }));
+        assert_eq!(res_get_missing.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // Negative: missing id
+        let res_get_no_id = server.call_tool("aios.image.get", &json!({}));
+        assert_eq!(res_get_no_id.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 3. aios.image.plan
+        let res_plan = server.call_tool("aios.image.plan", &json!({ "id": "debian-12-minimal-raw" }));
+        assert_eq!(res_plan.get("ok").and_then(|v| v.as_bool()), Some(true));
+        let stages_count = res_plan.pointer("/plan/stages").and_then(|v| v.as_array()).map(|a| a.len());
+        assert_eq!(stages_count, Some(4));
+
+        // Negative: plan missing image
+        let res_plan_missing = server.call_tool("aios.image.plan", &json!({ "id": "nonexistent" }));
+        assert_eq!(res_plan_missing.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // Negative: plan missing id field
+        let res_plan_no_id = server.call_tool("aios.image.plan", &json!({}));
+        assert_eq!(res_plan_no_id.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // Hardening negative tests
+        let res_control_char = server.call_tool("aios.image.get", &json!({ "id": "bad\x07id" }));
+        assert_eq!(res_control_char.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        let res_long_id = server.call_tool("aios.image.plan", &json!({ "id": "a".repeat(129) }));
+        assert_eq!(res_long_id.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        let res_long_store = server.call_tool("aios.image.list", &json!({ "store_path": "a".repeat(4097) }));
+        assert_eq!(res_long_store.get("ok").and_then(|v| v.as_bool()), Some(false));
     }
 }
