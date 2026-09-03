@@ -36,6 +36,13 @@ impl DistroStore {
         store
     }
 
+    /// Creates an empty DistroStore without any pre-registered profiles.
+    pub fn empty() -> Self {
+        Self {
+            profiles: HashMap::new(),
+        }
+    }
+
     /// Registers a custom or updated distro profile after validation.
     pub fn register_profile(&mut self, profile: DistroProfile) -> Result<(), String> {
         validate_distro_profile(&profile)?;
@@ -152,6 +159,14 @@ impl DistroStore {
         policy: &crate::distro_policy::DistroSecurityPolicy,
     ) -> Vec<DistroProfile> {
         policy.filter_compliant_profiles(self)
+    }
+
+    /// Generates an observability telemetry report for this distro store.
+    pub fn get_observability_report(
+        &self,
+        policy_opt: Option<&crate::distro_policy::DistroSecurityPolicy>,
+    ) -> crate::distro_observability::DistroObservabilityReport {
+        crate::distro_observability::DistroObservabilityReport::generate(self, policy_opt)
     }
 }
 

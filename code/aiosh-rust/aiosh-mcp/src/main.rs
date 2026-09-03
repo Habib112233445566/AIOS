@@ -470,6 +470,18 @@ impl Server {
                 "additionalProperties": false
             }
         }));
+        tools.push(json!({
+            "name": "aios.distro.stats",
+            "description": "Get observability and telemetry metrics report for registered Linux distribution profiles.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "store_path": { "type": "string", "description": "Optional path to custom distro_store.json" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
         tools
     }
 
@@ -832,6 +844,30 @@ impl Server {
                 dispatch::recorded_call(
                     &mut self.ring, &self.pep,
                     "aios.distro.policy", "Check distro security policy", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.distro.stats" => {
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = move || -> Result<Value, String> {
+                    let store = match store_path_opt {
+                        Some(ref p) => aiosh_core::distro_service::DistroStore::load_from_path(std::path::Path::new(p))?,
+                        None => {
+                            let cfg = aiosh_core::distro_config::DistroConfig::from_env().unwrap_or_default();
+                            aiosh_core::distro_service::DistroStore::load_from_config(&cfg)?
+                        }
+                    };
+                    let policy_opt = aiosh_core::distro_policy::DistroSecurityPolicy::from_env().ok();
+                    let report = store.get_observability_report(policy_opt.as_ref());
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.distro.stats",
+                        "report": report
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.distro.stats", "Get distro observability metrics", arguments,
                     None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
                 )
             }
@@ -2238,5 +2274,11 @@ mod tests {
         assert_eq!(res_policy.get("ok").and_then(|v| v.as_bool()), Some(true));
         let res_policy_one = server.call_tool("aios.distro.policy", &json!({ "id": "debian-12-minimal-x86_64" }));
         assert_eq!(res_policy_one.get("ok").and_then(|v| v.as_bool()), Some(true));
+
+        // 6. aios.distro.stats
+        let res_stats = server.call_tool("aios.distro.stats", &json!({}));
+        assert_eq!(res_stats.get("ok").and_then(|v| v.as_bool()), Some(true));
+        let total = res_stats.pointer("/report/total_profiles").and_then(|v| v.as_u64()).unwrap_or(0);
+        assert!(total >= 2);
     }
 }

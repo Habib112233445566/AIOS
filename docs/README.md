@@ -790,6 +790,7 @@ aiosh distro evaluate [<id>] [--json] [--store <path>]
 aiosh distro recommend [--json] [--store <path>]
 aiosh distro config [--json]
 aiosh distro policy [<id>] [--json] [--store <path>]
+aiosh distro stats [--json] [--store <path>]
 ```
 
 **Configuration Subsystem (`config/distro.json` & `aiosh-core::distro_config`):**
@@ -804,12 +805,19 @@ aiosh distro policy [<id>] [--json] [--store <path>]
 - MCP evaluation: `aios.distro.policy` audits compliance via PEP and audit ring buffer.
 - Environment overrides: `AIOSH_DISTRO_MIN_SECURITY_SCORE`, `AIOSH_DISTRO_DISALLOWED_FAMILIES`.
 
+**Observability Subsystem (`aiosh-core::distro_observability`):**
+- Telemetry contract: `DistroObservabilityReport` tracking total profiles, recommended profile, production readiness, policy compliance, score averages, and family/arch partitions.
+- Arithmetic invariants: O1..O4 validated upon construction (partition sums, count bounds, clamped score averages).
+- CLI exposure: `aiosh distro stats [--json]` displays structured telemetry diagnostics.
+- MCP exposure: `aios.distro.stats` delivers JSON telemetry payload via audit ring buffer.
+
 **MCP / JSON-RPC API Surface:**
 - `aios.distro.list`: List all registered distro profiles.
 - `aios.distro.show`: Get detailed profile specification by ID.
 - `aios.distro.evaluate`: Evaluate single profile or all profiles against AIOS criteria.
 - `aios.distro.recommend`: Return the reference production profile.
 - `aios.distro.policy`: Audit distro profiles against AIOS security policy standards.
+- `aios.distro.stats`: Retrieve aggregated telemetry and observability report.
 
 **Standalone Test Runner (`tools/test_distro_suites.py` & `tools/test_distro_unit.py`):**
 ```bash
@@ -832,7 +840,7 @@ python code/aiosh-mcp/tests/test_distro_mcp_smoke.py
 # ALL DISTRO MCP SMOKE TESTS PASSED!
 ```
 
-Evidence: `tasks/evidence/T-01001-data-model-research.md` .. `tasks/evidence/T-01069-security-policy-documentation.md`.
+Evidence: `tasks/evidence/T-01001-data-model-research.md` .. `tasks/evidence/T-01079-observability-documentation.md`.
 
 
 

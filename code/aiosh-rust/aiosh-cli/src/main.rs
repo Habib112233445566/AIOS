@@ -482,8 +482,49 @@ fn cmd_distro(args: &[String]) -> i32 {
                 0
             }
         }
+        Some("stats") => {
+            let policy_opt = aiosh_core::distro_policy::DistroSecurityPolicy::from_env().ok();
+            let report = store.get_observability_report(policy_opt.as_ref());
+            classify_and_emit(
+                &mut ctx,
+                "distro",
+                "stats",
+                json!({
+                    "total": report.total_profiles,
+                    "production_ready": report.production_ready_count,
+                    "policy_compliant": report.policy_compliant_count,
+                }),
+                "success",
+                None,
+                Some("Retrieved distro observability report"),
+                "operator",
+                None,
+            );
+            if is_json {
+                println!("{}", serde_json::to_string_pretty(&report).unwrap_or_default());
+            } else {
+                println!("AIOS Distro Observability Report:");
+                println!("  Total Profiles:            {}", report.total_profiles);
+                println!("  Recommended Profile:       {}", report.recommended_profile_id.as_deref().unwrap_or("none"));
+                println!("  Production Ready:          {}/{}", report.production_ready_count, report.total_profiles);
+                println!("  Policy Compliant:          {}/{}", report.policy_compliant_count, report.total_profiles);
+                println!("  Average Overall Score:     {:.2}", report.average_overall_score);
+                println!("  Average Security Score:    {:.2}", report.average_security_score);
+                println!("  Average Footprint Score:   {:.2}", report.average_footprint_score);
+                println!("  Average Binary Compat:     {:.2}", report.average_binary_compatibility_score);
+                println!("\nFamily Breakdown:");
+                for (fam, count) in &report.family_breakdown {
+                    println!("  {:<20} {}", fam, count);
+                }
+                println!("\nArchitecture Breakdown:");
+                for (arch, count) in &report.architecture_breakdown {
+                    println!("  {:<20} {}", arch, count);
+                }
+            }
+            0
+        }
         Some("--help") | Some("-h") | None => {
-            println!("aiosh distro — Linux Distro Selection & Justification Manager\n\nUsage:\n  aiosh distro list [--json] [--store <path>]\n  aiosh distro show <id> [--json] [--store <path>]\n  aiosh distro evaluate [<id>] [--json] [--store <path>]\n  aiosh distro recommend [--json] [--store <path>]\n  aiosh distro config [--json]\n  aiosh distro policy [<id>] [--json] [--store <path>]");
+            println!("aiosh distro — Linux Distro Selection & Justification Manager\n\nUsage:\n  aiosh distro list [--json] [--store <path>]\n  aiosh distro show <id> [--json] [--store <path>]\n  aiosh distro evaluate [<id>] [--json] [--store <path>]\n  aiosh distro recommend [--json] [--store <path>]\n  aiosh distro config [--json]\n  aiosh distro policy [<id>] [--json] [--store <path>]\n  aiosh distro stats [--json] [--store <path>]");
             0
         }
         Some(other) => {

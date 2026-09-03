@@ -1068,3 +1068,13 @@
 {"seq":1068,"ts":"2026-09-03T14:12:46Z","event":"completed","task_id":1068,"note":"Hardening of DistroSecurityPolicy with input validation and RFC3339 timestamps","evidence":[]}
 {"seq":1069,"ts":"2026-09-03T14:14:33Z","event":"completed","task_id":1069,"note":"Documentation of distro security policy in docs/README.md","evidence":[]}
 {"seq":1070,"ts":"2026-09-03T14:16:04Z","event":"completed","task_id":1070,"note":"Verification and evidence closure for Distro Selection security policy sub-epic","evidence":[]}
+{"seq":1071,"ts":"2026-09-03T14:18:22Z","event":"completed","task_id":1071,"note":"Research into observability metrics and telemetry aggregation for Distro Selection","evidence":[]}
+{"seq":1072,"ts":"2026-09-03T14:19:13Z","event":"completed","task_id":1072,"note":"Specification of DistroObservabilityReport schema and invariants O1..O4","evidence":[]}
+{"seq":1073,"ts":"2026-09-03T14:22:01Z","event":"completed","task_id":1073,"note":"Scaffold distro_observability module in aiosh-core","evidence":[]}
+{"seq":1074,"ts":"2026-09-03T14:25:06Z","event":"completed","task_id":1074,"note":"Implementation of DistroObservabilityReport, telemetry calculations, and store integration","evidence":[]}
+{"seq":1075,"ts":"2026-09-03T14:26:37Z","event":"completed","task_id":1075,"note":"Unit testing of DistroObservabilityReport generation and invariant validation","evidence":[]}
+{"seq":1076,"ts":"2026-09-03T14:31:02Z","event":"completed","task_id":1076,"note":"Integration of distro stats across CLI and MCP surfaces","evidence":[]}
+{"seq":1077,"ts":"2026-09-03T14:31:50Z","event":"completed","task_id":1077,"note":"Security review of distro observability data aggregation and boundary conditions","evidence":[]}
+{"seq":1078,"ts":"2026-09-03T14:34:58Z","event":"completed","task_id":1078,"note":"Hardening of DistroObservabilityReport with score clamping and empty store handling","evidence":[]}
+{"seq":1079,"ts":"2026-09-03T14:36:04Z","event":"completed","task_id":1079,"note":"Documentation of distro observability subsystem and telemetry surfaces","evidence":[]}
+{"seq":1080,"ts":"2026-09-03T14:36:52Z","event":"completed","task_id":1080,"note":"Verification and evidence closure for Distro Selection observability sub-epic","evidence":[]}
