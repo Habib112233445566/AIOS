@@ -811,9 +811,13 @@ Limitations (honest): Profiles must pass strict semver validation and alphanumer
 ```bash
 python code/aiosh-cli/tests/test_distro_cli_smoke.py
 # ALL DISTRO CLI SMOKE TESTS PASSED!
+
+python code/aiosh-mcp/tests/test_distro_mcp_smoke.py
+# ALL DISTRO MCP SMOKE TESTS PASSED!
 ```
 
-Evidence: `tasks/evidence/T-01001-data-model-research.md` .. `tasks/evidence/T-01029-cli-surface-documentation.md`.
+Evidence: `tasks/evidence/T-01001-data-model-research.md` .. `tasks/evidence/T-01039-mcp-api-surface-documentation.md`.
+
 
 
 

@@ -1028,3 +1028,13 @@
 {"seq":1028,"ts":"2026-09-03T10:57:06Z","event":"completed","task_id":1028,"note":"Hardening of Distro Selection CLI surface against failure and misuse","evidence":[]}
 {"seq":1029,"ts":"2026-09-03T10:58:06Z","event":"completed","task_id":1029,"note":"Documentation of Distro Selection CLI surface in docs/README.md","evidence":[]}
 {"seq":1030,"ts":"2026-09-03T10:59:16Z","event":"completed","task_id":1030,"note":"Verification and evidence closure for Distro Selection CLI surface","evidence":[]}
+{"seq":1031,"ts":"2026-09-03T11:05:24Z","event":"completed","task_id":1031,"note":"Research MCP/API surface tool schemas, wire protocols, and failure modes for Distro Selection","evidence":[]}
+{"seq":1032,"ts":"2026-09-03T11:05:59Z","event":"completed","task_id":1032,"note":"Specification of MCP/API surface tool signatures, schemas, error codes, and audit invariants","evidence":[]}
+{"seq":1033,"ts":"2026-09-03T11:10:10Z","event":"completed","task_id":1033,"note":"Scaffold MCP/API surface tool declarations and cross-substrate test harness","evidence":[]}
+{"seq":1034,"ts":"2026-09-03T11:10:47Z","event":"completed","task_id":1034,"note":"Implement minimal working behavior for MCP/API surface of Distro Selection","evidence":[]}
+{"seq":1035,"ts":"2026-09-03T11:11:51Z","event":"completed","task_id":1035,"note":"Unit test suite for MCP/API surface across positive and negative cases","evidence":[]}
+{"seq":1036,"ts":"2026-09-03T11:13:12Z","event":"completed","task_id":1036,"note":"Integration of MCP/API surface into production path with smoke verification","evidence":[]}
+{"seq":1037,"ts":"2026-09-03T11:14:01Z","event":"completed","task_id":1037,"note":"Security review and threat modeling for Distro Selection MCP/API surface","evidence":[]}
+{"seq":1038,"ts":"2026-09-03T11:14:53Z","event":"completed","task_id":1038,"note":"Hardening of Distro Selection MCP/API surface against failure and misuse","evidence":[]}
+{"seq":1039,"ts":"2026-09-03T11:16:00Z","event":"completed","task_id":1039,"note":"Documentation of Distro Selection MCP/API surface in docs/README.md","evidence":[]}
+{"seq":1040,"ts":"2026-09-03T11:16:58Z","event":"completed","task_id":1040,"note":"Verification and evidence closure for Distro Selection MCP/API surface","evidence":[]}
