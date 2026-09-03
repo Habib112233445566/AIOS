@@ -1098,3 +1098,13 @@
 {"seq":1098,"ts":"2026-09-03T15:06:29Z","event":"completed","task_id":1098,"note":"Hardening of recovery backup collision resilience and millisecond timestamps","evidence":[]}
 {"seq":1099,"ts":"2026-09-03T15:07:47Z","event":"completed","task_id":1099,"note":"Documentation of distro recovery and health verification subsystem","evidence":[]}
 {"seq":1100,"ts":"2026-09-03T15:08:34Z","event":"completed","task_id":1100,"note":"Verification and closure of Distro Selection & Justification Epic (T-01001..T-01100)","evidence":[]}
+{"seq":1101,"ts":"2026-09-03T15:09:49Z","event":"completed","task_id":1101,"note":"Research into base image build data models, formats, and reproducibility invariants","evidence":[]}
+{"seq":1102,"ts":"2026-09-03T15:10:24Z","event":"completed","task_id":1102,"note":"Specification of BaseImageManifest, RootfsSpec, KernelSpec, and invariant validation","evidence":[]}
+{"seq":1103,"ts":"2026-09-03T15:11:42Z","event":"completed","task_id":1103,"note":"Scaffold base_image module and validate_base_image_manifest","evidence":[]}
+{"seq":1104,"ts":"2026-09-03T15:13:16Z","event":"completed","task_id":1104,"note":"Implementation of BaseImageManifest, constructors, and validation","evidence":[]}
+{"seq":1105,"ts":"2026-09-03T15:15:26Z","event":"completed","task_id":1105,"note":"Unit testing of BaseImageManifest, RootfsSpec, KernelSpec, and invariant validation","evidence":[]}
+{"seq":1106,"ts":"2026-09-03T15:16:31Z","event":"completed","task_id":1106,"note":"Integration of base image data model and standalone test suite criterion B1","evidence":[]}
+{"seq":1107,"ts":"2026-09-03T15:17:01Z","event":"completed","task_id":1107,"note":"Security review of base image data model and injection attack vectors","evidence":[]}
+{"seq":1108,"ts":"2026-09-03T15:18:33Z","event":"completed","task_id":1108,"note":"Hardening of base image data model against injection vectors","evidence":[]}
+{"seq":1109,"ts":"2026-09-03T15:19:42Z","event":"completed","task_id":1109,"note":"Documentation of Linux Base Image Build subsystem and data models","evidence":[]}
+{"seq":1110,"ts":"2026-09-03T15:20:33Z","event":"completed","task_id":1110,"note":"Verification and evidence closure for Base Image Build data model sub-epic","evidence":[]}

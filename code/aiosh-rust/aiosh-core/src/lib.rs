@@ -20,6 +20,7 @@
 
 pub mod agent;
 pub mod audit;
+pub mod base_image;
 pub mod canonical;
 pub mod ci;
 pub mod ci_config;

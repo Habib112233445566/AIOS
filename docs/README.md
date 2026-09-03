@@ -850,7 +850,23 @@ python code/aiosh-mcp/tests/test_distro_mcp_smoke.py
 # ALL DISTRO MCP SMOKE TESTS PASSED!
 ```
 
-Evidence: `tasks/evidence/T-01001-data-model-research.md` .. `tasks/evidence/T-01099-recovery-validation-documentation.md`.
+Evidence: `tasks/evidence/T-01001-data-model-research.md` .. `tasks/evidence/T-01100-distro-recovery-validation-verification-evidence.md`.
+
+### 8.11 Linux Base Image Build Subsystem (`aiosh-core::base_image`, T-01101..T-01200)
+
+**Architecture & Manifest Contract:**
+- Data model: `BaseImageManifest` specifying `RootfsSpec`, `KernelSpec`, target `ImageFormat` (`raw`, `qcow2`, `iso`, `tarball`), and SHA-256 artifact verification.
+- Canonical targets: `debian_12_minimal` (ext4, systemd cgroup v2, LTS kernel) and `alpine_319_container` (squashfs, musl, container-optimized).
+- Invariants (I1..I6): SemVer validation, restricted package naming (`^[a-z0-9][a-z0-9+.-]*$`), RFC 1123 hostname checks, kernel cmdline control character prohibition, and 10 GiB sizing ceilings.
+
+**Standalone Test Runner (`tools/test_image_suites.py`):**
+```bash
+python tools/test_image_suites.py
+# [+] B1 base image data model integrity & invariant validation
+# PASS: image_suites criteria (B1)
+```
+
+Evidence: `tasks/evidence/T-01101-base-image-data-model-research.md` .. `tasks/evidence/T-01109-base-image-data-model-documentation.md`.
 
 
 
