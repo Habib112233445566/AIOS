@@ -865,15 +865,23 @@ Evidence: `tasks/evidence/T-01001-data-model-research.md` .. `tasks/evidence/T-0
 - Invariants (P1..P4): 4 discrete stages, sum-of-durations consistency, non-zero artifact sizing, and registry uniqueness.
 - Security Hardening: 10 MiB store file ceiling in `load_from_path` and `0o644` permissions on persistence.
 
+**CLI Surface (`aiosh image`):**
+- `aiosh image list [--json] [--store <path>]`: Enumerate registered base image targets.
+- `aiosh image show <id> [--json] [--store <path>]`: Deep inspect manifest attributes, packages, and kernel configurations.
+- `aiosh image plan <id> [--json] [--store <path>]`: Synthesize reproducible 4-stage build execution plan.
+- `aiosh image filter [--format <fmt>] [--distro <id>] [--json] [--store <path>]`: Filter image registry by format or distribution ID.
+- Security Hardening: Strict ASCII printable graphic character validation on target identifiers; control characters rejected with exit code 2.
+
 **Standalone Test Runner (`tools/test_image_suites.py`):**
 ```bash
 python tools/test_image_suites.py
 # [+] B1 base image data model integrity & invariant validation
 # [+] B2 base image store registry, persistence & build plan synthesis
-# PASS: image_suites criteria (B1..B2)
+# [+] B3 base image CLI surface commands & options (list/show/plan/filter)
+# PASS: image_suites criteria (B1..B3)
 ```
 
-Evidence: `tasks/evidence/T-01101-base-image-data-model-research.md` .. `tasks/evidence/T-01119-base-image-service-documentation.md`.
+Evidence: `tasks/evidence/T-01101-base-image-data-model-research.md` .. `tasks/evidence/T-01129-base-image-cli-documentation.md`.
 
 
 

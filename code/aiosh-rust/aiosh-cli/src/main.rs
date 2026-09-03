@@ -195,8 +195,9 @@ fn main() {
         Some("triage") => cmd_triage(&args[1..]),
         Some("handoff") => cmd_handoff(&args[1..]),
         Some("distro") => cmd_distro(&args[1..]),
+        Some("image") => cmd_image(&args[1..]),
         Some("--help") | Some("-h") | None => {
-            println!("aiosh — AIOS shell CLI (Rust)\n\nUsage: aiosh <status|run|agent|audit|grant|pentest|classify|task|ci|release|backup|toolchain|doc|evidence|repo|secrets|triage|handoff|distro> ...\n\n  aiosh task <status|done|block|unblock|skip|rebuild|check>  Task ledger control\n  aiosh ci <show|failures|check|config|metrics> [--file PATH]  CI smoke reports\n  aiosh release generate  Create bootable ISO\n  aiosh backup create  Create system snapshot zip\n  aiosh toolchain check [--config <path>]  Verify host environment against ToolchainManifest\n  aiosh toolchain show [--config <path>]   Display the resolved ToolchainManifest\n  aiosh doc <show|check|search>  Documentation Index Control\n  aiosh evidence <verify|hash|scan>   Evidence & Audit Trail Control\n  aiosh repo <health|check>  Repository Health Diagnostics\n  aiosh secrets <scan|check> [--config <path>]  Secrets & Access Hygiene Scanner\n  aiosh triage <list|show|record|resolve|ingest|check>  Regression Triage Manager\n  aiosh handoff <list|show|initiate|accept|reject|complete|cancel>  Agent Handoff Protocol Manager\n  aiosh distro <list|show|evaluate|recommend>  Linux Distro Selection & Justification Manager");
+            println!("aiosh — AIOS shell CLI (Rust)\n\nUsage: aiosh <status|run|agent|audit|grant|pentest|classify|task|ci|release|backup|toolchain|doc|evidence|repo|secrets|triage|handoff|distro|image> ...\n\n  aiosh task <status|done|block|unblock|skip|rebuild|check>  Task ledger control\n  aiosh ci <show|failures|check|config|metrics> [--file PATH]  CI smoke reports\n  aiosh release generate  Create bootable ISO\n  aiosh backup create  Create system snapshot zip\n  aiosh toolchain check [--config <path>]  Verify host environment against ToolchainManifest\n  aiosh toolchain show [--config <path>]   Display the resolved ToolchainManifest\n  aiosh doc <show|check|search>  Documentation Index Control\n  aiosh evidence <verify|hash|scan>   Evidence & Audit Trail Control\n  aiosh repo <health|check>  Repository Health Diagnostics\n  aiosh secrets <scan|check> [--config <path>]  Secrets & Access Hygiene Scanner\n  aiosh triage <list|show|record|resolve|ingest|check>  Regression Triage Manager\n  aiosh handoff <list|show|initiate|accept|reject|complete|cancel>  Agent Handoff Protocol Manager\n  aiosh distro <list|show|evaluate|recommend|policy|stats|check>  Linux Distro Selection & Justification Manager\n  aiosh image <list|show|plan|filter>  Linux Base Image Build & Packaging Manager");
             0
         }
         Some(other) => {
@@ -562,6 +563,193 @@ fn cmd_distro(args: &[String]) -> i32 {
         }
         Some(other) => {
             eprintln!("unknown distro subcommand: {}", other);
+            2
+        }
+    }
+}
+
+fn cmd_image(args: &[String]) -> i32 {
+    let mut ctx = open_context();
+    let sub = args.first().map(|s| s.as_str());
+    let rest = if args.len() > 1 { &args[1..] } else { &[] };
+    let is_json = has_flag(rest, "--json");
+
+    let store = if let Some(path_str) = parse_flag(rest, "--store") {
+        match aiosh_core::base_image_service::ImageStore::load_from_path(std::path::Path::new(&path_str)) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("failed to load image store from '{}': {}", path_str, e);
+                return 1;
+            }
+        }
+    } else {
+        aiosh_core::base_image_service::ImageStore::new()
+    };
+
+    match sub {
+        Some("list") => {
+            let images = store.list_images();
+            classify_and_emit(
+                &mut ctx,
+                "image",
+                "list",
+                json!({ "count": images.len() }),
+                "success",
+                None,
+                Some("Enumerated registered base image manifests"),
+                "operator",
+                None,
+            );
+            if is_json {
+                println!("{}", serde_json::to_string_pretty(&images).unwrap_or_default());
+            } else {
+                println!("{:<32} {:<10} {:<10} {:<12} {}", "IMAGE ID", "FORMAT", "ARCH", "FILESYSTEM", "VERSION");
+                for img in &images {
+                    println!("{:<32} {:<10} {:<10} {:<12} {}", img.id, img.format, img.rootfs.architecture, img.rootfs.filesystem_type, img.version);
+                }
+            }
+            0
+        }
+        Some("show") => {
+            let id = match rest.first() {
+                Some(s) if !s.starts_with("--") => s.as_str(),
+                _ => {
+                    eprintln!("missing required image id: aiosh image show <id>");
+                    return 2;
+                }
+            };
+            if !id.chars().all(|c| c.is_ascii_graphic()) || id.is_empty() {
+                eprintln!("invalid image id: contains non-printable or control characters");
+                return 2;
+            }
+            let manifest = match store.get_image(id) {
+                Some(m) => m,
+                None => {
+                    eprintln!("image '{}' not found in store", id);
+                    return 1;
+                }
+            };
+            classify_and_emit(
+                &mut ctx,
+                "image",
+                "show",
+                json!({ "id": id, "format": manifest.format.to_string() }),
+                "success",
+                None,
+                Some("Retrieved base image manifest"),
+                "operator",
+                None,
+            );
+            if is_json {
+                println!("{}", serde_json::to_string_pretty(manifest).unwrap_or_default());
+            } else {
+                println!("AIOS Base Image Manifest: {}", manifest.id);
+                println!("  Version:         {}", manifest.version);
+                println!("  Format:          {}", manifest.format);
+                println!("  Target Distro:   {}", manifest.rootfs.distro_id);
+                println!("  Architecture:    {}", manifest.rootfs.architecture);
+                println!("  Filesystem:      {}", manifest.rootfs.filesystem_type);
+                println!("  Hostname:        {}", manifest.rootfs.hostname);
+                println!("  Size Budget:     {} MB", manifest.rootfs.size_budget_bytes / (1024 * 1024));
+                println!("  Kernel Version:  {}", manifest.kernel.version);
+                println!("  Kernel Cmdline:  {}", manifest.kernel.cmdline);
+                println!("  Initramfs Gen:   {}", manifest.kernel.initramfs_generator);
+                println!("  Packages Count:  {}", manifest.rootfs.packages.len());
+                println!("  Packages Sample: {}", manifest.rootfs.packages.iter().take(8).cloned().collect::<Vec<_>>().join(", "));
+            }
+            0
+        }
+        Some("plan") => {
+            let id = match rest.first() {
+                Some(s) if !s.starts_with("--") => s.as_str(),
+                _ => {
+                    eprintln!("missing required image id: aiosh image plan <id>");
+                    return 2;
+                }
+            };
+            if !id.chars().all(|c| c.is_ascii_graphic()) || id.is_empty() {
+                eprintln!("invalid image id: contains non-printable or control characters");
+                return 2;
+            }
+            let plan = match store.generate_build_plan(id) {
+                Ok(p) => p,
+                Err(e) => {
+                    eprintln!("failed to generate build plan for '{}': {}", id, e);
+                    return 1;
+                }
+            };
+            classify_and_emit(
+                &mut ctx,
+                "image",
+                "plan",
+                json!({ "id": id, "stages_count": plan.stages.len(), "estimated_duration_secs": plan.estimated_total_duration_secs }),
+                "success",
+                None,
+                Some("Generated base image build plan"),
+                "operator",
+                None,
+            );
+            if is_json {
+                println!("{}", serde_json::to_string_pretty(&plan).unwrap_or_default());
+            } else {
+                println!("AIOS Build Execution Plan for '{}':", plan.image_id);
+                println!("  Target Format:      {}", plan.target_format);
+                println!("  Estimated Duration: {}s", plan.estimated_total_duration_secs);
+                println!("  Estimated Size:     {} MB", plan.estimated_artifact_size_bytes / (1024 * 1024));
+                println!("\nDiscrete Stages ({}):", plan.stages.len());
+                for (i, stage) in plan.stages.iter().enumerate() {
+                    println!("  [{}] {} (approx {}s):", i + 1, stage.name, stage.estimated_duration_secs);
+                    println!("      Description: {}", stage.description);
+                    println!("      Command:     {}", stage.command_template);
+                }
+            }
+            0
+        }
+        Some("filter") => {
+            let mut matches = store.list_images();
+            if let Some(fmt_str) = parse_flag(rest, "--format") {
+                let fmt = match fmt_str.to_lowercase().as_str() {
+                    "raw" => aiosh_core::base_image::ImageFormat::Raw,
+                    "qcow2" => aiosh_core::base_image::ImageFormat::Qcow2,
+                    "iso" => aiosh_core::base_image::ImageFormat::Iso,
+                    "tarball" | "tar" => aiosh_core::base_image::ImageFormat::Tarball,
+                    other => {
+                        eprintln!("unknown image format: {}", other);
+                        return 2;
+                    }
+                };
+                matches.retain(|m| m.format == fmt);
+            }
+            if let Some(distro) = parse_flag(rest, "--distro") {
+                matches.retain(|m| m.rootfs.distro_id == distro);
+            }
+            classify_and_emit(
+                &mut ctx,
+                "image",
+                "filter",
+                json!({ "matched_count": matches.len() }),
+                "success",
+                None,
+                Some("Filtered registered base image manifests"),
+                "operator",
+                None,
+            );
+            if is_json {
+                println!("{}", serde_json::to_string_pretty(&matches).unwrap_or_default());
+            } else {
+                println!("Matched Base Images ({}):", matches.len());
+                for img in &matches {
+                    println!("  {:<32} {:<10} {:<10} {}", img.id, img.format, img.rootfs.architecture, img.rootfs.distro_id);
+                }
+            }
+            0
+        }
+        Some("--help") | Some("-h") | None => {
+            println!("aiosh image — Linux Base Image Build & Packaging Manager\n\nUsage:\n  aiosh image list [--json] [--store <path>]\n  aiosh image show <id> [--json] [--store <path>]\n  aiosh image plan <id> [--json] [--store <path>]\n  aiosh image filter [--format <format>] [--distro <id>] [--json] [--store <path>]");
+            0
+        }
+        Some(other) => {
+            eprintln!("unknown image subcommand: {}", other);
             2
         }
     }
@@ -3598,6 +3786,51 @@ mod task_cli_tests {
         assert_eq!(code_help, 0);
 
         let code_invalid = cmd_distro(&["invalid_sub".to_string()]);
+        assert_eq!(code_invalid, 2);
+    }
+
+    #[test]
+    fn test_cmd_image_flow() {
+        let code_list = cmd_image(&["list".to_string()]);
+        assert_eq!(code_list, 0);
+
+        let code_list_json = cmd_image(&["list".to_string(), "--json".to_string()]);
+        assert_eq!(code_list_json, 0);
+
+        let code_show = cmd_image(&["show".to_string(), "debian-12-minimal-raw".to_string()]);
+        assert_eq!(code_show, 0);
+
+        let code_show_missing = cmd_image(&["show".to_string(), "nonexistent".to_string()]);
+        assert_eq!(code_show_missing, 1);
+
+        let code_show_no_arg = cmd_image(&["show".to_string()]);
+        assert_eq!(code_show_no_arg, 2);
+
+        let code_show_control_char = cmd_image(&["show".to_string(), "bad\x07id".to_string()]);
+        assert_eq!(code_show_control_char, 2);
+
+        let code_plan = cmd_image(&["plan".to_string(), "debian-12-minimal-raw".to_string()]);
+        assert_eq!(code_plan, 0);
+
+        let code_plan_missing = cmd_image(&["plan".to_string(), "nonexistent".to_string()]);
+        assert_eq!(code_plan_missing, 1);
+
+        let code_plan_no_arg = cmd_image(&["plan".to_string()]);
+        assert_eq!(code_plan_no_arg, 2);
+
+        let code_plan_control_char = cmd_image(&["plan".to_string(), "bad\x07id".to_string()]);
+        assert_eq!(code_plan_control_char, 2);
+
+        let code_filter = cmd_image(&["filter".to_string(), "--format".to_string(), "iso".to_string()]);
+        assert_eq!(code_filter, 0);
+
+        let code_filter_bad_format = cmd_image(&["filter".to_string(), "--format".to_string(), "bad_fmt".to_string()]);
+        assert_eq!(code_filter_bad_format, 2);
+
+        let code_help = cmd_image(&["--help".to_string()]);
+        assert_eq!(code_help, 0);
+
+        let code_invalid = cmd_image(&["invalid_sub".to_string()]);
         assert_eq!(code_invalid, 2);
     }
 }

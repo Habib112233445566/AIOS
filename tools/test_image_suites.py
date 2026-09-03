@@ -57,10 +57,19 @@ def test_b2_core_service_suite():
     )
 
 
+def test_b3_cli_surface():
+    return _run_cargo_test(
+        ["--bin", "aiosh", "test_cmd_image_flow"],
+        "B3",
+        "base image CLI surface commands & options (list/show/plan/filter)",
+    )
+
+
 def main():
     checks = [
         test_b1_data_model_integrity,
         test_b2_core_service_suite,
+        test_b3_cli_surface,
     ]
     all_ok = True
     for c in checks:
@@ -68,7 +77,7 @@ def main():
             all_ok = False
 
     if all_ok:
-        print("\nPASS: image_suites criteria (B1..B2)")
+        print("\nPASS: image_suites criteria (B1..B3)")
         return 0
     else:
         print("\nFAIL: image_suites criteria", file=sys.stderr)

@@ -1118,3 +1118,13 @@
 {"seq":1118,"ts":"2026-09-03T15:30:09Z","event":"completed","task_id":1118,"note":"Hardening of ImageStore against oversized files and permission enforcement","evidence":[]}
 {"seq":1119,"ts":"2026-09-03T15:31:00Z","event":"completed","task_id":1119,"note":"Documentation of Base Image Build core service, build planning, and test runner","evidence":[]}
 {"seq":1120,"ts":"2026-09-03T15:31:41Z","event":"completed","task_id":1120,"note":"Verification and evidence closure for Base Image Build core service sub-epic","evidence":[]}
+{"seq":1121,"ts":"2026-09-03T15:33:11Z","event":"completed","task_id":1121,"note":"Research into aiosh image CLI surface commands and options","evidence":[]}
+{"seq":1122,"ts":"2026-09-03T15:34:07Z","event":"completed","task_id":1122,"note":"Specification of cmd_image subcommands, options, and invariants","evidence":[]}
+{"seq":1123,"ts":"2026-09-03T15:38:16Z","event":"completed","task_id":1123,"note":"Scaffold cmd_image in aiosh-cli","evidence":[]}
+{"seq":1124,"ts":"2026-09-03T15:42:11Z","event":"completed","task_id":1124,"note":"Implementation of aiosh image CLI surface commands and options","evidence":[]}
+{"seq":1125,"ts":"2026-09-03T15:44:59Z","event":"completed","task_id":1125,"note":"Unit testing of aiosh image CLI surface commands and exit codes","evidence":[]}
+{"seq":1126,"ts":"2026-09-03T15:46:25Z","event":"completed","task_id":1126,"note":"Integration of aiosh image CLI into test_image_suites.py criterion B3","evidence":[]}
+{"seq":1127,"ts":"2026-09-03T15:47:00Z","event":"completed","task_id":1127,"note":"Security review of aiosh image CLI input handling and telemetry","evidence":[]}
+{"seq":1128,"ts":"2026-09-03T15:48:59Z","event":"completed","task_id":1128,"note":"Hardening of aiosh image CLI against control characters and malformed input","evidence":[]}
+{"seq":1129,"ts":"2026-09-03T15:49:58Z","event":"completed","task_id":1129,"note":"Documentation of aiosh image CLI surface commands and options","evidence":[]}
+{"seq":1130,"ts":"2026-09-03T15:52:21Z","event":"completed","task_id":1130,"note":"Verification and evidence closure for Base Image Build CLI surface sub-epic","evidence":[]}
