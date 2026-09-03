@@ -744,8 +744,50 @@ fn cmd_image(args: &[String]) -> i32 {
             }
             0
         }
+        Some("config") => {
+            let config = if let Some(cfg_path_str) = parse_flag(rest, "--config") {
+                match aiosh_core::base_image_config::ImageBuildConfig::from_file(std::path::Path::new(&cfg_path_str)) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        eprintln!("failed to load image config from '{}': {}", cfg_path_str, e);
+                        return 1;
+                    }
+                }
+            } else {
+                match aiosh_core::base_image_config::ImageBuildConfig::from_env() {
+                    Ok(c) => c,
+                    Err(e) => {
+                        eprintln!("failed to load image config from environment: {}", e);
+                        return 1;
+                    }
+                }
+            };
+            classify_and_emit(
+                &mut ctx,
+                "image",
+                "config",
+                json!({ "default_target": config.default_target, "timeout": config.max_build_duration_secs }),
+                "success",
+                None,
+                Some("Inspected base image configuration"),
+                "operator",
+                None,
+            );
+            if is_json {
+                println!("{}", serde_json::to_string_pretty(&config).unwrap_or_default());
+            } else {
+                println!("AIOS Base Image Build Configuration:");
+                println!("  Build Directory:    {}", config.build_dir.display());
+                println!("  Output Directory:   {}", config.output_dir.display());
+                println!("  Default Target:     {}", config.default_target);
+                println!("  Max Duration:       {}s", config.max_build_duration_secs);
+                println!("  Max Artifact Size:  {} MB", config.max_artifact_size_bytes / (1024 * 1024));
+                println!("  Compression Level:  {}", config.compression_level);
+            }
+            0
+        }
         Some("--help") | Some("-h") | None => {
-            println!("aiosh image — Linux Base Image Build & Packaging Manager\n\nUsage:\n  aiosh image list [--json] [--store <path>]\n  aiosh image show <id> [--json] [--store <path>]\n  aiosh image plan <id> [--json] [--store <path>]\n  aiosh image filter [--format <format>] [--distro <id>] [--json] [--store <path>]");
+            println!("aiosh image — Linux Base Image Build & Packaging Manager\n\nUsage:\n  aiosh image list [--json] [--store <path>]\n  aiosh image show <id> [--json] [--store <path>]\n  aiosh image plan <id> [--json] [--store <path>]\n  aiosh image filter [--format <format>] [--distro <id>] [--json] [--store <path>]\n  aiosh image config [--json] [--config <path>]");
             0
         }
         Some(other) => {
@@ -3826,6 +3868,12 @@ mod task_cli_tests {
 
         let code_filter_bad_format = cmd_image(&["filter".to_string(), "--format".to_string(), "bad_fmt".to_string()]);
         assert_eq!(code_filter_bad_format, 2);
+
+        let code_config = cmd_image(&["config".to_string()]);
+        assert_eq!(code_config, 0);
+
+        let code_config_json = cmd_image(&["config".to_string(), "--json".to_string()]);
+        assert_eq!(code_config_json, 0);
 
         let code_help = cmd_image(&["--help".to_string()]);
         assert_eq!(code_help, 0);

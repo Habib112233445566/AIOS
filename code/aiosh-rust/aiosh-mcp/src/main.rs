@@ -536,6 +536,18 @@ impl Server {
                 "additionalProperties": false
             }
         }));
+        tools.push(json!({
+            "name": "aios.image.config",
+            "description": "Get active configuration settings for Linux base image building subsystem.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "config_path": { "type": "string", "description": "Optional path to custom image_config.json" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
         tools
     }
 
@@ -1055,6 +1067,30 @@ impl Server {
                     &mut self.ring, &self.pep,
                     "aios.image.plan", &format!("Generate build plan for image {}", id), arguments,
                     Some(&id), grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.image.config" => {
+                let config_path_opt = arguments.get("config_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                if let Some(ref p) = config_path_opt {
+                    if p.len() > 4096 {
+                        return json!({ "ok": false, "error": "config_path exceeds maximum length of 4096 characters" });
+                    }
+                }
+                let f = move || -> Result<Value, String> {
+                    let config = match config_path_opt {
+                        Some(ref p) => aiosh_core::base_image_config::ImageBuildConfig::from_file(std::path::Path::new(p))?,
+                        None => aiosh_core::base_image_config::ImageBuildConfig::from_env()?,
+                    };
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.image.config",
+                        "config": config
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.image.config", "Get base image build configuration", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
                 )
             }
             "aios.triage.list" => {
@@ -2524,5 +2560,10 @@ mod tests {
 
         let res_long_store = server.call_tool("aios.image.list", &json!({ "store_path": "a".repeat(4097) }));
         assert_eq!(res_long_store.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 4. aios.image.config
+        let res_cfg = server.call_tool("aios.image.config", &json!({}));
+        assert_eq!(res_cfg.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_cfg.pointer("/config/default_target").and_then(|v| v.as_str()), Some("debian-12-minimal-raw"));
     }
 }

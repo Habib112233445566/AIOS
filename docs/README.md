@@ -878,6 +878,12 @@ Evidence: `tasks/evidence/T-01001-data-model-research.md` .. `tasks/evidence/T-0
 - `aios.image.plan`: Generate discrete 4-stage `BuildPlan` for image `id`.
 - Security Hardening: Enforces strict length bounds (128-char `id`, 4096-char `store_path`) and graphic ASCII printable sanitization. PEP authenticated.
 
+**Configuration Subsystem (`aiosh-core::base_image_config`):**
+- `ImageBuildConfig`: Workspace build directory, target output directory, default target identifier, timeout bounds, artifact size ceilings, and compression levels.
+- Precedence: Local configuration file > Environment variables (`AIOS_IMAGE_*`) > Safe defaults.
+- Invariants (CF1..CF6): Non-empty paths, strict null-byte and control character prohibition, ASCII graphic target identifiers, timeout [10..86400s], artifact size [1 MiB..100 GiB], compression level [1..22].
+- CLI & MCP Surface: `aiosh image config [--json] [--config <path>]` and `aios.image.config`.
+
 **Standalone Test Runner (`tools/test_image_suites.py`):**
 ```bash
 python tools/test_image_suites.py
@@ -885,10 +891,11 @@ python tools/test_image_suites.py
 # [+] B2 base image store registry, persistence & build plan synthesis
 # [+] B3 base image CLI surface commands & options (list/show/plan/filter)
 # [+] B4 base image MCP surface tools (list/get/plan)
-# PASS: image_suites criteria (B1..B4)
+# [+] B5 base image configuration invariants & precedence (CF1..CF6)
+# PASS: image_suites criteria (B1..B5)
 ```
 
-Evidence: `tasks/evidence/T-01101-base-image-data-model-research.md` .. `tasks/evidence/T-01139-base-image-mcp-documentation.md`.
+Evidence: `tasks/evidence/T-01101-base-image-data-model-research.md` .. `tasks/evidence/T-01149-base-image-config-documentation.md`.
 
 
 

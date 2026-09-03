@@ -73,12 +73,21 @@ def test_b4_mcp_surface():
     )
 
 
+def test_b5_configuration_invariants():
+    return _run_cargo_test(
+        ["--lib", "base_image_config::tests"],
+        "B5",
+        "base image configuration invariants & precedence (CF1..CF6)",
+    )
+
+
 def main():
     checks = [
         test_b1_data_model_integrity,
         test_b2_core_service_suite,
         test_b3_cli_surface,
         test_b4_mcp_surface,
+        test_b5_configuration_invariants,
     ]
     all_ok = True
     for c in checks:
@@ -86,7 +95,7 @@ def main():
             all_ok = False
 
     if all_ok:
-        print("\nPASS: image_suites criteria (B1..B4)")
+        print("\nPASS: image_suites criteria (B1..B5)")
         return 0
     else:
         print("\nFAIL: image_suites criteria", file=sys.stderr)
