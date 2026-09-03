@@ -34,25 +34,37 @@ def test_unit_suite():
     # U02: Run criteria D1 function directly
     record("U02: test_d1_data_model_integrity passes", tds.test_d1_data_model_integrity())
 
-    # U04: Criteria D2 function exists
-    record("U04: test_d2_core_service_suite function exists", callable(getattr(tds, "test_d2_core_service_suite", None)))
+    # U03: Criteria D2 function exists
+    record("U03: test_d2_core_service_suite function exists", callable(getattr(tds, "test_d2_core_service_suite", None)))
 
-    # U05: Run criteria D2 function directly
-    record("U05: test_d2_core_service_suite passes", tds.test_d2_core_service_suite())
+    # U04: Run criteria D2 function directly
+    record("U04: test_d2_core_service_suite passes", tds.test_d2_core_service_suite())
 
-    # U06: Main function is callable
-    record("U06: main function exists", callable(getattr(tds, "main", None)))
+    # U05: Criteria D3 function exists
+    record("U05: test_d3_cli_surface function exists", callable(getattr(tds, "test_d3_cli_surface", None)))
 
-    # U07: Main orchestrator runs and returns 0
-    record("U07: main function executes clean 0 return code", tds.main() == 0)
+    # U06: Criteria D4 function exists
+    record("U06: test_d4_mcp_surface function exists", callable(getattr(tds, "test_d4_mcp_surface", None)))
+
+    # U07: Criteria D5 function exists
+    record("U07: test_d5_configuration_subsystem function exists", callable(getattr(tds, "test_d5_configuration_subsystem", None)))
+
+    # U08: Run criteria D5 function directly
+    record("U08: test_d5_configuration_subsystem passes", tds.test_d5_configuration_subsystem())
+
+    # U09: Main function is callable
+    record("U09: main function exists", callable(getattr(tds, "main", None)))
+
+    # U10: Main orchestrator runs and returns 0
+    record("U10: main function executes clean 0 return code", tds.main() == 0)
 
 
 def main():
-    print("=== Distro Selection & Justification Unit Suite (T-01005/T-01015) ===")
+    print("=== Distro Selection & Justification Unit Suite (T-01005/T-01015/T-01055) ===")
     test_unit_suite()
     all_ok = all(ok for _, ok in RESULTS)
     if all_ok:
-        print("\nPASS: distro unit tests (U01..U07)")
+        print("\nPASS: distro unit tests (U01..U10)")
         return 0
     else:
         print("\nFAIL: distro unit tests", file=sys.stderr)

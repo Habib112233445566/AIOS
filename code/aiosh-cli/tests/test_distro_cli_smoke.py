@@ -107,6 +107,22 @@ def test_distro_not_found():
     assert res.returncode == 1
     print("PASS: aiosh distro show nonexistent returns 1")
 
+def test_distro_config_prose():
+    res = run_aiosh("distro", "config")
+    assert res.returncode == 0, f"Unexpected returncode {res.returncode}: {res.stderr}"
+    assert "AIOS Distro Configuration:" in res.stdout
+    assert "Store Path:" in res.stdout
+    print("PASS: aiosh distro config (prose)")
+
+def test_distro_config_json():
+    res = run_aiosh("distro", "config", "--json")
+    assert res.returncode == 0, f"Unexpected returncode {res.returncode}: {res.stderr}"
+    data = parse_json_output(res)
+    assert "store_path" in data
+    assert "pinned_reference_id" in data
+    assert "weights" in data
+    print("PASS: aiosh distro config --json")
+
 def main():
     test_distro_list_prose()
     test_distro_list_json()
@@ -115,6 +131,8 @@ def main():
     test_distro_evaluate_all()
     test_distro_evaluate_single()
     test_distro_recommend()
+    test_distro_config_prose()
+    test_distro_config_json()
     test_distro_help()
     test_distro_missing_id()
     test_distro_not_found()

@@ -14,74 +14,68 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 
-def test_d1_data_model_integrity():
+def _run_cargo_test(extra_args: list[str], criterion: str, description: str) -> bool:
     cmd = [
         "cargo",
         "test",
         "--manifest-path",
         str(ROOT / "code" / "aiosh-rust" / "Cargo.toml"),
-        "--lib",
-        "distro::tests::test_distro_profile_validation_and_defaults",
+        *extra_args,
     ]
-    res = subprocess.run(cmd, capture_output=True, text=True, cwd=str(ROOT), timeout=120)
-    if res.returncode != 0:
-        print(f"[-] D1 cargo test failed:\n{res.stderr}\n{res.stdout}", file=sys.stderr)
+    try:
+        res = subprocess.run(cmd, capture_output=True, text=True, cwd=str(ROOT), timeout=120)
+    except subprocess.TimeoutExpired:
+        print(f"[-] {criterion} timed out after 120s", file=sys.stderr)
         return False
-    print("[+] D1 distro data model integrity & validation invariants")
+    except Exception as e:
+        print(f"[-] {criterion} execution error: {e}", file=sys.stderr)
+        return False
+
+    if res.returncode != 0:
+        print(f"[-] {criterion} cargo test failed:\n{res.stderr}\n{res.stdout}", file=sys.stderr)
+        return False
+    print(f"[+] {criterion} {description}")
     return True
+
+
+def test_d1_data_model_integrity():
+    return _run_cargo_test(
+        ["--lib", "distro::tests::test_distro_profile_validation_and_defaults"],
+        "D1",
+        "distro data model integrity & validation invariants",
+    )
 
 
 def test_d2_core_service_suite():
-    cmd = [
-        "cargo",
-        "test",
-        "--manifest-path",
-        str(ROOT / "code" / "aiosh-rust" / "Cargo.toml"),
-        "--lib",
-        "distro_service::tests::test_distro_store_lifecycle_and_evaluations",
-    ]
-    res = subprocess.run(cmd, capture_output=True, text=True, cwd=str(ROOT), timeout=120)
-    if res.returncode != 0:
-        print(f"[-] D2 cargo test failed:\n{res.stderr}\n{res.stdout}", file=sys.stderr)
-        return False
-    print("[+] D2 distro store lifecycle, registry querying & persistence")
-    return True
+    return _run_cargo_test(
+        ["--lib", "distro_service::tests::test_distro_store_lifecycle_and_evaluations"],
+        "D2",
+        "distro store lifecycle, registry querying & persistence",
+    )
 
 
 def test_d3_cli_surface():
-    cmd = [
-        "cargo",
-        "test",
-        "--manifest-path",
-        str(ROOT / "code" / "aiosh-rust" / "Cargo.toml"),
-        "--bin",
-        "aiosh",
-        "test_cmd_distro_flow",
-    ]
-    res = subprocess.run(cmd, capture_output=True, text=True, cwd=str(ROOT), timeout=120)
-    if res.returncode != 0:
-        print(f"[-] D3 cargo test failed:\n{res.stderr}\n{res.stdout}", file=sys.stderr)
-        return False
-    print("[+] D3 distro CLI surface commands & options (list/show/evaluate/recommend)")
-    return True
+    return _run_cargo_test(
+        ["--bin", "aiosh", "test_cmd_distro_flow"],
+        "D3",
+        "distro CLI surface commands & options (list/show/evaluate/recommend)",
+    )
 
 
 def test_d4_mcp_surface():
-    cmd = [
-        "cargo",
-        "test",
-        "--manifest-path",
-        str(ROOT / "code" / "aiosh-rust" / "Cargo.toml"),
-        "--bin",
-        "aiosh-mcp",
-        "test_mcp_distro_tools",
-    ]
-    res = subprocess.run(cmd, capture_output=True, text=True, cwd=str(ROOT), timeout=120)
-    if res.returncode != 0:
-        print(f"[-] D4 cargo test failed:\n{res.stderr}\n{res.stdout}", file=sys.stderr)
-        return False
-    print("[+] D4 distro MCP tools dispatch & execution (list/show/evaluate/recommend)")
-    return True
+    return _run_cargo_test(
+        ["--bin", "aiosh-mcp", "test_mcp_distro_tools"],
+        "D4",
+        "distro MCP tools dispatch & execution (list/show/evaluate/recommend)",
+    )
+
+
+def test_d5_configuration_subsystem():
+    return _run_cargo_test(
+        ["--lib", "distro_config::tests"],
+        "D5",
+        "distro configuration resolution & hardening invariants",
+    )
 
 
 def main():
@@ -90,6 +84,7 @@ def main():
         test_d2_core_service_suite,
         test_d3_cli_surface,
         test_d4_mcp_surface,
+        test_d5_configuration_subsystem,
     ]
     all_ok = True
     for c in checks:
@@ -97,7 +92,7 @@ def main():
             all_ok = False
 
     if all_ok:
-        print("\nPASS: distro_suites criteria (D1..D4)")
+        print("\nPASS: distro_suites criteria (D1..D5)")
         return 0
     else:
         print("\nFAIL: distro_suites criteria", file=sys.stderr)

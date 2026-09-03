@@ -1048,3 +1048,13 @@
 {"seq":1048,"ts":"2026-09-03T12:27:34Z","event":"completed","task_id":1048,"note":"Hardening DistroConfig against NaN values and path traversal","evidence":[]}
 {"seq":1049,"ts":"2026-09-03T12:29:41Z","event":"completed","task_id":1049,"note":"Documentation of DistroConfig and distro config command in docs/README.md","evidence":[]}
 {"seq":1050,"ts":"2026-09-03T13:32:30Z","event":"completed","task_id":1050,"note":"Verification and evidence closure for Distro Selection configuration sub-epic","evidence":[]}
+{"seq":1051,"ts":"2026-09-03T13:37:28Z","event":"completed","task_id":1051,"note":"Research into automated testing criteria D1..D5 for Distro Selection","evidence":[]}
+{"seq":1052,"ts":"2026-09-03T13:39:38Z","event":"completed","task_id":1052,"note":"Specification of automated test criteria D5 and unit assertions U08..U10","evidence":[]}
+{"seq":1053,"ts":"2026-09-03T13:42:55Z","event":"completed","task_id":1053,"note":"Scaffold criterion D5 in test_distro_suites.py","evidence":[]}
+{"seq":1054,"ts":"2026-09-03T13:46:33Z","event":"completed","task_id":1054,"note":"Implementation of unit assertions U08..U10 and CLI smoke tests for distro config","evidence":[]}
+{"seq":1055,"ts":"2026-09-03T13:47:42Z","event":"completed","task_id":1055,"note":"Unit test execution of U01..U10 and CLI/MCP smoke test suites","evidence":[]}
+{"seq":1056,"ts":"2026-09-03T13:48:54Z","event":"completed","task_id":1056,"note":"Integration across distro test suites (D1..D5, U01..U10, CLI/MCP smoke)","evidence":[]}
+{"seq":1057,"ts":"2026-09-03T13:49:44Z","event":"completed","task_id":1057,"note":"Security review of test runner subprocess safety and timeouts","evidence":[]}
+{"seq":1058,"ts":"2026-09-03T13:51:02Z","event":"completed","task_id":1058,"note":"Hardening of test_distro_suites.py with timeout and exception safety","evidence":[]}
+{"seq":1059,"ts":"2026-09-03T13:52:24Z","event":"completed","task_id":1059,"note":"Documentation of automated testing criteria D1..D5 in docs/README.md","evidence":[]}
+{"seq":1060,"ts":"2026-09-03T13:53:16Z","event":"completed","task_id":1060,"note":"Verification and evidence closure for Distro Selection automated tests sub-epic","evidence":[]}

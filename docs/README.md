@@ -810,7 +810,8 @@ python tools/test_distro_suites.py
 # [+] D2 distro store lifecycle, registry querying & persistence
 # [+] D3 distro CLI surface commands & options (list/show/evaluate/recommend)
 # [+] D4 distro MCP tools dispatch & execution (list/show/evaluate/recommend)
-# PASS: distro_suites criteria (D1..D4)
+# [+] D5 distro configuration resolution & hardening invariants
+# PASS: distro_suites criteria (D1..D5)
 ```
 
 Limitations (honest): Profiles must pass strict semver validation and alphanumeric ID checks; custom profiles do not auto-build target ISO images (handled by downstream image building tasks); file loading is subject to a 10 MiB file cap; configuration file is subject to a 64 KiB cap.
@@ -823,7 +824,7 @@ python code/aiosh-mcp/tests/test_distro_mcp_smoke.py
 # ALL DISTRO MCP SMOKE TESTS PASSED!
 ```
 
-Evidence: `tasks/evidence/T-01001-data-model-research.md` .. `tasks/evidence/T-01049-configuration-documentation.md`.
+Evidence: `tasks/evidence/T-01001-data-model-research.md` .. `tasks/evidence/T-01059-automated-tests-documentation.md`.
 
 
 
