@@ -1108,3 +1108,13 @@
 {"seq":1108,"ts":"2026-09-03T15:18:33Z","event":"completed","task_id":1108,"note":"Hardening of base image data model against injection vectors","evidence":[]}
 {"seq":1109,"ts":"2026-09-03T15:19:42Z","event":"completed","task_id":1109,"note":"Documentation of Linux Base Image Build subsystem and data models","evidence":[]}
 {"seq":1110,"ts":"2026-09-03T15:20:33Z","event":"completed","task_id":1110,"note":"Verification and evidence closure for Base Image Build data model sub-epic","evidence":[]}
+{"seq":1111,"ts":"2026-09-03T15:21:56Z","event":"completed","task_id":1111,"note":"Research into Base Image Build core service, registry, and build planning","evidence":[]}
+{"seq":1112,"ts":"2026-09-03T15:22:32Z","event":"completed","task_id":1112,"note":"Specification of BuildPlan, BuildStage, and ImageStore registry","evidence":[]}
+{"seq":1113,"ts":"2026-09-03T15:24:08Z","event":"completed","task_id":1113,"note":"Scaffold base_image_service module in aiosh-core","evidence":[]}
+{"seq":1114,"ts":"2026-09-03T15:26:07Z","event":"completed","task_id":1114,"note":"Implementation of ImageStore, build planning engine, and registry queries","evidence":[]}
+{"seq":1115,"ts":"2026-09-03T15:27:26Z","event":"completed","task_id":1115,"note":"Unit testing of ImageStore, build planning, and error handling","evidence":[]}
+{"seq":1116,"ts":"2026-09-03T15:28:16Z","event":"completed","task_id":1116,"note":"Integration of Base Image Build core service into test suite runner criterion B2","evidence":[]}
+{"seq":1117,"ts":"2026-09-03T15:28:46Z","event":"completed","task_id":1117,"note":"Security review of ImageStore file loading and build planning","evidence":[]}
+{"seq":1118,"ts":"2026-09-03T15:30:09Z","event":"completed","task_id":1118,"note":"Hardening of ImageStore against oversized files and permission enforcement","evidence":[]}
+{"seq":1119,"ts":"2026-09-03T15:31:00Z","event":"completed","task_id":1119,"note":"Documentation of Base Image Build core service, build planning, and test runner","evidence":[]}
+{"seq":1120,"ts":"2026-09-03T15:31:41Z","event":"completed","task_id":1120,"note":"Verification and evidence closure for Base Image Build core service sub-epic","evidence":[]}

@@ -49,9 +49,18 @@ def test_b1_data_model_integrity():
     )
 
 
+def test_b2_core_service_suite():
+    return _run_cargo_test(
+        ["--lib", "base_image_service::tests"],
+        "B2",
+        "base image store registry, persistence & build plan synthesis",
+    )
+
+
 def main():
     checks = [
         test_b1_data_model_integrity,
+        test_b2_core_service_suite,
     ]
     all_ok = True
     for c in checks:
@@ -59,7 +68,7 @@ def main():
             all_ok = False
 
     if all_ok:
-        print("\nPASS: image_suites criteria (B1)")
+        print("\nPASS: image_suites criteria (B1..B2)")
         return 0
     else:
         print("\nFAIL: image_suites criteria", file=sys.stderr)
