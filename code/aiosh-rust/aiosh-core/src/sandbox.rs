@@ -480,9 +480,17 @@ pub fn execve_path(argv0: &str) -> String {
     if p.is_absolute() && p.exists() {
         return argv0.to_string();
     }
-    let path = std::env::var("PATH").unwrap_or_else(|_| "/usr/bin:/bin".into());
-    for d in path.split(':') {
-        let cand = std::path::Path::new(d).join(argv0);
+    let path = std::env::var_os("PATH").unwrap_or_else(|| std::ffi::OsString::from("/usr/bin:/bin"));
+    for d in std::env::split_paths(&path) {
+        let cand = d.join(argv0);
+        let cand_exe = if cfg!(windows) && !argv0.ends_with(".exe") {
+            d.join(format!("{}.exe", argv0))
+        } else {
+            cand.clone()
+        };
+        if cand_exe.exists() {
+            return cand_exe.to_string_lossy().to_string();
+        }
         if cand.exists() {
             return cand.to_string_lossy().to_string();
         }

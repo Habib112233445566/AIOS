@@ -50,10 +50,10 @@ pub fn scan_file_for_secrets(
         return Ok(Vec::new());
     }
 
-    let file = match File::open(path) {
-        Ok(f) => f,
-        Err(e) => return Err(format!("Failed to re-open file {}: {}", path.display(), e)),
-    };
+    use std::io::Seek;
+    if let Err(e) = file.seek(std::io::SeekFrom::Start(0)) {
+        return Err(format!("Failed to rewind file {}: {}", path.display(), e));
+    }
 
     let rel_path = path.strip_prefix(base_dir).unwrap_or(path).to_string_lossy().to_string();
     let reader = BufReader::new(file);

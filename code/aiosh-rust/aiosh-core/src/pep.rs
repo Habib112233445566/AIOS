@@ -30,6 +30,29 @@ pub fn tool_glob_match(tool: &str, globs: &[String]) -> bool {
     false
 }
 
+/// Lexically normalize path to collapse redundant slashes and `.` / `..` traversal components.
+pub fn normalize_path_str(p: &str) -> String {
+    let p_clean = p.replace('\\', "/");
+    let is_abs = p_clean.starts_with('/');
+    let mut parts: Vec<&str> = Vec::new();
+    for seg in p_clean.split('/') {
+        if seg.is_empty() || seg == "." {
+            continue;
+        }
+        if seg == ".." {
+            parts.pop();
+        } else {
+            parts.push(seg);
+        }
+    }
+    let joined = parts.join("/");
+    if is_abs {
+        format!("/{}", joined)
+    } else {
+        joined
+    }
+}
+
 /// Path-based allow/deny check. Deny always wins.
 pub fn path_allowed(target: Option<&str>, paths: &PathScope) -> bool {
     if paths.allow.is_empty() && paths.deny.is_empty() {
@@ -39,9 +62,11 @@ pub fn path_allowed(target: Option<&str>, paths: &PathScope) -> bool {
         Some(t) => t,
         None => return false,
     };
+    let norm_target = normalize_path_str(target);
     for p in &paths.deny {
-        if target == p || target.starts_with(&format!("{}/", p))
-            || (p.ends_with('/') && target.starts_with(p))
+        let norm_p = normalize_path_str(p);
+        if norm_target == norm_p
+            || norm_target.starts_with(&format!("{}/", norm_p.trim_end_matches('/')))
         {
             return false;
         }
@@ -51,8 +76,9 @@ pub fn path_allowed(target: Option<&str>, paths: &PathScope) -> bool {
         return true;
     }
     for p in &paths.allow {
-        if target == p || target.starts_with(&format!("{}/", p))
-            || (p.ends_with('/') && target.starts_with(p))
+        let norm_p = normalize_path_str(p);
+        if norm_target == norm_p
+            || norm_target.starts_with(&format!("{}/", norm_p.trim_end_matches('/')))
         {
             return true;
         }
@@ -359,14 +385,12 @@ fn random_hex(bytes: usize) -> Result<String, rusqlite::Error> {
     }
     #[cfg(not(unix))]
     {
-        use std::collections::hash_map::RandomState;
-        use std::hash::{BuildHasher, Hasher};
-        for chunk in buf.chunks_mut(8) {
-            let h = RandomState::new().build_hasher().finish();
-            let b = h.to_le_bytes();
-            for (dest, src) in chunk.iter_mut().zip(b.iter()) {
-                *dest = *src;
-            }
+        // OS CSPRNG via SQLite's underlying CryptGenRandom / BCryptGenRandom implementation
+        unsafe {
+            rusqlite::ffi::sqlite3_randomness(
+                bytes as libc::c_int,
+                buf.as_mut_ptr() as *mut libc::c_void,
+            );
         }
     }
     Ok(buf.iter().map(|b| format!("{:02x}", b)).collect())
@@ -459,5 +483,15 @@ mod tests {
         sc.deny = vec!["/tmp/secret".into()];
         assert!(path_allowed(Some("/tmp/ok"), &sc));
         assert!(!path_allowed(Some("/tmp/secret/x"), &sc));
+    }
+
+    #[test]
+    fn path_traversal_blocked() {
+        let mut sc = PathScope::default();
+        sc.allow = vec!["/tmp".into()];
+        sc.deny = vec!["/etc".into()];
+        assert!(!path_allowed(Some("/var/log/../../etc/shadow"), &sc));
+        assert!(!path_allowed(Some("/etc//shadow"), &sc));
+        assert!(!path_allowed(Some(r"\etc\shadow"), &sc));
     }
 }

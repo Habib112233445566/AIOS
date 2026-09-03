@@ -2738,12 +2738,18 @@ fn cmd_audit_rotate(args: &[String]) -> i32 {
     let keep: i64 = parse_flag(args, "--keep").and_then(|s| s.parse().ok()).unwrap_or(0);
     let dry_run = has_flag(args, "--dry-run");
     let db_path = ctx.ring.path().to_string();
-    let conn = if db_path == ":memory:" {
-        rusqlite::Connection::open_in_memory().unwrap()
+    let conn = match if db_path == ":memory:" {
+        rusqlite::Connection::open_in_memory()
     } else {
-        rusqlite::Connection::open(&db_path).unwrap()
+        rusqlite::Connection::open(&db_path)
+    } {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("audit rotate failed to open database: {e}");
+            return 1;
+        }
     };
-    let res = retention::rotate(
+    let res = match retention::rotate(
         &conn,
         &mut ctx.ring,
         retention::RotateOptions {
@@ -2754,8 +2760,13 @@ fn cmd_audit_rotate(args: &[String]) -> i32 {
             constitution_rev: Some(ctx.con_rev.clone()),
             ..Default::default()
         },
-    )
-    .expect("rotate");
+    ) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("audit rotate operation failed: {e}");
+            return 1;
+        }
+    };
     let out = json!({
         "ok": res.ok, "subcommand": "audit rotate",
         "outcome": if res.ok { "ok" } else { "refused" },

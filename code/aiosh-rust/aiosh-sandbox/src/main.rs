@@ -26,9 +26,7 @@ fn main() -> ExitCode {
 
     // Parse `--policy <json> -- <bin> <args...>` without panicking on
     // truncated argv (`--policy` as the final argument, etc.).
-    let mut policy_json = "{}".to_string();
-    let mut argv: Vec<String> = Vec::new();
-    match args.iter().position(|a| a == "--policy") {
+    let (policy_json, argv) = match args.iter().position(|a| a == "--policy") {
         Some(i) => {
             let raw = match args.get(i + 1) {
                 Some(v) => v.clone(),
@@ -42,8 +40,7 @@ fn main() -> ExitCode {
                 eprintln!("{usage}");
                 return ExitCode::from(2);
             }
-            policy_json = raw;
-            argv = rest[1..].to_vec();
+            (raw, rest[1..].to_vec())
         }
         None => {
             // No policy: everything after `--` is the command.
@@ -51,9 +48,9 @@ fn main() -> ExitCode {
                 eprintln!("{usage}");
                 return ExitCode::from(2);
             }
-            argv = args[1..].to_vec();
+            ("{}".to_string(), args[1..].to_vec())
         }
-    }
+    };
 
     if argv.is_empty() {
         eprintln!("sandbox: empty argv");
