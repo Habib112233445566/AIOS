@@ -771,6 +771,7 @@ Evidence: `tasks/evidence/T-00911-data-model-research.md` .. `tasks/evidence/T-0
 ### 8.10 Distro Selection & Justification (Phase 1, T-01001..T-01100)
 
 AIOS evaluates, specifies, and builds upon a lightweight, reproducible Linux base operating environment.
+Detailed architectural specification and justification guide: `docs/distro_selection.md`.
 
 **Data Model (`DistroProfile`, `DistroEvaluation`, `DistroFamily`, `InitSystem`, `ArchTarget`, `CLibrary`):**
 - Primary Base (`Debian 12 Bookworm Minimal`): `glibc`, `systemd` (cgroup v2), Python AI/ML binary wheel compatibility, >= 6.1 LTS kernel baseline.
@@ -840,7 +841,7 @@ python code/aiosh-mcp/tests/test_distro_mcp_smoke.py
 # ALL DISTRO MCP SMOKE TESTS PASSED!
 ```
 
-Evidence: `tasks/evidence/T-01001-data-model-research.md` .. `tasks/evidence/T-01079-observability-documentation.md`.
+Evidence: `tasks/evidence/T-01001-data-model-research.md` .. `tasks/evidence/T-01089-documentation-documentation.md`.
 
 
 

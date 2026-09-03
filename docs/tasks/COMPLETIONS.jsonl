@@ -1078,3 +1078,13 @@
 {"seq":1078,"ts":"2026-09-03T14:34:58Z","event":"completed","task_id":1078,"note":"Hardening of DistroObservabilityReport with score clamping and empty store handling","evidence":[]}
 {"seq":1079,"ts":"2026-09-03T14:36:04Z","event":"completed","task_id":1079,"note":"Documentation of distro observability subsystem and telemetry surfaces","evidence":[]}
 {"seq":1080,"ts":"2026-09-03T14:36:52Z","event":"completed","task_id":1080,"note":"Verification and evidence closure for Distro Selection observability sub-epic","evidence":[]}
+{"seq":1081,"ts":"2026-09-03T14:38:36Z","event":"completed","task_id":1081,"note":"Research into distro selection architectural guide and documentation structure","evidence":[]}
+{"seq":1082,"ts":"2026-09-03T14:39:14Z","event":"completed","task_id":1082,"note":"Specification of docs/distro_selection.md architectural guide","evidence":[]}
+{"seq":1083,"ts":"2026-09-03T14:39:59Z","event":"completed","task_id":1083,"note":"Scaffold docs/distro_selection.md architectural guide","evidence":[]}
+{"seq":1084,"ts":"2026-09-03T14:40:57Z","event":"completed","task_id":1084,"note":"Implementation of docs/distro_selection.md architectural guide","evidence":[]}
+{"seq":1085,"ts":"2026-09-03T14:41:40Z","event":"completed","task_id":1085,"note":"Unit testing and syntax validation of docs/distro_selection.md","evidence":[]}
+{"seq":1086,"ts":"2026-09-03T14:43:02Z","event":"completed","task_id":1086,"note":"Integration of docs/distro_selection.md into README.md","evidence":[]}
+{"seq":1087,"ts":"2026-09-03T14:43:43Z","event":"completed","task_id":1087,"note":"Security review of distro documentation for secret sanitization and command safety","evidence":[]}
+{"seq":1088,"ts":"2026-09-03T14:44:34Z","event":"completed","task_id":1088,"note":"Hardening of documentation formatting and non-volatile invariants","evidence":[]}
+{"seq":1089,"ts":"2026-09-03T14:50:32Z","event":"completed","task_id":1089,"note":"Documentation synchronization for distro selection architectural guide","evidence":[]}
+{"seq":1090,"ts":"2026-09-03T14:51:30Z","event":"completed","task_id":1090,"note":"Verification and evidence closure for Distro Selection documentation sub-epic","evidence":[]}
