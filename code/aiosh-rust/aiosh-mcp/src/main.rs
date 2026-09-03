@@ -457,6 +457,19 @@ impl Server {
                 "additionalProperties": false
             }
         }));
+        tools.push(json!({
+            "name": "aios.distro.policy",
+            "description": "Evaluate Linux distribution profiles against AIOS security policy standards.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string", "description": "Optional profile ID to check, or omit to check all registered profiles" },
+                    "store_path": { "type": "string", "description": "Optional path to custom distro_store.json" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
         tools
     }
 
@@ -783,6 +796,42 @@ impl Server {
                 dispatch::recorded_call(
                     &mut self.ring, &self.pep,
                     "aios.distro.recommend", "Get recommended distro profile", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.distro.policy" => {
+                let id_opt = arguments.get("id").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = move || -> Result<Value, String> {
+                    let store = match store_path_opt {
+                        Some(ref p) => aiosh_core::distro_service::DistroStore::load_from_path(std::path::Path::new(p))?,
+                        None => {
+                            let cfg = aiosh_core::distro_config::DistroConfig::from_env().unwrap_or_default();
+                            aiosh_core::distro_service::DistroStore::load_from_config(&cfg)?
+                        }
+                    };
+                    let policy = aiosh_core::distro_policy::DistroSecurityPolicy::from_env()?;
+                    if let Some(ref id) = id_opt {
+                        let profile = store.get_profile(id).ok_or_else(|| format!("Distro profile '{}' not found", id))?;
+                        let eval = store.evaluate_profile(id)?;
+                        let verdict = policy.check_profile(&profile, &eval);
+                        Ok(json!({
+                            "ok": true,
+                            "tool": "aios.distro.policy",
+                            "verdict": verdict
+                        }))
+                    } else {
+                        let verdicts = store.check_security_policy(&policy);
+                        Ok(json!({
+                            "ok": true,
+                            "tool": "aios.distro.policy",
+                            "verdicts": verdicts
+                        }))
+                    }
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.distro.policy", "Check distro security policy", arguments,
                     None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
                 )
             }
@@ -2183,5 +2232,11 @@ mod tests {
         // 4. aios.distro.recommend
         let res_rec = server.call_tool("aios.distro.recommend", &json!({}));
         assert_eq!(res_rec.get("ok").and_then(|v| v.as_bool()), Some(true));
+
+        // 5. aios.distro.policy
+        let res_policy = server.call_tool("aios.distro.policy", &json!({}));
+        assert_eq!(res_policy.get("ok").and_then(|v| v.as_bool()), Some(true));
+        let res_policy_one = server.call_tool("aios.distro.policy", &json!({ "id": "debian-12-minimal-x86_64" }));
+        assert_eq!(res_policy_one.get("ok").and_then(|v| v.as_bool()), Some(true));
     }
 }

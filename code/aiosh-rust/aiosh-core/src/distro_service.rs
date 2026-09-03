@@ -137,6 +137,22 @@ impl DistroStore {
             Ok(Self::new())
         }
     }
+
+    /// Checks all registered profiles against the given security policy.
+    pub fn check_security_policy(
+        &self,
+        policy: &crate::distro_policy::DistroSecurityPolicy,
+    ) -> Vec<crate::distro_policy::DistroPolicyVerdict> {
+        policy.check_all(self)
+    }
+
+    /// Returns all registered profiles that comply with the security policy.
+    pub fn get_policy_compliant_profiles(
+        &self,
+        policy: &crate::distro_policy::DistroSecurityPolicy,
+    ) -> Vec<DistroProfile> {
+        policy.filter_compliant_profiles(self)
+    }
 }
 
 #[cfg(test)]

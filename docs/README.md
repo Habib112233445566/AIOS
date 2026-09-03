@@ -789,6 +789,7 @@ aiosh distro show <id> [--json] [--store <path>]
 aiosh distro evaluate [<id>] [--json] [--store <path>]
 aiosh distro recommend [--json] [--store <path>]
 aiosh distro config [--json]
+aiosh distro policy [<id>] [--json] [--store <path>]
 ```
 
 **Configuration Subsystem (`config/distro.json` & `aiosh-core::distro_config`):**
@@ -797,11 +798,18 @@ aiosh distro config [--json]
 - Provenance reporting: `aiosh distro config --json` reports origin (`env`, `file`, or `default`) for all properties.
 - Security bounds: Capped at 64 KiB (`take(65_536)`), rejection of IEEE 754 `NaN`, and directory traversal (`..`) checks.
 
+**Security Policy Subsystem (`aiosh-core::distro_policy`):**
+- Contract: `DistroSecurityPolicy` enforcing minimum security scores ($\ge 0.70$), binary compatibility floors ($\ge 0.70$), and family exclusions.
+- CLI evaluation: `aiosh distro policy [<id>] [--json]` reports compliance verdicts and diagnostics.
+- MCP evaluation: `aios.distro.policy` audits compliance via PEP and audit ring buffer.
+- Environment overrides: `AIOSH_DISTRO_MIN_SECURITY_SCORE`, `AIOSH_DISTRO_DISALLOWED_FAMILIES`.
+
 **MCP / JSON-RPC API Surface:**
 - `aios.distro.list`: List all registered distro profiles.
 - `aios.distro.show`: Get detailed profile specification by ID.
 - `aios.distro.evaluate`: Evaluate single profile or all profiles against AIOS criteria.
 - `aios.distro.recommend`: Return the reference production profile.
+- `aios.distro.policy`: Audit distro profiles against AIOS security policy standards.
 
 **Standalone Test Runner (`tools/test_distro_suites.py` & `tools/test_distro_unit.py`):**
 ```bash
@@ -824,7 +832,7 @@ python code/aiosh-mcp/tests/test_distro_mcp_smoke.py
 # ALL DISTRO MCP SMOKE TESTS PASSED!
 ```
 
-Evidence: `tasks/evidence/T-01001-data-model-research.md` .. `tasks/evidence/T-01059-automated-tests-documentation.md`.
+Evidence: `tasks/evidence/T-01001-data-model-research.md` .. `tasks/evidence/T-01069-security-policy-documentation.md`.
 
 
 

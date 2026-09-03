@@ -401,8 +401,89 @@ fn cmd_distro(args: &[String]) -> i32 {
             }
             0
         }
+        Some("policy") => {
+            let policy = match aiosh_core::distro_policy::DistroSecurityPolicy::from_env() {
+                Ok(p) => p,
+                Err(e) => {
+                    eprintln!("Error loading security policy: {}", e);
+                    return 1;
+                }
+            };
+            let id_opt = rest.first().filter(|s| !s.starts_with("--")).map(|s| s.as_str());
+            if let Some(id) = id_opt {
+                let profile = match store.get_profile(id) {
+                    Some(p) => p,
+                    None => {
+                        eprintln!("Distro profile '{}' not found", id);
+                        return 1;
+                    }
+                };
+                let eval = match store.evaluate_profile(id) {
+                    Ok(e) => e,
+                    Err(e) => {
+                        eprintln!("Evaluation error: {}", e);
+                        return 1;
+                    }
+                };
+                let verdict = policy.check_profile(&profile, &eval);
+                classify_and_emit(
+                    &mut ctx,
+                    "distro",
+                    "policy",
+                    json!({ "id": id, "allowed": verdict.allowed, "violations": verdict.violations }),
+                    if verdict.allowed { "success" } else { "warning" },
+                    Some(id),
+                    Some("Checked distro profile security policy"),
+                    "operator",
+                    None,
+                );
+                if is_json {
+                    println!("{}", serde_json::to_string_pretty(&verdict).unwrap_or_default());
+                } else {
+                    println!("Policy Verdict for '{}': {}", verdict.profile_id, if verdict.allowed { "ALLOWED" } else { "REJECTED" });
+                    if !verdict.violations.is_empty() {
+                        println!("Violations:");
+                        for v in &verdict.violations {
+                            println!("  - {}", v);
+                        }
+                    }
+                }
+                if verdict.allowed { 0 } else { 1 }
+            } else {
+                let verdicts = store.check_security_policy(&policy);
+                let allowed_count = verdicts.iter().filter(|v| v.allowed).count();
+                classify_and_emit(
+                    &mut ctx,
+                    "distro",
+                    "policy",
+                    json!({ "total": verdicts.len(), "allowed": allowed_count }),
+                    "success",
+                    None,
+                    Some("Checked security policy across all distro profiles"),
+                    "operator",
+                    None,
+                );
+                if is_json {
+                    println!("{}", serde_json::to_string_pretty(&verdicts).unwrap_or_default());
+                } else {
+                    println!("{:<30} {:<10} VIOLATIONS", "PROFILE ID", "STATUS");
+                    println!("{}", "-".repeat(60));
+                    for v in &verdicts {
+                        let status = if v.allowed { "ALLOWED" } else { "REJECTED" };
+                        let viol_summary = if v.violations.is_empty() {
+                            "-".to_string()
+                        } else {
+                            v.violations.join("; ")
+                        };
+                        println!("{:<30} {:<10} {}", v.profile_id, status, viol_summary);
+                    }
+                    println!("\nCompliant profiles: {}/{}", allowed_count, verdicts.len());
+                }
+                0
+            }
+        }
         Some("--help") | Some("-h") | None => {
-            println!("aiosh distro — Linux Distro Selection & Justification Manager\n\nUsage:\n  aiosh distro list [--json] [--store <path>]\n  aiosh distro show <id> [--json] [--store <path>]\n  aiosh distro evaluate [<id>] [--json] [--store <path>]\n  aiosh distro recommend [--json] [--store <path>]\n  aiosh distro config [--json]");
+            println!("aiosh distro — Linux Distro Selection & Justification Manager\n\nUsage:\n  aiosh distro list [--json] [--store <path>]\n  aiosh distro show <id> [--json] [--store <path>]\n  aiosh distro evaluate [<id>] [--json] [--store <path>]\n  aiosh distro recommend [--json] [--store <path>]\n  aiosh distro config [--json]\n  aiosh distro policy [<id>] [--json] [--store <path>]");
             0
         }
         Some(other) => {
