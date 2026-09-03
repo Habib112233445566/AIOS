@@ -808,7 +808,12 @@ python tools/test_distro_suites.py
 
 Limitations (honest): Profiles must pass strict semver validation and alphanumeric ID checks; custom profiles do not auto-build target ISO images (handled by downstream image building tasks); file loading is subject to a 10 MiB file cap.
 
-Evidence: `tasks/evidence/T-01001-data-model-research.md` .. `tasks/evidence/T-01019-core-service-documentation.md`.
+```bash
+python code/aiosh-cli/tests/test_distro_cli_smoke.py
+# ALL DISTRO CLI SMOKE TESTS PASSED!
+```
+
+Evidence: `tasks/evidence/T-01001-data-model-research.md` .. `tasks/evidence/T-01029-cli-surface-documentation.md`.
 
 
 
