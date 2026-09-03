@@ -884,6 +884,9 @@ Evidence: `tasks/evidence/T-01001-data-model-research.md` .. `tasks/evidence/T-0
 - Invariants (CF1..CF6): Non-empty paths, strict null-byte and control character prohibition, ASCII graphic target identifiers, timeout [10..86400s], artifact size [1 MiB..100 GiB], compression level [1..22].
 - CLI & MCP Surface: `aiosh image config [--json] [--config <path>]` and `aios.image.config`.
 
+**Automated Integration Test Suite (`code/aiosh-rust/aiosh-core/tests/test_base_image_automated.rs`):**
+- Test Cases (T1..T7): Deterministic 50-run plan synthesis, batch registry stress queries, configuration resolution priority, end-to-end serialization and plan generation, malformed input rejection matrix, CLI/MCP stage parity, and RAII directory cleanup safety.
+
 **Standalone Test Runner (`tools/test_image_suites.py`):**
 ```bash
 python tools/test_image_suites.py
@@ -892,10 +895,11 @@ python tools/test_image_suites.py
 # [+] B3 base image CLI surface commands & options (list/show/plan/filter)
 # [+] B4 base image MCP surface tools (list/get/plan)
 # [+] B5 base image configuration invariants & precedence (CF1..CF6)
-# PASS: image_suites criteria (B1..B5)
+# [+] B6 base image automated integration test suite (T1..T7)
+# PASS: image_suites criteria (B1..B6)
 ```
 
-Evidence: `tasks/evidence/T-01101-base-image-data-model-research.md` .. `tasks/evidence/T-01149-base-image-config-documentation.md`.
+Evidence: `tasks/evidence/T-01101-base-image-data-model-research.md` .. `tasks/evidence/T-01159-base-image-automated-tests-documentation.md`.
 
 
 
