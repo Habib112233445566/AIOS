@@ -1,0 +1,11 @@
+{
+  "store_path": "config/distros.json",
+  "pinned_reference_id": "debian-12-minimal-x86_64",
+  "min_recommendation_score": 0.75,
+  "weights": {
+    "binary_compatibility": 0.4,
+    "security": 0.3,
+    "footprint": 0.3
+  },
+  "auto_evaluate": true
+}

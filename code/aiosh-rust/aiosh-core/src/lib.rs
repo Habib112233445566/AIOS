@@ -26,6 +26,7 @@ pub mod ci_config;
 pub mod classifier;
 pub mod dispatch;
 pub mod distro;
+pub mod distro_config;
 pub mod distro_service;
 pub mod doc_index;
 pub mod doc_index_config;

@@ -127,6 +127,16 @@ impl DistroStore {
             Err(_) => Self::new(),
         }
     }
+
+    /// Loads the store based on the provided DistroConfig store_path.
+    pub fn load_from_config(cfg: &crate::distro_config::DistroConfig) -> Result<Self, String> {
+        let p = Path::new(&cfg.store_path);
+        if p.exists() {
+            Self::load_from_path(p)
+        } else {
+            Ok(Self::new())
+        }
+    }
 }
 
 #[cfg(test)]

@@ -1038,3 +1038,13 @@
 {"seq":1038,"ts":"2026-09-03T11:14:53Z","event":"completed","task_id":1038,"note":"Hardening of Distro Selection MCP/API surface against failure and misuse","evidence":[]}
 {"seq":1039,"ts":"2026-09-03T11:16:00Z","event":"completed","task_id":1039,"note":"Documentation of Distro Selection MCP/API surface in docs/README.md","evidence":[]}
 {"seq":1040,"ts":"2026-09-03T11:16:58Z","event":"completed","task_id":1040,"note":"Verification and evidence closure for Distro Selection MCP/API surface","evidence":[]}
+{"seq":1041,"ts":"2026-09-03T12:03:51Z","event":"completed","task_id":1041,"note":"Research into Distro Selection configuration schema, env resolution, and bounds","evidence":[]}
+{"seq":1042,"ts":"2026-09-03T12:05:04Z","event":"completed","task_id":1042,"note":"Specification of DistroConfig data models, interface, and validation invariants","evidence":[]}
+{"seq":1043,"ts":"2026-09-03T12:09:42Z","event":"completed","task_id":1043,"note":"Scaffold distro_config module and export in aiosh_core lib","evidence":[]}
+{"seq":1044,"ts":"2026-09-03T12:11:50Z","event":"completed","task_id":1044,"note":"Implement DistroConfig multi-tier resolution and create root config/distro.json","evidence":[]}
+{"seq":1045,"ts":"2026-09-03T12:14:09Z","event":"completed","task_id":1045,"note":"Unit test suite for DistroConfig passing all 5 tests cleanly","evidence":[]}
+{"seq":1046,"ts":"2026-09-03T12:23:16Z","event":"completed","task_id":1046,"note":"Integration of DistroConfig across DistroStore, CLI, and MCP surfaces","evidence":[]}
+{"seq":1047,"ts":"2026-09-03T12:24:35Z","event":"completed","task_id":1047,"note":"Security review of DistroConfig input boundaries and float safety","evidence":[]}
+{"seq":1048,"ts":"2026-09-03T12:27:34Z","event":"completed","task_id":1048,"note":"Hardening DistroConfig against NaN values and path traversal","evidence":[]}
+{"seq":1049,"ts":"2026-09-03T12:29:41Z","event":"completed","task_id":1049,"note":"Documentation of DistroConfig and distro config command in docs/README.md","evidence":[]}
+{"seq":1050,"ts":"2026-09-03T13:32:30Z","event":"completed","task_id":1050,"note":"Verification and evidence closure for Distro Selection configuration sub-epic","evidence":[]}

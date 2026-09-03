@@ -679,7 +679,10 @@ impl Server {
                 let f = move || -> Result<Value, String> {
                     let store = match store_path_opt {
                         Some(ref p) => aiosh_core::distro_service::DistroStore::load_from_path(std::path::Path::new(p))?,
-                        None => aiosh_core::distro_service::DistroStore::new(),
+                        None => {
+                            let cfg = aiosh_core::distro_config::DistroConfig::from_env().unwrap_or_default();
+                            aiosh_core::distro_service::DistroStore::load_from_config(&cfg)?
+                        }
                     };
                     let profiles = store.list_profiles();
                     Ok(json!({
@@ -705,7 +708,10 @@ impl Server {
                 let f = move || -> Result<Value, String> {
                     let store = match store_path_opt {
                         Some(ref p) => aiosh_core::distro_service::DistroStore::load_from_path(std::path::Path::new(p))?,
-                        None => aiosh_core::distro_service::DistroStore::new(),
+                        None => {
+                            let cfg = aiosh_core::distro_config::DistroConfig::from_env().unwrap_or_default();
+                            aiosh_core::distro_service::DistroStore::load_from_config(&cfg)?
+                        }
                     };
                     match store.get_profile(&id_for_closure) {
                         Some(profile) => Ok(json!({
@@ -728,7 +734,10 @@ impl Server {
                 let f = move || -> Result<Value, String> {
                     let store = match store_path_opt {
                         Some(ref p) => aiosh_core::distro_service::DistroStore::load_from_path(std::path::Path::new(p))?,
-                        None => aiosh_core::distro_service::DistroStore::new(),
+                        None => {
+                            let cfg = aiosh_core::distro_config::DistroConfig::from_env().unwrap_or_default();
+                            aiosh_core::distro_service::DistroStore::load_from_config(&cfg)?
+                        }
                     };
                     if let Some(ref id) = id_opt {
                         let ev = store.evaluate_profile(id)?;
@@ -757,7 +766,10 @@ impl Server {
                 let f = move || -> Result<Value, String> {
                     let store = match store_path_opt {
                         Some(ref p) => aiosh_core::distro_service::DistroStore::load_from_path(std::path::Path::new(p))?,
-                        None => aiosh_core::distro_service::DistroStore::new(),
+                        None => {
+                            let cfg = aiosh_core::distro_config::DistroConfig::from_env().unwrap_or_default();
+                            aiosh_core::distro_service::DistroStore::load_from_config(&cfg)?
+                        }
                     };
                     match store.get_recommended_profile() {
                         Some(profile) => Ok(json!({

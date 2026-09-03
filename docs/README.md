@@ -788,7 +788,14 @@ aiosh distro list [--json] [--store <path>]
 aiosh distro show <id> [--json] [--store <path>]
 aiosh distro evaluate [<id>] [--json] [--store <path>]
 aiosh distro recommend [--json] [--store <path>]
+aiosh distro config [--json]
 ```
+
+**Configuration Subsystem (`config/distro.json` & `aiosh-core::distro_config`):**
+- Canonical configuration file: `config/distro.json`.
+- Environment overrides: `AIOSH_DISTRO_CONFIG`, `AIOSH_DISTRO_STORE_PATH`, `AIOSH_DEFAULT_DISTRO`.
+- Provenance reporting: `aiosh distro config --json` reports origin (`env`, `file`, or `default`) for all properties.
+- Security bounds: Capped at 64 KiB (`take(65_536)`), rejection of IEEE 754 `NaN`, and directory traversal (`..`) checks.
 
 **MCP / JSON-RPC API Surface:**
 - `aios.distro.list`: List all registered distro profiles.
@@ -806,7 +813,7 @@ python tools/test_distro_suites.py
 # PASS: distro_suites criteria (D1..D4)
 ```
 
-Limitations (honest): Profiles must pass strict semver validation and alphanumeric ID checks; custom profiles do not auto-build target ISO images (handled by downstream image building tasks); file loading is subject to a 10 MiB file cap.
+Limitations (honest): Profiles must pass strict semver validation and alphanumeric ID checks; custom profiles do not auto-build target ISO images (handled by downstream image building tasks); file loading is subject to a 10 MiB file cap; configuration file is subject to a 64 KiB cap.
 
 ```bash
 python code/aiosh-cli/tests/test_distro_cli_smoke.py
@@ -816,7 +823,7 @@ python code/aiosh-mcp/tests/test_distro_mcp_smoke.py
 # ALL DISTRO MCP SMOKE TESTS PASSED!
 ```
 
-Evidence: `tasks/evidence/T-01001-data-model-research.md` .. `tasks/evidence/T-01039-mcp-api-surface-documentation.md`.
+Evidence: `tasks/evidence/T-01001-data-model-research.md` .. `tasks/evidence/T-01049-configuration-documentation.md`.
 
 
 

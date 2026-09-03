@@ -213,6 +213,7 @@ fn cmd_distro(args: &[String]) -> i32 {
     let rest = if args.len() > 1 { &args[1..] } else { &[] };
     let is_json = has_flag(rest, "--json");
 
+    let cfg = aiosh_core::distro_config::DistroConfig::from_env().unwrap_or_default();
     let store = if let Some(path_str) = parse_flag(rest, "--store") {
         match aiosh_core::distro_service::DistroStore::load_from_path(std::path::Path::new(&path_str)) {
             Ok(s) => s,
@@ -222,7 +223,13 @@ fn cmd_distro(args: &[String]) -> i32 {
             }
         }
     } else {
-        aiosh_core::distro_service::DistroStore::new()
+        match aiosh_core::distro_service::DistroStore::load_from_config(&cfg) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("Error loading distro store from config: {}", e);
+                return 1;
+            }
+        }
     };
 
     match sub {
@@ -380,8 +387,22 @@ fn cmd_distro(args: &[String]) -> i32 {
                 }
             }
         }
+        Some("config") => {
+            if is_json {
+                println!("{}", serde_json::to_string_pretty(&cfg.to_json_with_sources()).unwrap_or_default());
+            } else {
+                println!("AIOS Distro Configuration:");
+                println!("  Store Path:               {}", cfg.store_path);
+                println!("  Pinned Reference ID:      {}", cfg.pinned_reference_id);
+                println!("  Min Recommendation Score: {:.2}", cfg.min_recommendation_score);
+                println!("  Auto Evaluate:            {}", cfg.auto_evaluate);
+                println!("  Weights:                  binary={:.2}, security={:.2}, footprint={:.2}",
+                    cfg.weights.binary_compatibility, cfg.weights.security, cfg.weights.footprint);
+            }
+            0
+        }
         Some("--help") | Some("-h") | None => {
-            println!("aiosh distro — Linux Distro Selection & Justification Manager\n\nUsage:\n  aiosh distro list [--json] [--store <path>]\n  aiosh distro show <id> [--json] [--store <path>]\n  aiosh distro evaluate [<id>] [--json] [--store <path>]\n  aiosh distro recommend [--json] [--store <path>]");
+            println!("aiosh distro — Linux Distro Selection & Justification Manager\n\nUsage:\n  aiosh distro list [--json] [--store <path>]\n  aiosh distro show <id> [--json] [--store <path>]\n  aiosh distro evaluate [<id>] [--json] [--store <path>]\n  aiosh distro recommend [--json] [--store <path>]\n  aiosh distro config [--json]");
             0
         }
         Some(other) => {
