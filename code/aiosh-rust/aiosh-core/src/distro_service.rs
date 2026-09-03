@@ -168,6 +168,16 @@ impl DistroStore {
     ) -> crate::distro_observability::DistroObservabilityReport {
         crate::distro_observability::DistroObservabilityReport::generate(self, policy_opt)
     }
+
+    /// Evaluates deep health and structural integrity across all registered profiles.
+    pub fn validate_health(&self) -> crate::distro_recovery::DistroHealthReport {
+        crate::distro_recovery::validate_store_health(self)
+    }
+
+    /// Resiliently loads a DistroStore from disk, backing up corrupted files if needed.
+    pub fn recover_with_backup(path: &std::path::Path) -> (Self, Option<std::path::PathBuf>) {
+        crate::distro_recovery::recover_with_backup(path)
+    }
 }
 
 #[cfg(test)]

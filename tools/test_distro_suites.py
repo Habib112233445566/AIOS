@@ -78,6 +78,14 @@ def test_d5_configuration_subsystem():
     )
 
 
+def test_d6_recovery_and_validation():
+    return _run_cargo_test(
+        ["--lib", "distro_recovery::tests"],
+        "D6",
+        "distro store corruption recovery & health check validation invariants",
+    )
+
+
 def main():
     checks = [
         test_d1_data_model_integrity,
@@ -85,6 +93,7 @@ def main():
         test_d3_cli_surface,
         test_d4_mcp_surface,
         test_d5_configuration_subsystem,
+        test_d6_recovery_and_validation,
     ]
     all_ok = True
     for c in checks:
@@ -92,7 +101,7 @@ def main():
             all_ok = False
 
     if all_ok:
-        print("\nPASS: distro_suites criteria (D1..D5)")
+        print("\nPASS: distro_suites criteria (D1..D6)")
         return 0
     else:
         print("\nFAIL: distro_suites criteria", file=sys.stderr)

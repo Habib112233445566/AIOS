@@ -29,6 +29,7 @@ pub mod distro;
 pub mod distro_config;
 pub mod distro_observability;
 pub mod distro_policy;
+pub mod distro_recovery;
 pub mod distro_service;
 pub mod doc_index;
 pub mod doc_index_config;

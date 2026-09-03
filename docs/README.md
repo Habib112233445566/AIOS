@@ -792,6 +792,7 @@ aiosh distro recommend [--json] [--store <path>]
 aiosh distro config [--json]
 aiosh distro policy [<id>] [--json] [--store <path>]
 aiosh distro stats [--json] [--store <path>]
+aiosh distro check [--json] [--store <path>]
 ```
 
 **Configuration Subsystem (`config/distro.json` & `aiosh-core::distro_config`):**
@@ -812,6 +813,12 @@ aiosh distro stats [--json] [--store <path>]
 - CLI exposure: `aiosh distro stats [--json]` displays structured telemetry diagnostics.
 - MCP exposure: `aios.distro.stats` delivers JSON telemetry payload via audit ring buffer.
 
+**Recovery & Validation Subsystem (`aiosh-core::distro_recovery`):**
+- Health contract: `DistroHealthReport` verifying all registered profiles, store non-emptiness, and production-ready recommended profile resolution.
+- Resilient recovery: `DistroStore::recover_with_backup` preserves corrupted stores as `<path>.corrupt.<ts>.bak` with millisecond collision avoidance before regenerating a default store.
+- CLI verification: `aiosh distro check [--json]` gates release and deployment pipelines (fail-closed exit 1 on error).
+- MCP verification: `aios.distro.check` audits store health through PEP and ring buffer.
+
 **MCP / JSON-RPC API Surface:**
 - `aios.distro.list`: List all registered distro profiles.
 - `aios.distro.show`: Get detailed profile specification by ID.
@@ -819,6 +826,7 @@ aiosh distro stats [--json] [--store <path>]
 - `aios.distro.recommend`: Return the reference production profile.
 - `aios.distro.policy`: Audit distro profiles against AIOS security policy standards.
 - `aios.distro.stats`: Retrieve aggregated telemetry and observability report.
+- `aios.distro.check`: Deep structural health audit of the distro registry.
 
 **Standalone Test Runner (`tools/test_distro_suites.py` & `tools/test_distro_unit.py`):**
 ```bash
@@ -828,7 +836,8 @@ python tools/test_distro_suites.py
 # [+] D3 distro CLI surface commands & options (list/show/evaluate/recommend)
 # [+] D4 distro MCP tools dispatch & execution (list/show/evaluate/recommend)
 # [+] D5 distro configuration resolution & hardening invariants
-# PASS: distro_suites criteria (D1..D5)
+# [+] D6 distro store corruption recovery & health check validation invariants
+# PASS: distro_suites criteria (D1..D6)
 ```
 
 Limitations (honest): Profiles must pass strict semver validation and alphanumeric ID checks; custom profiles do not auto-build target ISO images (handled by downstream image building tasks); file loading is subject to a 10 MiB file cap; configuration file is subject to a 64 KiB cap.
@@ -841,7 +850,7 @@ python code/aiosh-mcp/tests/test_distro_mcp_smoke.py
 # ALL DISTRO MCP SMOKE TESTS PASSED!
 ```
 
-Evidence: `tasks/evidence/T-01001-data-model-research.md` .. `tasks/evidence/T-01089-documentation-documentation.md`.
+Evidence: `tasks/evidence/T-01001-data-model-research.md` .. `tasks/evidence/T-01099-recovery-validation-documentation.md`.
 
 
 

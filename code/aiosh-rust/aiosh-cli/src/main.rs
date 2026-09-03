@@ -523,8 +523,41 @@ fn cmd_distro(args: &[String]) -> i32 {
             }
             0
         }
+        Some("check") => {
+            let report = store.validate_health();
+            classify_and_emit(
+                &mut ctx,
+                "distro",
+                "check",
+                json!({
+                    "healthy": report.healthy,
+                    "profile_count": report.profile_count,
+                    "errors_count": report.errors.len(),
+                }),
+                if report.healthy { "success" } else { "failure" },
+                None,
+                Some("Validated distro store structural health"),
+                "operator",
+                None,
+            );
+            if is_json {
+                println!("{}", serde_json::to_string_pretty(&report).unwrap_or_default());
+            } else {
+                println!("AIOS Distro Store Health Check:");
+                println!("  Status:                    {}", if report.healthy { "HEALTHY" } else { "UNHEALTHY" });
+                println!("  Profile Count:             {}", report.profile_count);
+                println!("  Recommended Profile Valid: {}", if report.recommended_profile_valid { "YES" } else { "NO" });
+                if !report.errors.is_empty() {
+                    println!("\nErrors Detected:");
+                    for err in &report.errors {
+                        println!("  - {}", err);
+                    }
+                }
+            }
+            if report.healthy { 0 } else { 1 }
+        }
         Some("--help") | Some("-h") | None => {
-            println!("aiosh distro — Linux Distro Selection & Justification Manager\n\nUsage:\n  aiosh distro list [--json] [--store <path>]\n  aiosh distro show <id> [--json] [--store <path>]\n  aiosh distro evaluate [<id>] [--json] [--store <path>]\n  aiosh distro recommend [--json] [--store <path>]\n  aiosh distro config [--json]\n  aiosh distro policy [<id>] [--json] [--store <path>]\n  aiosh distro stats [--json] [--store <path>]");
+            println!("aiosh distro — Linux Distro Selection & Justification Manager\n\nUsage:\n  aiosh distro list [--json] [--store <path>]\n  aiosh distro show <id> [--json] [--store <path>]\n  aiosh distro evaluate [<id>] [--json] [--store <path>]\n  aiosh distro recommend [--json] [--store <path>]\n  aiosh distro config [--json]\n  aiosh distro policy [<id>] [--json] [--store <path>]\n  aiosh distro stats [--json] [--store <path>]\n  aiosh distro check [--json] [--store <path>]");
             0
         }
         Some(other) => {
