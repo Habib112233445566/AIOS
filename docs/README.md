@@ -906,6 +906,9 @@ Evidence: `tasks/evidence/T-01001-data-model-research.md` .. `tasks/evidence/T-0
 - Audit Trail: Immutable hash-chained audit logging emitted to SQLite WAL ring on each execution.
 - Limitations: Read-only aggregation across disk registry; unbounded external image stores capped by file reader limits; metrics computed synchronously.
 
+**Architecture & Operational Guide (`docs/base_image_build.md`):**
+- Comprehensive 9-section operational and architectural guide covering reproducible 4-stage image build lifecycle, data models, configuration precedence, security policy lockdown, observability telemetry, CLI/MCP tool surfaces, and SQLite WAL audit trails.
+
 **Standalone Test Runner (`tools/test_image_suites.py`):**
 ```bash
 python tools/test_image_suites.py
@@ -915,10 +918,12 @@ python tools/test_image_suites.py
 # [+] B4 base image MCP surface tools (list/get/plan)
 # [+] B5 base image configuration invariants & precedence (CF1..CF6)
 # [+] B6 base image automated integration test suite (T1..T7)
-# PASS: image_suites criteria (B1..B6)
+# [+] B7 base image security policy enforcement & invariants (P1..P7)
+# [+] B8 base image observability report aggregation & invariants (OB1..OB5)
+# PASS: image_suites criteria (B1..B8)
 ```
 
-Evidence: `tasks/evidence/T-01101-base-image-data-model-research.md` .. `tasks/evidence/T-01179-base-image-observability-documentation.md`.
+Evidence: `tasks/evidence/T-01101-base-image-data-model-research.md` .. `tasks/evidence/T-01189-base-image-documentation-documentation.md`.
 
 
 

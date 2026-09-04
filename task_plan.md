@@ -29,6 +29,15 @@ substrate but is no longer the shipping path.
 
 ## Status (live — 2026-09-04)
 
+### 2026-09-04 — MILESTONE: Base Image Build Documentation CLOSED 10/10 (T-01181..T-01190)
+
+Complete implementation, governance, verification, and hardening for Phase 1 `Base Image Build / documentation`:
+- **Architecture & Operational Guide**: Comprehensive 9-section documentation authored in `docs/base_image_build.md` detailing image formats (`raw`, `qcow2`, `iso`), 4-stage build lifecycle, configuration precedence, security invariants (`P1..P7`), observability invariants (`OB1..OB5`), CLI and MCP tool references, and audit guarantees.
+- **Automated Documentation Test Suite**: Standalone test suite `tools/test_base_image_doc.py` covering criteria `D1..D5`.
+- **Rot-Proof Invariant Enforcement**: Confirmed path resolution and zero volatility in `docs/README.md` via `tools/check_task_docs.py` (C1..C6 PASS).
+- **Master Test Runner Integration**: All criteria `B1..B8` in `tools/test_image_suites.py` PASS.
+- **Ledger Pointer**: Advances to **T-01191** (`Phase 1 / Base Image Build / recovery & validation: Research`).
+
 ### 2026-09-04 — MILESTONE: Base Image Build Observability CLOSED 10/10 (T-01171..T-01180)
 
 Complete implementation, governance, verification, and hardening for Phase 1 `Base Image Build / observability`:

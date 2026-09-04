@@ -1,5 +1,22 @@
 # Progress Log
 
+## 2026-09-04 — T-01181..T-01190 SHIPPED: Base Image Build Documentation CLOSED (10/10 tasks)
+
+**What shipped:**
+- Created comprehensive 9-section operational and architectural guide in `docs/base_image_build.md` covering target formats (`raw`, `qcow2`, `iso`), core data models, 4-stage build lifecycle with Mermaid diagram, configuration precedence, security invariants (`P1..P7`), observability invariants (`OB1..OB5`), CLI subcommands, MCP tools, error envelopes, and SQLite WAL audit logging.
+- Created automated documentation unit test suite `tools/test_base_image_doc.py` covering criteria `D1..D5`.
+- Cross-referenced `docs/base_image_build.md` in `docs/README.md` and synchronized evidence ranges.
+- Completed security review, threat modeling, and abuse scenario mitigations.
+- Enforced zero-volatility hardening (invariant C6) and verified rot-proof integrity.
+
+**Verified:**
+- `python tools/test_base_image_doc.py` (D1..D5 PASS).
+- `python tools/test_image_suites.py` (B1..B8 PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- Evidence chain: `docs/tasks/evidence/T-01181-documentation-research.md` … `T-01190-verify.md`.
+- Milestone: **Base Image Build / documentation CLOSED — 10/10 tasks** (T-01181..T-01190). Pointer $\to$ **T-01191** (`Base Image Build / recovery & validation: Research`).
+
+
 ## 2026-09-04 — T-01171..T-01180 SHIPPED: Base Image Build Observability CLOSED (Criteria B8, 10/10 tasks)
 
 **What shipped:**

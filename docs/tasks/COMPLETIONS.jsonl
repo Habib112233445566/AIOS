@@ -1178,3 +1178,13 @@
 {"seq":1178,"ts":"2026-09-04T01:35:38Z","event":"completed","task_id":1178,"note":"Hardened BaseImageObservabilityReport with capacity bounds and sanitization","evidence":[]}
 {"seq":1179,"ts":"2026-09-04T01:37:28Z","event":"completed","task_id":1179,"note":"Documented BaseImageObservabilityReport in README with CLI and MCP examples","evidence":[]}
 {"seq":1180,"ts":"2026-09-04T01:39:46Z","event":"completed","task_id":1180,"note":"Verification and evidence closure for Base Image Build observability sub-epic (T-01171..T-01180)","evidence":[]}
+{"seq":1181,"ts":"2026-09-04T01:41:01Z","event":"completed","task_id":1181,"note":"Researched Base Image Build documentation requirements, prior art, facts vs assumptions","evidence":[]}
+{"seq":1182,"ts":"2026-09-04T01:41:38Z","event":"completed","task_id":1182,"note":"Specified 9-section documentation architecture for Base Image Build in docs/base_image_build.md","evidence":[]}
+{"seq":1183,"ts":"2026-09-04T01:42:14Z","event":"completed","task_id":1183,"note":"Scaffolded docs/base_image_build.md with 9 sections per spec","evidence":[]}
+{"seq":1184,"ts":"2026-09-04T01:43:23Z","event":"completed","task_id":1184,"note":"Implemented comprehensive 9-section Base Image Build guide in docs/base_image_build.md","evidence":[]}
+{"seq":1185,"ts":"2026-09-04T01:44:12Z","event":"completed","task_id":1185,"note":"Created tools/test_base_image_doc.py with criteria D1..D5 passing cleanly","evidence":[]}
+{"seq":1186,"ts":"2026-09-04T01:44:49Z","event":"completed","task_id":1186,"note":"Integrated docs/base_image_build.md into README and verified cross-surface parity","evidence":[]}
+{"seq":1187,"ts":"2026-09-04T01:45:27Z","event":"completed","task_id":1187,"note":"Completed security review of Base Image Build documentation, verifying abuse scenario mitigations","evidence":[]}
+{"seq":1188,"ts":"2026-09-04T01:46:09Z","event":"completed","task_id":1188,"note":"Hardened documentation against volatility, size cap violations, and syntax errors","evidence":[]}
+{"seq":1189,"ts":"2026-09-04T01:46:50Z","event":"completed","task_id":1189,"note":"Documented Base Image Build documentation sub-epic in README and synchronized evidence ranges","evidence":[]}
+{"seq":1190,"ts":"2026-09-04T01:47:58Z","event":"completed","task_id":1190,"note":"Verification and evidence closure for Base Image Build documentation sub-epic (T-01181..T-01190)","evidence":[]}
