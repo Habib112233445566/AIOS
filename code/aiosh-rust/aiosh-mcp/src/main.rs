@@ -586,6 +586,19 @@ impl Server {
                 "additionalProperties": false
             }
         }));
+        tools.push(json!({
+            "name": "aios.package.validate",
+            "description": "Validate package name syntax (PM1) or full PackageSpec against PM1..PM5 invariants.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string", "description": "Package name to validate against PM1 syntax" },
+                    "spec": { "type": "object", "description": "Complete PackageSpec object to validate against PM1..PM5 invariants" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
         tools
     }
 
@@ -1239,6 +1252,48 @@ impl Server {
                 dispatch::recorded_call(
                     &mut self.ring, &self.pep,
                     "aios.image.check", "Validate and check base image store integrity", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.package.validate" => {
+                let name_opt = arguments.get("name").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let spec_val_opt = arguments.get("spec").cloned();
+
+                let f = move || -> Result<Value, String> {
+                    if let Some(ref name) = name_opt {
+                        if name.len() > 128 || name.chars().any(|c| c.is_control()) {
+                            return Err("Package name violates basic control or length bounds".into());
+                        }
+                        match aiosh_core::package::validate_package_name(name) {
+                            Ok(()) => Ok(json!({
+                                "ok": true,
+                                "tool": "aios.package.validate",
+                                "valid": true,
+                                "name": name,
+                                "message": format!("Package name '{}' conforms to PM1 naming syntax", name)
+                            })),
+                            Err(e) => Err(format!("Package name '{}' is invalid: {}", name, e)),
+                        }
+                    } else if let Some(ref spec_val) = spec_val_opt {
+                        let spec: aiosh_core::package::PackageSpec = serde_json::from_value(spec_val.clone())
+                            .map_err(|e| format!("Invalid package specification JSON: {}", e))?;
+                        match aiosh_core::package::validate_package_spec(&spec) {
+                            Ok(()) => Ok(json!({
+                                "ok": true,
+                                "tool": "aios.package.validate",
+                                "valid": true,
+                                "spec": spec,
+                                "message": format!("Package specification '{}' conforms to PM1..PM5 invariants", spec.name)
+                            })),
+                            Err(errs) => Err(format!("Package specification violates invariants: {:?}", errs)),
+                        }
+                    } else {
+                        Err("Either 'name' or 'spec' parameter is required".into())
+                    }
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.package.validate", "Validate package name or specification", arguments,
                     None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
                 )
             }
@@ -2747,5 +2802,61 @@ mod tests {
 
         let res_check_bad_path = server.call_tool("aios.image.check", &json!({ "store_path": "a".repeat(4097) }));
         assert_eq!(res_check_bad_path.get("ok").and_then(|v| v.as_bool()), Some(false));
+    }
+
+    #[test]
+    fn test_mcp_package_tools() {
+        let mut server = Server::open();
+
+        // 1. aios.package.validate - valid name
+        let res_name_valid = server.call_tool("aios.package.validate", &json!({ "name": "curl" }));
+        assert_eq!(res_name_valid.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_name_valid.get("valid").and_then(|v| v.as_bool()), Some(true));
+
+        // 2. aios.package.validate - invalid name
+        let res_name_invalid = server.call_tool("aios.package.validate", &json!({ "name": "Curl" }));
+        assert_eq!(res_name_invalid.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 3. aios.package.validate - control character name
+        let res_control_char = server.call_tool("aios.package.validate", &json!({ "name": "bad\x07name" }));
+        assert_eq!(res_control_char.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 4. aios.package.validate - valid spec
+        let res_spec_valid = server.call_tool("aios.package.validate", &json!({
+            "spec": {
+                "name": "curl",
+                "version": "8.5.0-2",
+                "architecture": "x86_64",
+                "format": "deb",
+                "state": "available",
+                "description": "curl tool",
+                "installed_size_bytes": 1000,
+                "sha256": null,
+                "repository_url": null,
+                "dependencies": []
+            }
+        }));
+        assert_eq!(res_spec_valid.get("ok").and_then(|v| v.as_bool()), Some(true));
+
+        // 5. aios.package.validate - invalid spec (self-dependency)
+        let res_spec_invalid = server.call_tool("aios.package.validate", &json!({
+            "spec": {
+                "name": "curl",
+                "version": "8.5.0-2",
+                "architecture": "x86_64",
+                "format": "deb",
+                "state": "available",
+                "description": "curl tool",
+                "installed_size_bytes": 1000,
+                "sha256": null,
+                "repository_url": null,
+                "dependencies": [{ "name": "curl", "version_constraint": null, "optional": false }]
+            }
+        }));
+        assert_eq!(res_spec_invalid.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 6. aios.package.validate - missing arguments
+        let res_missing = server.call_tool("aios.package.validate", &json!({}));
+        assert_eq!(res_missing.get("ok").and_then(|v| v.as_bool()), Some(false));
     }
 }

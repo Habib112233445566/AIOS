@@ -1,5 +1,32 @@
 # Progress Log
 
+## 2026-09-04 — T-01201..T-01210 SHIPPED: Package Management Data Model CLOSED (Criterion PM1, 10/10 tasks)
+
+**What shipped:**
+- Created unified Linux package management data model in `code/aiosh-rust/aiosh-core/src/package.rs` supporting Debian (`deb`), Alpine (`apk`), `flatpak`, and `tarball`.
+- Implemented core types: `PackageSpec`, `PackageFormat`, `PackageState`, `PackageDependency`, `PackageAction`, `PackageTransaction`, and `PackageQuery`.
+- Implemented and verified validation invariants `PM1..PM5`:
+  - `PM1`: Package naming syntax conforming to `^[a-z0-9][a-z0-9+.-]*$`, length `1..=128`.
+  - `PM2`: Strict size bounds on version (64), architecture (64), description (4096), dependencies (256), package size (100 GiB), transaction actions (256).
+  - `PM3`: Dependency hygiene rejecting self-dependencies and duplicate dependency specifications.
+  - `PM4`: Checksum (64-hex SHA-256) and HTTPS repository URL enforcement.
+  - `PM5`: State consistency (installed packages require positive installed size).
+- Integrated operator CLI subcommand: `aiosh package validate (--name <name> | --spec <file_or_json>) [--json]` with 1 MiB payload ceiling.
+- Integrated autonomous agent MCP tool: `aios.package.validate` with PEP authorization gating and SQLite WAL audit logging.
+- Created standalone test runner `tools/test_package_suites.py` with criterion `PM1`.
+- Created standalone integration test suite in `code/aiosh-rust/aiosh-core/tests/test_package_data_model.rs` (7 tests passing).
+- Updated root specification `docs/README.md` (Section 8.12).
+
+**Verified:**
+- `python tools/test_package_suites.py` (PM1 PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --test test_package_data_model` (7/7 PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --bin aiosh test_cmd_package_flow` (PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --bin aiosh-mcp test_mcp_package_tools` (PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- Evidence chain: `docs/tasks/evidence/T-01201-data-model-research.md` … `T-01210-verify.md`.
+- Milestone: **Package Management / data model CLOSED — 10/10 tasks** (T-01201..T-01210). Pointer $\to$ **T-01211** (`Phase 1 — Linux Base System & Bootable Target / Package Management / core service: Research`).
+
+
 ## 2026-09-04 — T-01191..T-01200 SHIPPED: Base Image Build Recovery & Validation CLOSED (Criteria B1..B9, FULL EPIC COMPLETE 100/100, TASK 1200 ACHIEVED!)
 
 **What shipped:**

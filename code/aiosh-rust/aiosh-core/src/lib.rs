@@ -48,6 +48,7 @@ pub mod handoff_config;
 pub mod handoff_service;
 pub mod ledger;
 pub mod ledger_config;
+pub mod package;
 pub mod pentest;
 pub mod pep;
 pub mod release;
@@ -75,5 +76,9 @@ pub use distro::{ArchTarget, CLibrary, DistroEvaluation, DistroFamily, DistroPro
 pub use distro_service::DistroStore;
 pub use handoff::{HandoffPriority, HandoffRecord, HandoffReport, HandoffStatus};
 pub use handoff_service::HandoffStore;
+pub use package::{
+    PackageAction, PackageActionType, PackageDependency, PackageFormat, PackageQuery, PackageSpec,
+    PackageState, PackageTransaction,
+};
 pub use pep::PepStore;
 pub use types::GENESIS_HASH;

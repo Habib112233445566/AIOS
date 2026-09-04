@@ -29,6 +29,16 @@ substrate but is no longer the shipping path.
 
 ## Status (live — 2026-09-04)
 
+### 2026-09-04 — MILESTONE: Package Management Data Model CLOSED 10/10 (T-01201..T-01210)
+
+Complete implementation, governance, verification, and hardening for Phase 1 `Package Management / data model`:
+- **Unified Data Model Subsystem**: `code/aiosh-rust/aiosh-core/src/package.rs` delivering `PackageSpec`, `PackageFormat`, `PackageState`, `PackageDependency`, `PackageAction`, `PackageTransaction`, and `PackageQuery`.
+- **Validation Invariants (PM1..PM5)**: Strictly enforced syntax for Debian and Alpine package names, size bounds (64-char versions, 4096-byte descriptions, 256 dependencies, 100 GiB ceiling), dependency hygiene, SHA-256 integrity, and HTTPS repository transport.
+- **Operator CLI & MCP Surfaces**: `aiosh package validate (--name <name> | --spec <file_or_json>) [--json]` and `aios.package.validate` tool with 1 MiB payload protection and SQLite WAL audit logging.
+- **Master Test Runner Matrix (`tools/test_package_suites.py`)**: Criterion `PM1` PASS.
+- **Unit Suite**: `code/aiosh-rust/aiosh-core/tests/test_package_data_model.rs` (7 tests passing in isolation).
+- **Ledger Pointer**: Advances to **T-01211** (`Phase 1 — Linux Base System & Bootable Target / Package Management / core service: Research`).
+
 ### 2026-09-04 — MILESTONE: Base Image Build Recovery & Validation CLOSED 10/10 (T-01191..T-01200) — BASE IMAGE BUILD EPIC COMPLETE (100/100, TASK 1200 ACHIEVED!)
 
 Complete implementation, governance, verification, and hardening for Phase 1 `Base Image Build / recovery & validation`:

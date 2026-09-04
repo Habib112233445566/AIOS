@@ -937,6 +937,32 @@ python tools/test_image_suites.py
 
 Evidence: `tasks/evidence/T-01101-base-image-data-model-research.md` .. `tasks/evidence/T-01200-recovery-validation-verification-evidenc.md`.
 
+### 8.12 Linux Package Management Subsystem (`aiosh-core::package`, T-01201..T-01300)
+
+**Architecture & Core Data Model (`code/aiosh-rust/aiosh-core/src/package.rs`):**
+- Data model: `PackageSpec`, `PackageFormat` (`deb`, `apk`, `flatpak`, `tarball`), `PackageState` (`available`, `installed`, `upgradable`, `pending_install`, `pending_removal`, `broken`), `PackageDependency`, `PackageAction`, `PackageTransaction`, and `PackageQuery`.
+- Invariants (PM1..PM5):
+  - `PM1`: Package naming syntax matching Debian/Alpine (`^[a-z0-9][a-z0-9+.-]*$`), length [1..128].
+  - `PM2`: Sizing bounds: version [1..64], description [<=4096 bytes], dependencies [<=256], package size [<=100 GiB], transaction actions [<=256].
+  - `PM3`: Dependency hygiene: no self-dependencies (`dep.name != spec.name`), duplicate dependencies, or malformed constraints.
+  - `PM4`: Provenance & integrity: exact 64-character hexadecimal SHA-256 digests and mandatory HTTPS repository URLs.
+  - `PM5`: State consistency: installed packages must have non-zero size (`installed_size_bytes > 0`).
+
+**Operator CLI Surface (`aiosh package`):**
+- `aiosh package validate --name <name> [--json]`: Validate package name syntax (PM1).
+- `aiosh package validate --spec <file_or_inline_json> [--json]`: Deep-audit full package specification against invariants PM1..PM5 with 1 MiB payload ceiling.
+
+**Autonomous Agent MCP Tool Surface (`aiosh-mcp`):**
+- `aios.package.validate`: Validates package name syntax or full `PackageSpec` against PM1..PM5 invariants with PEP capability checks and immutable SQLite WAL audit logging.
+
+**Standalone Test Runner (`tools/test_package_suites.py`):**
+```bash
+python tools/test_package_suites.py
+# [+] PM1 package data model integrity & invariants (PM1..PM5)
+# PASS: package_suites criteria (PM1)
+```
+
+Evidence: `tasks/evidence/T-01201-data-model-research.md` .. `tasks/evidence/T-01210-data-model-verification-evidenc.md`.
 
 
 

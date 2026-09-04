@@ -196,8 +196,9 @@ fn main() {
         Some("handoff") => cmd_handoff(&args[1..]),
         Some("distro") => cmd_distro(&args[1..]),
         Some("image") => cmd_image(&args[1..]),
+        Some("package") => cmd_package(&args[1..]),
         Some("--help") | Some("-h") | None => {
-            println!("aiosh — AIOS shell CLI (Rust)\n\nUsage: aiosh <status|run|agent|audit|grant|pentest|classify|task|ci|release|backup|toolchain|doc|evidence|repo|secrets|triage|handoff|distro|image> ...\n\n  aiosh task <status|done|block|unblock|skip|rebuild|check>  Task ledger control\n  aiosh ci <show|failures|check|config|metrics> [--file PATH]  CI smoke reports\n  aiosh release generate  Create bootable ISO\n  aiosh backup create  Create system snapshot zip\n  aiosh toolchain check [--config <path>]  Verify host environment against ToolchainManifest\n  aiosh toolchain show [--config <path>]   Display the resolved ToolchainManifest\n  aiosh doc <show|check|search>  Documentation Index Control\n  aiosh evidence <verify|hash|scan>   Evidence & Audit Trail Control\n  aiosh repo <health|check>  Repository Health Diagnostics\n  aiosh secrets <scan|check> [--config <path>]  Secrets & Access Hygiene Scanner\n  aiosh triage <list|show|record|resolve|ingest|check>  Regression Triage Manager\n  aiosh handoff <list|show|initiate|accept|reject|complete|cancel>  Agent Handoff Protocol Manager\n  aiosh distro <list|show|evaluate|recommend|policy|stats|check>  Linux Distro Selection & Justification Manager\n  aiosh image <list|show|plan|filter>  Linux Base Image Build & Packaging Manager");
+            println!("aiosh — AIOS shell CLI (Rust)\n\nUsage: aiosh <status|run|agent|audit|grant|pentest|classify|task|ci|release|backup|toolchain|doc|evidence|repo|secrets|triage|handoff|distro|image|package> ...\n\n  aiosh task <status|done|block|unblock|skip|rebuild|check>  Task ledger control\n  aiosh ci <show|failures|check|config|metrics> [--file PATH]  CI smoke reports\n  aiosh release generate  Create bootable ISO\n  aiosh backup create  Create system snapshot zip\n  aiosh toolchain check [--config <path>]  Verify host environment against ToolchainManifest\n  aiosh toolchain show [--config <path>]   Display the resolved ToolchainManifest\n  aiosh doc <show|check|search>  Documentation Index Control\n  aiosh evidence <verify|hash|scan>   Evidence & Audit Trail Control\n  aiosh repo <health|check>  Repository Health Diagnostics\n  aiosh secrets <scan|check> [--config <path>]  Secrets & Access Hygiene Scanner\n  aiosh triage <list|show|record|resolve|ingest|check>  Regression Triage Manager\n  aiosh handoff <list|show|initiate|accept|reject|complete|cancel>  Agent Handoff Protocol Manager\n  aiosh distro <list|show|evaluate|recommend|policy|stats|check>  Linux Distro Selection & Justification Manager\n  aiosh image <list|show|plan|filter>  Linux Base Image Build & Packaging Manager\n  aiosh package <validate>  Linux Package Management & Validation Control");
             0
         }
         Some(other) => {
@@ -977,6 +978,135 @@ fn cmd_image(args: &[String]) -> i32 {
         }
         Some(other) => {
             eprintln!("unknown image subcommand: {}", other);
+            2
+        }
+    }
+}
+
+fn cmd_package(args: &[String]) -> i32 {
+    let mut ctx = open_context();
+    let sub = args.first().map(|s| s.as_str());
+    let rest = if args.len() > 1 { &args[1..] } else { &[] };
+    let is_json = has_flag(rest, "--json");
+
+    match sub {
+        Some("validate") => {
+            if let Some(name) = parse_flag(rest, "--name") {
+                let res = aiosh_core::package::validate_package_name(&name);
+                let (code, msg, errors) = match res {
+                    Ok(()) => (0, format!("Package name '{}' is valid", name), vec![]),
+                    Err(e) => (2, format!("Package name '{}' is invalid: {}", name, e), vec![e]),
+                };
+                classify_and_emit(
+                    &mut ctx,
+                    "package",
+                    "validate",
+                    json!({ "name": name, "valid": code == 0 }),
+                    if code == 0 { "success" } else { "failure" },
+                    Some(&name),
+                    Some(&msg),
+                    "operator",
+                    None,
+                );
+                if is_json {
+                    println!("{}", json!({
+                        "code": code,
+                        "data": { "valid": code == 0, "name": name },
+                        "error": if code == 0 { serde_json::Value::Null } else { json!({ "code": "VALIDATION_FAILED", "message": msg, "errors": errors }) }
+                    }));
+                } else if code == 0 {
+                    println!("VALID: Package name '{}' conforms to PM1 naming syntax", name);
+                } else {
+                    eprintln!("INVALID: {}", msg);
+                }
+                code
+            } else if let Some(spec_str) = parse_flag(rest, "--spec") {
+                let content = if std::path::Path::new(&spec_str).exists() {
+                    let path = std::path::Path::new(&spec_str);
+                    if let Ok(meta) = std::fs::metadata(path) {
+                        if meta.len() > 1024 * 1024 {
+                            let err_msg = format!("spec file '{}' exceeds 1 MiB size limit (was {} bytes)", spec_str, meta.len());
+                            if is_json {
+                                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "PAYLOAD_TOO_LARGE", "message": err_msg } }));
+                            } else {
+                                eprintln!("{}", err_msg);
+                            }
+                            return 2;
+                        }
+                    }
+                    match std::fs::read_to_string(path) {
+                        Ok(c) => c,
+                        Err(e) => {
+                            eprintln!("failed to read spec file '{}': {}", spec_str, e);
+                            return 1;
+                        }
+                    }
+                } else {
+                    if spec_str.len() > 1024 * 1024 {
+                        let err_msg = "inline spec JSON payload exceeds 1 MiB size limit".to_string();
+                        if is_json {
+                            println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "PAYLOAD_TOO_LARGE", "message": err_msg } }));
+                        } else {
+                            eprintln!("{}", err_msg);
+                        }
+                        return 2;
+                    }
+                    spec_str
+                };
+                let spec: aiosh_core::package::PackageSpec = match serde_json::from_str(&content) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        let err_msg = format!("failed to parse package spec JSON: {}", e);
+                        if is_json {
+                            println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_JSON", "message": err_msg } }));
+                        } else {
+                            eprintln!("{}", err_msg);
+                        }
+                        return 2;
+                    }
+                };
+                let res = aiosh_core::package::validate_package_spec(&spec);
+                let (code, errors) = match res {
+                    Ok(()) => (0, vec![]),
+                    Err(errs) => (2, errs),
+                };
+                classify_and_emit(
+                    &mut ctx,
+                    "package",
+                    "validate",
+                    json!({ "package": spec.name, "valid": code == 0, "errors_count": errors.len() }),
+                    if code == 0 { "success" } else { "failure" },
+                    Some(&spec.name),
+                    Some("Validated package specification"),
+                    "operator",
+                    None,
+                );
+                if is_json {
+                    println!("{}", json!({
+                        "code": code,
+                        "data": { "valid": code == 0, "spec": spec },
+                        "error": if code == 0 { serde_json::Value::Null } else { json!({ "code": "VALIDATION_FAILED", "message": "Package spec violates PM invariants", "errors": errors }) }
+                    }));
+                } else if code == 0 {
+                    println!("VALID: Package specification '{}' ({}) conforms to PM1..PM5 invariants", spec.name, spec.version);
+                } else {
+                    eprintln!("INVALID: Package specification '{}' has {} errors:", spec.name, errors.len());
+                    for err in &errors {
+                        eprintln!("  - {}", err);
+                    }
+                }
+                code
+            } else {
+                eprintln!("usage: aiosh package validate (--name <name> | --spec <json_or_file>) [--json]");
+                2
+            }
+        }
+        Some("--help") | Some("-h") | None => {
+            println!("aiosh package — Linux Package Management Data Model & Validation Control\n\nUsage:\n  aiosh package validate --name <name> [--json]\n  aiosh package validate --spec <json_or_file> [--json]");
+            0
+        }
+        Some(other) => {
+            eprintln!("unknown package subcommand: {}", other);
             2
         }
     }
@@ -4095,5 +4225,56 @@ mod task_cli_tests {
 
         let code_invalid = cmd_image(&["invalid_sub".to_string()]);
         assert_eq!(code_invalid, 2);
+    }
+
+    #[test]
+    fn test_cmd_package_flow() {
+        let code_name_valid = cmd_package(&["validate".to_string(), "--name".to_string(), "curl".to_string()]);
+        assert_eq!(code_name_valid, 0);
+
+        let code_name_valid_json = cmd_package(&["validate".to_string(), "--name".to_string(), "curl".to_string(), "--json".to_string()]);
+        assert_eq!(code_name_valid_json, 0);
+
+        let code_name_invalid = cmd_package(&["validate".to_string(), "--name".to_string(), "Curl".to_string()]);
+        assert_eq!(code_name_invalid, 2);
+
+        let valid_spec = r#"{
+            "name": "curl",
+            "version": "8.5.0-2",
+            "architecture": "x86_64",
+            "format": "deb",
+            "state": "available",
+            "description": "curl tool",
+            "installed_size_bytes": 1000,
+            "sha256": null,
+            "repository_url": null,
+            "dependencies": []
+        }"#;
+        let code_spec_valid = cmd_package(&["validate".to_string(), "--spec".to_string(), valid_spec.to_string()]);
+        assert_eq!(code_spec_valid, 0);
+
+        let bad_spec = r#"{
+            "name": "Curl",
+            "version": "8.5.0-2",
+            "architecture": "x86_64",
+            "format": "deb",
+            "state": "available",
+            "description": "curl tool",
+            "installed_size_bytes": 1000,
+            "sha256": null,
+            "repository_url": null,
+            "dependencies": []
+        }"#;
+        let code_spec_invalid = cmd_package(&["validate".to_string(), "--spec".to_string(), bad_spec.to_string()]);
+        assert_eq!(code_spec_invalid, 2);
+
+        let code_help = cmd_package(&["--help".to_string()]);
+        assert_eq!(code_help, 0);
+
+        let code_missing_flags = cmd_package(&["validate".to_string()]);
+        assert_eq!(code_missing_flags, 2);
+
+        let code_unknown = cmd_package(&["unknown".to_string()]);
+        assert_eq!(code_unknown, 2);
     }
 }
