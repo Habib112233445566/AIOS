@@ -887,6 +887,11 @@ Evidence: `tasks/evidence/T-01001-data-model-research.md` .. `tasks/evidence/T-0
 **Automated Integration Test Suite (`code/aiosh-rust/aiosh-core/tests/test_base_image_automated.rs`):**
 - Test Cases (T1..T7): Deterministic 50-run plan synthesis, batch registry stress queries, configuration resolution priority, end-to-end serialization and plan generation, malformed input rejection matrix, CLI/MCP stage parity, and RAII directory cleanup safety.
 
+**Security Policy Enforcement (`code/aiosh-rust/aiosh-core/src/base_image_policy.rs`):**
+- Invariants (P1..P7): Rejection of dangerous kernel parameters (`nokaslr`, `mitigations=off`, `pti=off`, `selinux=0`, `apparmor=0`, `init=/bin/sh`), legacy unencrypted package blacklist (`telnet`, `rsh-client`, etc.), architecture whitelist (`x86_64`, `aarch64`, `riscv64`), filesystem whitelist (`ext4`, `squashfs`, `btrfs`, `erofs`, `xfs`), mandatory system base package presence, and input poisoning protection.
+- Modes: `Enforcing` (fail-closed, blocks plan synthesis), `Audit` (non-fatal, emits audit record), and `Permissive`.
+- CLI & MCP Surface: `aiosh image policy [<id>] [--json] [--store <path>]` and `aios.image.policy`.
+
 **Standalone Test Runner (`tools/test_image_suites.py`):**
 ```bash
 python tools/test_image_suites.py
@@ -899,7 +904,7 @@ python tools/test_image_suites.py
 # PASS: image_suites criteria (B1..B6)
 ```
 
-Evidence: `tasks/evidence/T-01101-base-image-data-model-research.md` .. `tasks/evidence/T-01159-base-image-automated-tests-documentation.md`.
+Evidence: `tasks/evidence/T-01101-base-image-data-model-research.md` .. `tasks/evidence/T-01169-base-image-policy-documentation.md`.
 
 
 

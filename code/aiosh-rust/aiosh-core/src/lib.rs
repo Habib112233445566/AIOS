@@ -22,6 +22,7 @@ pub mod agent;
 pub mod audit;
 pub mod base_image;
 pub mod base_image_config;
+pub mod base_image_policy;
 pub mod base_image_service;
 pub mod canonical;
 pub mod ci;

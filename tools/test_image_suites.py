@@ -89,6 +89,14 @@ def test_b6_automated_integration_suite():
     )
 
 
+def test_b7_security_policy_suite():
+    return _run_cargo_test(
+        ["--test", "test_base_image_policy"],
+        "B7",
+        "base image security policy enforcement & invariants (P1..P7)",
+    )
+
+
 def main():
     checks = [
         test_b1_data_model_integrity,
@@ -97,6 +105,7 @@ def main():
         test_b4_mcp_surface,
         test_b5_configuration_invariants,
         test_b6_automated_integration_suite,
+        test_b7_security_policy_suite,
     ]
     all_ok = True
     for c in checks:
@@ -104,7 +113,7 @@ def main():
             all_ok = False
 
     if all_ok:
-        print("\nPASS: image_suites criteria (B1..B6)")
+        print("\nPASS: image_suites criteria (B1..B7)")
         return 0
     else:
         print("\nFAIL: image_suites criteria", file=sys.stderr)

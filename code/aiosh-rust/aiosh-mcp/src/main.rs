@@ -548,6 +548,19 @@ impl Server {
                 "additionalProperties": false
             }
         }));
+        tools.push(json!({
+            "name": "aios.image.policy",
+            "description": "Evaluate base image manifests against security policy rules and return compliance verdict.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string", "description": "Optional image target identifier to check a single image" },
+                    "store_path": { "type": "string", "description": "Optional path to custom image_store.json" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
         tools
     }
 
@@ -1091,6 +1104,54 @@ impl Server {
                     &mut self.ring, &self.pep,
                     "aios.image.config", "Get base image build configuration", arguments,
                     None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.image.policy" => {
+                let id_opt = arguments.get("id").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                if let Some(ref id) = id_opt {
+                    if id.is_empty() || id.len() > 128 || !id.chars().all(|c| c.is_ascii_graphic()) {
+                        return json!({ "ok": false, "error": "Invalid image id: must be 1..128 printable ASCII characters" });
+                    }
+                }
+                if let Some(ref p) = store_path_opt {
+                    if p.len() > 4096 {
+                        return json!({ "ok": false, "error": "store_path exceeds maximum length of 4096 characters" });
+                    }
+                }
+                let id_for_closure = id_opt.clone();
+                let f = move || -> Result<Value, String> {
+                    let store = match store_path_opt {
+                        Some(ref p) => aiosh_core::base_image_service::ImageStore::load_from_path(std::path::Path::new(p))?,
+                        None => aiosh_core::base_image_service::ImageStore::new(),
+                    };
+                    let policy = aiosh_core::base_image_policy::BaseImageSecurityPolicy::from_env()?;
+                    if let Some(ref id) = id_for_closure {
+                        match store.get_image(id) {
+                            Some(img) => {
+                                let verdict = policy.evaluate(img);
+                                Ok(json!({
+                                    "ok": true,
+                                    "tool": "aios.image.policy",
+                                    "verdict": verdict
+                                }))
+                            }
+                            None => Err(format!("Base image '{}' not found", id)),
+                        }
+                    } else {
+                        let verdicts = policy.check_all(&store);
+                        Ok(json!({
+                            "ok": true,
+                            "tool": "aios.image.policy",
+                            "verdicts": verdicts,
+                            "count": verdicts.len()
+                        }))
+                    }
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.image.policy", "Evaluate base image security policy", arguments,
+                    id_opt.as_deref(), grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
                 )
             }
             "aios.triage.list" => {
@@ -2565,5 +2626,20 @@ mod tests {
         let res_cfg = server.call_tool("aios.image.config", &json!({}));
         assert_eq!(res_cfg.get("ok").and_then(|v| v.as_bool()), Some(true));
         assert_eq!(res_cfg.pointer("/config/default_target").and_then(|v| v.as_str()), Some("debian-12-minimal-raw"));
+
+        // 5. aios.image.policy
+        let res_policy_all = server.call_tool("aios.image.policy", &json!({}));
+        assert_eq!(res_policy_all.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert!(res_policy_all.pointer("/count").and_then(|v| v.as_u64()).unwrap_or(0) >= 4);
+
+        let res_policy_single = server.call_tool("aios.image.policy", &json!({ "id": "debian-12-minimal-raw" }));
+        assert_eq!(res_policy_single.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_policy_single.pointer("/verdict/allowed").and_then(|v| v.as_bool()), Some(true));
+
+        let res_policy_missing = server.call_tool("aios.image.policy", &json!({ "id": "nonexistent" }));
+        assert_eq!(res_policy_missing.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        let res_policy_bad_id = server.call_tool("aios.image.policy", &json!({ "id": "bad\x07id" }));
+        assert_eq!(res_policy_bad_id.get("ok").and_then(|v| v.as_bool()), Some(false));
     }
 }

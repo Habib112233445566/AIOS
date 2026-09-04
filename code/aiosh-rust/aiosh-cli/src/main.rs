@@ -786,8 +786,78 @@ fn cmd_image(args: &[String]) -> i32 {
             }
             0
         }
+        Some("policy") => {
+            let policy = match aiosh_core::base_image_policy::BaseImageSecurityPolicy::from_env() {
+                Ok(p) => p,
+                Err(e) => {
+                    eprintln!("failed to load image security policy: {}", e);
+                    return 1;
+                }
+            };
+            let id_opt = rest.first().filter(|s| !s.starts_with("--")).map(|s| s.as_str());
+            if let Some(id) = id_opt {
+                if !id.chars().all(|c| c.is_ascii_graphic()) || id.is_empty() {
+                    eprintln!("invalid image id: contains non-printable or control characters");
+                    return 2;
+                }
+                let manifest = match store.get_image(id) {
+                    Some(m) => m,
+                    None => {
+                        eprintln!("image '{}' not found in store", id);
+                        return 1;
+                    }
+                };
+                let verdict = policy.evaluate(manifest);
+                classify_and_emit(
+                    &mut ctx,
+                    "image",
+                    "policy",
+                    json!({ "id": id, "allowed": verdict.allowed, "violations_count": verdict.violations.len() }),
+                    if verdict.allowed { "success" } else { "failure" },
+                    None,
+                    Some("Evaluated base image security policy"),
+                    "operator",
+                    None,
+                );
+                if is_json {
+                    println!("{}", serde_json::to_string_pretty(&verdict).unwrap_or_default());
+                } else {
+                    println!("Base Image Policy Verdict for '{}':", id);
+                    println!("  Allowed:    {}", verdict.allowed);
+                    println!("  Mode:       {:?}", verdict.mode);
+                    println!("  Violations: {}", verdict.violations.len());
+                    for v in &verdict.violations {
+                        println!("    - [{}] {} (fatal: {})", v.rule_id, v.description, v.fatal);
+                    }
+                }
+                if verdict.allowed { 0 } else { 1 }
+            } else {
+                let verdicts = policy.check_all(&store);
+                classify_and_emit(
+                    &mut ctx,
+                    "image",
+                    "policy",
+                    json!({ "evaluated_count": verdicts.len() }),
+                    "success",
+                    None,
+                    Some("Evaluated base image security policy across store"),
+                    "operator",
+                    None,
+                );
+                if is_json {
+                    println!("{}", serde_json::to_string_pretty(&verdicts).unwrap_or_default());
+                } else {
+                    println!("Base Image Security Policy (mode: {:?}):", policy.mode);
+                    for v in &verdicts {
+                        let status_str = if v.allowed { "PASS" } else { "FAIL" };
+                        println!("  [{}] {:<32} (violations: {})", status_str, v.manifest_id, v.violations.len());
+                    }
+                }
+                0
+            }
+        }
         Some("--help") | Some("-h") | None => {
-            println!("aiosh image — Linux Base Image Build & Packaging Manager\n\nUsage:\n  aiosh image list [--json] [--store <path>]\n  aiosh image show <id> [--json] [--store <path>]\n  aiosh image plan <id> [--json] [--store <path>]\n  aiosh image filter [--format <format>] [--distro <id>] [--json] [--store <path>]\n  aiosh image config [--json] [--config <path>]");
+            println!("aiosh image — Linux Base Image Build & Packaging Manager\n\nUsage:\n  aiosh image list [--json] [--store <path>]\n  aiosh image show <id> [--json] [--store <path>]\n  aiosh image plan <id> [--json] [--store <path>]\n  aiosh image filter [--format <format>] [--distro <id>] [--json] [--store <path>]\n  aiosh image config [--json] [--config <path>]\n  aiosh image policy [<id>] [--json] [--store <path>]");
             0
         }
         Some(other) => {
@@ -3874,6 +3944,21 @@ mod task_cli_tests {
 
         let code_config_json = cmd_image(&["config".to_string(), "--json".to_string()]);
         assert_eq!(code_config_json, 0);
+
+        let code_policy_all = cmd_image(&["policy".to_string()]);
+        assert_eq!(code_policy_all, 0);
+
+        let code_policy_all_json = cmd_image(&["policy".to_string(), "--json".to_string()]);
+        assert_eq!(code_policy_all_json, 0);
+
+        let code_policy_single = cmd_image(&["policy".to_string(), "debian-12-minimal-raw".to_string()]);
+        assert_eq!(code_policy_single, 0);
+
+        let code_policy_missing = cmd_image(&["policy".to_string(), "nonexistent-img".to_string()]);
+        assert_eq!(code_policy_missing, 1);
+
+        let code_policy_bad_id = cmd_image(&["policy".to_string(), "bad\x07id".to_string()]);
+        assert_eq!(code_policy_bad_id, 2);
 
         let code_help = cmd_image(&["--help".to_string()]);
         assert_eq!(code_help, 0);

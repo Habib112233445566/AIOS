@@ -1158,3 +1158,13 @@
 {"seq":1158,"ts":"2026-09-03T16:27:42Z","event":"completed","task_id":1158,"note":"Hardening of automated test suite with cleanup checks and negative cases","evidence":[]}
 {"seq":1159,"ts":"2026-09-03T16:28:33Z","event":"completed","task_id":1159,"note":"Documentation of base image automated test suite in README.md","evidence":[]}
 {"seq":1160,"ts":"2026-09-03T16:29:16Z","event":"completed","task_id":1160,"note":"Verification and evidence closure for Base Image Build automated tests sub-epic","evidence":[]}
+{"seq":1161,"ts":"2026-09-04T01:06:07Z","event":"completed","task_id":1161,"note":"Researched security policy architecture and invariants P1..P6 for Base Image Build","evidence":[]}
+{"seq":1162,"ts":"2026-09-04T01:06:30Z","event":"completed","task_id":1162,"note":"Specified BaseImageSecurityPolicy and invariants P1..P6","evidence":[]}
+{"seq":1163,"ts":"2026-09-04T01:08:00Z","event":"completed","task_id":1163,"note":"Scaffolded BaseImageSecurityPolicy module and registered in aiosh-core","evidence":[]}
+{"seq":1164,"ts":"2026-09-04T01:11:06Z","event":"completed","task_id":1164,"note":"Implemented BaseImageSecurityPolicy and core evaluation logic","evidence":[]}
+{"seq":1165,"ts":"2026-09-04T01:12:45Z","event":"completed","task_id":1165,"note":"Implemented standalone unit test suite in test_base_image_policy.rs validating P1..P7","evidence":[]}
+{"seq":1166,"ts":"2026-09-04T01:18:57Z","event":"completed","task_id":1166,"note":"Integrated BaseImageSecurityPolicy into CLI and MCP surfaces","evidence":[]}
+{"seq":1167,"ts":"2026-09-04T01:19:29Z","event":"completed","task_id":1167,"note":"Completed security review of BaseImageSecurityPolicy and documented abuse scenarios","evidence":[]}
+{"seq":1168,"ts":"2026-09-04T01:21:01Z","event":"completed","task_id":1168,"note":"Hardened BaseImageSecurityPolicy against input poisoning and unbounded allocations","evidence":[]}
+{"seq":1169,"ts":"2026-09-04T01:21:53Z","event":"completed","task_id":1169,"note":"Documented BaseImageSecurityPolicy in docs/README.md with CLI and MCP examples","evidence":[]}
+{"seq":1170,"ts":"2026-09-04T01:23:37Z","event":"completed","task_id":1170,"note":"Verification and evidence closure for Base Image Build security policy sub-epic","evidence":[]}
