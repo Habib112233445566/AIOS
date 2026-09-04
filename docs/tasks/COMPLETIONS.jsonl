@@ -1168,3 +1168,13 @@
 {"seq":1168,"ts":"2026-09-04T01:21:01Z","event":"completed","task_id":1168,"note":"Hardened BaseImageSecurityPolicy against input poisoning and unbounded allocations","evidence":[]}
 {"seq":1169,"ts":"2026-09-04T01:21:53Z","event":"completed","task_id":1169,"note":"Documented BaseImageSecurityPolicy in docs/README.md with CLI and MCP examples","evidence":[]}
 {"seq":1170,"ts":"2026-09-04T01:23:37Z","event":"completed","task_id":1170,"note":"Verification and evidence closure for Base Image Build security policy sub-epic","evidence":[]}
+{"seq":1171,"ts":"2026-09-04T01:25:13Z","event":"completed","task_id":1171,"note":"Researched Base Image Build observability metrics and invariants OB1..OB5","evidence":[]}
+{"seq":1172,"ts":"2026-09-04T01:25:44Z","event":"completed","task_id":1172,"note":"Specified BaseImageObservabilityReport data model and invariants OB1..OB5","evidence":[]}
+{"seq":1173,"ts":"2026-09-04T01:26:57Z","event":"completed","task_id":1173,"note":"Scaffolded BaseImageObservabilityReport in aiosh-core","evidence":[]}
+{"seq":1174,"ts":"2026-09-04T01:28:29Z","event":"completed","task_id":1174,"note":"Implemented BaseImageObservabilityReport telemetry generation and invariant checks","evidence":[]}
+{"seq":1175,"ts":"2026-09-04T01:30:01Z","event":"completed","task_id":1175,"note":"Implemented standalone unit test suite in test_base_image_observability.rs validating OB1..OB5","evidence":[]}
+{"seq":1176,"ts":"2026-09-04T01:33:20Z","event":"completed","task_id":1176,"note":"Integrated BaseImageObservabilityReport into CLI and MCP surfaces","evidence":[]}
+{"seq":1177,"ts":"2026-09-04T01:34:02Z","event":"completed","task_id":1177,"note":"Completed security review for BaseImageObservabilityReport","evidence":[]}
+{"seq":1178,"ts":"2026-09-04T01:35:38Z","event":"completed","task_id":1178,"note":"Hardened BaseImageObservabilityReport with capacity bounds and sanitization","evidence":[]}
+{"seq":1179,"ts":"2026-09-04T01:37:28Z","event":"completed","task_id":1179,"note":"Documented BaseImageObservabilityReport in README with CLI and MCP examples","evidence":[]}
+{"seq":1180,"ts":"2026-09-04T01:39:46Z","event":"completed","task_id":1180,"note":"Verification and evidence closure for Base Image Build observability sub-epic (T-01171..T-01180)","evidence":[]}

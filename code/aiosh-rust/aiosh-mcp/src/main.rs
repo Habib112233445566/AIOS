@@ -561,6 +561,18 @@ impl Server {
                 "additionalProperties": false
             }
         }));
+        tools.push(json!({
+            "name": "aios.image.report",
+            "description": "Generate comprehensive telemetry and status observability report for Linux base image building subsystem.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "store_path": { "type": "string", "description": "Optional path to custom image_store.json" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
         tools
     }
 
@@ -1152,6 +1164,33 @@ impl Server {
                     &mut self.ring, &self.pep,
                     "aios.image.policy", "Evaluate base image security policy", arguments,
                     id_opt.as_deref(), grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.image.report" => {
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                if let Some(ref p) = store_path_opt {
+                    if p.len() > 4096 {
+                        return json!({ "ok": false, "error": "store_path exceeds maximum length of 4096 characters" });
+                    }
+                }
+                let f = move || -> Result<Value, String> {
+                    let store = match store_path_opt {
+                        Some(ref p) => aiosh_core::base_image_service::ImageStore::load_from_path(std::path::Path::new(p))?,
+                        None => aiosh_core::base_image_service::ImageStore::new(),
+                    };
+                    let policy_opt = aiosh_core::base_image_policy::BaseImageSecurityPolicy::from_env().ok();
+                    let report = aiosh_core::base_image_observability::BaseImageObservabilityReport::generate(&store, policy_opt.as_ref());
+                    report.validate()?;
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.image.report",
+                        "report": report
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.image.report", "Generate base image observability report", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
                 )
             }
             "aios.triage.list" => {
@@ -2641,5 +2680,14 @@ mod tests {
 
         let res_policy_bad_id = server.call_tool("aios.image.policy", &json!({ "id": "bad\x07id" }));
         assert_eq!(res_policy_bad_id.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 6. aios.image.report
+        let res_report = server.call_tool("aios.image.report", &json!({}));
+        assert_eq!(res_report.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_report.pointer("/report/total_images").and_then(|v| v.as_u64()), Some(4));
+        assert_eq!(res_report.pointer("/report/policy_compliant_count").and_then(|v| v.as_u64()), Some(4));
+
+        let res_report_bad_path = server.call_tool("aios.image.report", &json!({ "store_path": "a".repeat(4097) }));
+        assert_eq!(res_report_bad_path.get("ok").and_then(|v| v.as_bool()), Some(false));
     }
 }

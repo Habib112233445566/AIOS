@@ -856,8 +856,37 @@ fn cmd_image(args: &[String]) -> i32 {
                 0
             }
         }
+        Some("report") => {
+            let policy_opt = aiosh_core::base_image_policy::BaseImageSecurityPolicy::from_env().ok();
+            let report = aiosh_core::base_image_observability::BaseImageObservabilityReport::generate(&store, policy_opt.as_ref());
+            classify_and_emit(
+                &mut ctx,
+                "image",
+                "report",
+                json!({ "total_images": report.total_images, "policy_compliant": report.policy_compliant_count }),
+                "success",
+                None,
+                Some("Generated base image observability report"),
+                "operator",
+                None,
+            );
+            if is_json {
+                println!("{}", serde_json::to_string_pretty(&report).unwrap_or_default());
+            } else {
+                println!("AIOS Base Image Build Observability Report:");
+                println!("  Total Images:        {}", report.total_images);
+                println!("  Policy Compliant:    {}", report.policy_compliant_count);
+                println!("  Total Size Budget:   {} MB", report.total_size_budget_bytes / (1024 * 1024));
+                println!("  Average Size Budget: {} MB", report.average_size_budget_bytes / (1024 * 1024));
+                println!("  Formats:             {:?}", report.format_breakdown);
+                println!("  Architectures:       {:?}", report.architecture_breakdown);
+                println!("  Distributions:       {:?}", report.distro_breakdown);
+                println!("  Kernel Versions:     {:?}", report.kernel_versions);
+            }
+            0
+        }
         Some("--help") | Some("-h") | None => {
-            println!("aiosh image — Linux Base Image Build & Packaging Manager\n\nUsage:\n  aiosh image list [--json] [--store <path>]\n  aiosh image show <id> [--json] [--store <path>]\n  aiosh image plan <id> [--json] [--store <path>]\n  aiosh image filter [--format <format>] [--distro <id>] [--json] [--store <path>]\n  aiosh image config [--json] [--config <path>]\n  aiosh image policy [<id>] [--json] [--store <path>]");
+            println!("aiosh image — Linux Base Image Build & Packaging Manager\n\nUsage:\n  aiosh image list [--json] [--store <path>]\n  aiosh image show <id> [--json] [--store <path>]\n  aiosh image plan <id> [--json] [--store <path>]\n  aiosh image filter [--format <format>] [--distro <id>] [--json] [--store <path>]\n  aiosh image config [--json] [--config <path>]\n  aiosh image policy [<id>] [--json] [--store <path>]\n  aiosh image report [--json] [--store <path>]");
             0
         }
         Some(other) => {
@@ -3959,6 +3988,12 @@ mod task_cli_tests {
 
         let code_policy_bad_id = cmd_image(&["policy".to_string(), "bad\x07id".to_string()]);
         assert_eq!(code_policy_bad_id, 2);
+
+        let code_report = cmd_image(&["report".to_string()]);
+        assert_eq!(code_report, 0);
+
+        let code_report_json = cmd_image(&["report".to_string(), "--json".to_string()]);
+        assert_eq!(code_report_json, 0);
 
         let code_help = cmd_image(&["--help".to_string()]);
         assert_eq!(code_help, 0);

@@ -892,6 +892,20 @@ Evidence: `tasks/evidence/T-01001-data-model-research.md` .. `tasks/evidence/T-0
 - Modes: `Enforcing` (fail-closed, blocks plan synthesis), `Audit` (non-fatal, emits audit record), and `Permissive`.
 - CLI & MCP Surface: `aiosh image policy [<id>] [--json] [--store <path>]` and `aios.image.policy`.
 
+**Observability Subsystem (`code/aiosh-rust/aiosh-core/src/base_image_observability.rs`):**
+- Telemetry & Aggregation: Synthesizes `BaseImageObservabilityReport` capturing total image manifests, distribution counts, architecture breakdowns, format distribution, policy compliance rate, kernel version inventory, and storage budget totals/averages.
+- Invariants (OB1..OB5):
+  - `OB1`: Format breakdown sum equals `total_images`.
+  - `OB2`: Architecture breakdown sum equals `total_images`.
+  - `OB3`: Distribution breakdown sum equals `total_images`.
+  - `OB4`: Policy compliant count does not exceed `total_images`.
+  - `OB5`: Average size budget matches total budget divided by image count (or zero if registry is empty).
+- Hardening & Caps: Key capacity limits (max 16 formats, 64 architectures, 256 distributions, 256 unique kernel versions) preventing unbounded memory growth; control characters and null bytes rejected.
+- CLI Surface: `aiosh image report [--json] [--store <path>]`
+- MCP Tool Surface: `aios.image.report` with bounds-checked `store_path` parameter.
+- Audit Trail: Immutable hash-chained audit logging emitted to SQLite WAL ring on each execution.
+- Limitations: Read-only aggregation across disk registry; unbounded external image stores capped by file reader limits; metrics computed synchronously.
+
 **Standalone Test Runner (`tools/test_image_suites.py`):**
 ```bash
 python tools/test_image_suites.py
@@ -904,7 +918,7 @@ python tools/test_image_suites.py
 # PASS: image_suites criteria (B1..B6)
 ```
 
-Evidence: `tasks/evidence/T-01101-base-image-data-model-research.md` .. `tasks/evidence/T-01169-base-image-policy-documentation.md`.
+Evidence: `tasks/evidence/T-01101-base-image-data-model-research.md` .. `tasks/evidence/T-01179-base-image-observability-documentation.md`.
 
 
 

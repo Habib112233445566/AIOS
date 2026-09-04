@@ -27,7 +27,17 @@ substrate but is no longer the shipping path.
    KWin / UIA / AT-SPI.
 6. **Phase 5 — Hardening, cross-platform, release.**
 
-## Status (live — 2026-09-01)
+## Status (live — 2026-09-04)
+
+### 2026-09-04 — MILESTONE: Base Image Build Observability CLOSED 10/10 (T-01171..T-01180)
+
+Complete implementation, governance, verification, and hardening for Phase 1 `Base Image Build / observability`:
+- **Observability Reporting Engine**: `BaseImageObservabilityReport` in `code/aiosh-rust/aiosh-core/src/base_image_observability.rs` aggregating total manifests, format distributions, arch distributions, distro breakdowns, policy compliance, unique kernel versions, and storage budgets.
+- **Arithmetic Invariants (OB1..OB5)**: Complete validation enforcing format/arch/distro breakdown sum equality, policy compliance bounds, and average calculation integrity.
+- **CLI & MCP Tool Surfaces**: `aiosh image report` and `aios.image.report` with structured JSON output envelopes and SQLite WAL audit logging.
+- **Security Hardening**: Enforced bounds (16 formats, 64 archs, 256 distros, 256 kernels), control character rejection, and fail-closed error handling.
+- **Test Runner Matrix (`tools/test_image_suites.py`)**: All criteria `B1..B8` PASS.
+- **Ledger Pointer**: Advances to **T-01181** (`Phase 1 / Base Image Build / documentation: Research`).
 
 ### 2026-09-01 — MILESTONE: Distro Selection & Justification Data Model CLOSED 10/10 (T-01001..T-01010) — PHASE 1 INITIATED
 

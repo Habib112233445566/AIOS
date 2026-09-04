@@ -1,5 +1,27 @@
 # Progress Log
 
+## 2026-09-04 — T-01171..T-01180 SHIPPED: Base Image Build Observability CLOSED (Criteria B8, 10/10 tasks)
+
+**What shipped:**
+- Created `BaseImageObservabilityReport` in `code/aiosh-rust/aiosh-core/src/base_image_observability.rs` aggregating total images, distribution counts, architecture breakdowns, format distributions, policy compliance rates, unique kernel inventories, and total/average storage budgets.
+- Implemented and validated mathematical invariants `OB1..OB5` (`validate_observability_report`).
+- Integrated CLI subcommand `aiosh image report [--json] [--store <path>]`.
+- Integrated MCP tool `aios.image.report`.
+- Enforced hardening bounds (max 16 formats, 64 archs, 256 distros, 256 kernels) with control-character / null-byte sanitization.
+- Extended standalone test runner `tools/test_image_suites.py` with criterion `B8`.
+- Created unit and negative test suite in `code/aiosh-rust/aiosh-core/tests/test_base_image_observability.rs`.
+- Updated documentation in `docs/README.md`.
+
+**Verified:**
+- `python tools/test_image_suites.py` (B1..B8 PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --test test_base_image_observability` (5/5 PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --bin aiosh test_cmd_image_flow` (PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --bin aiosh-mcp test_mcp_image_tools` (PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- Evidence chain: `docs/tasks/evidence/T-01171-base-image-observability-research.md` … `T-01180-verify.md`.
+- Milestone: **Base Image Build / observability CLOSED — 10/10 tasks** (T-01171..T-01180). Pointer $\to$ **T-01181** (`Base Image Build / documentation: Research`).
+
+
 ## 2026-09-01 — T-01001..T-01010 SHIPPED: Distro Selection & Justification Data Model CLOSED (Phase 1 Inception, Criteria D1, 10/10 tasks)
 
 **What shipped:**
