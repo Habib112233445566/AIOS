@@ -989,7 +989,209 @@ fn cmd_package(args: &[String]) -> i32 {
     let rest = if args.len() > 1 { &args[1..] } else { &[] };
     let is_json = has_flag(rest, "--json");
 
+    let store_path_opt = parse_flag(rest, "--store");
+    let load_store = || -> Result<aiosh_core::package_service::PackageStore, String> {
+        match store_path_opt {
+            Some(ref p) => aiosh_core::package_service::PackageStore::load_from_path(std::path::Path::new(p)),
+            None => Ok(aiosh_core::package_service::PackageStore::new()),
+        }
+    };
+
     match sub {
+        Some("list") => {
+            let store = match load_store() {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("failed to load package store: {}", e);
+                    return 1;
+                }
+            };
+            let format = match parse_flag(rest, "--format").as_deref() {
+                Some("deb") => Some(aiosh_core::package::PackageFormat::Deb),
+                Some("apk") => Some(aiosh_core::package::PackageFormat::Apk),
+                Some("flatpak") => Some(aiosh_core::package::PackageFormat::Flatpak),
+                Some("tarball") => Some(aiosh_core::package::PackageFormat::Tarball),
+                Some(other) => {
+                    eprintln!("unknown format: {}", other);
+                    return 2;
+                }
+                None => None,
+            };
+            let state = match parse_flag(rest, "--state").as_deref() {
+                Some("available") => Some(aiosh_core::package::PackageState::Available),
+                Some("installed") => Some(aiosh_core::package::PackageState::Installed),
+                Some("upgradable") => Some(aiosh_core::package::PackageState::Upgradable),
+                Some("pending_install") => Some(aiosh_core::package::PackageState::PendingInstall),
+                Some("pending_removal") => Some(aiosh_core::package::PackageState::PendingRemoval),
+                Some("broken") => Some(aiosh_core::package::PackageState::Broken),
+                Some(other) => {
+                    eprintln!("unknown state: {}", other);
+                    return 2;
+                }
+                None => None,
+            };
+            let pattern = parse_flag(rest, "--pattern");
+            let limit = parse_flag(rest, "--limit").and_then(|s| s.parse::<usize>().ok());
+
+            let query = aiosh_core::package::PackageQuery {
+                name_pattern: pattern,
+                format,
+                state,
+                limit,
+            };
+            let packages = store.query(&query);
+            classify_and_emit(
+                &mut ctx,
+                "package",
+                "list",
+                json!({ "count": packages.len() }),
+                "success",
+                None,
+                Some("Listed packages from store"),
+                "operator",
+                None,
+            );
+            if is_json {
+                println!("{}", serde_json::to_string_pretty(&packages).unwrap_or_default());
+            } else {
+                println!("AIOS Package Store ({} packages):", packages.len());
+                for pkg in packages {
+                    println!("  {:<16} {:<16} {:<8} {:<10} {:>10} bytes",
+                        pkg.name, pkg.version, format!("{:?}", pkg.format).to_lowercase(),
+                        format!("{:?}", pkg.state).to_lowercase(), pkg.installed_size_bytes);
+                }
+            }
+            0
+        }
+        Some("show") => {
+            let name_arg = match rest.first() {
+                Some(s) if !s.starts_with("--") => Some(s.to_string()),
+                _ => parse_flag(rest, "--name"),
+            };
+            let name = match name_arg {
+                Some(n) => n,
+                None => {
+                    eprintln!("missing package name: aiosh package show <name>");
+                    return 2;
+                }
+            };
+            let store = match load_store() {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("failed to load package store: {}", e);
+                    return 1;
+                }
+            };
+            match store.get_package(&name) {
+                Some(pkg) => {
+                    classify_and_emit(
+                        &mut ctx,
+                        "package",
+                        "show",
+                        json!({ "name": pkg.name, "version": pkg.version }),
+                        "success",
+                        Some(&pkg.name),
+                        Some("Retrieved package spec"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", serde_json::to_string_pretty(pkg).unwrap_or_default());
+                    } else {
+                        println!("Package: {}", pkg.name);
+                        println!("  Version:      {}", pkg.version);
+                        println!("  Architecture: {}", pkg.architecture);
+                        println!("  Format:       {:?}", pkg.format);
+                        println!("  State:        {:?}", pkg.state);
+                        println!("  Size:         {} bytes", pkg.installed_size_bytes);
+                        println!("  Description:  {}", pkg.description);
+                        println!("  Dependencies: {}", pkg.dependencies.iter().map(|d| d.name.as_str()).collect::<Vec<_>>().join(", "));
+                    }
+                    0
+                }
+                None => {
+                    eprintln!("package '{}' not found in store", name);
+                    2
+                }
+            }
+        }
+        Some("plan") => {
+            let actions_str = match parse_flag(rest, "--actions") {
+                Some(s) => s,
+                None => {
+                    eprintln!("missing --actions <json_or_file>: aiosh package plan --actions <json_or_file> [--dry-run]");
+                    return 2;
+                }
+            };
+            let content = if std::path::Path::new(&actions_str).exists() {
+                match std::fs::read_to_string(&actions_str) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        eprintln!("failed to read actions file '{}': {}", actions_str, e);
+                        return 1;
+                    }
+                }
+            } else {
+                actions_str
+            };
+            let actions: Vec<aiosh_core::package::PackageAction> = match serde_json::from_str(&content) {
+                Ok(a) => a,
+                Err(e) => {
+                    eprintln!("failed to parse actions JSON: {}", e);
+                    return 2;
+                }
+            };
+            let dry_run = has_flag(rest, "--dry-run");
+            let store = match load_store() {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("failed to load package store: {}", e);
+                    return 1;
+                }
+            };
+            match store.plan_transaction(actions, dry_run) {
+                Ok(tx) => {
+                    classify_and_emit(
+                        &mut ctx,
+                        "package",
+                        "plan",
+                        json!({ "id": tx.id, "actions_count": tx.actions.len(), "delta_bytes": tx.total_size_delta_bytes }),
+                        "success",
+                        Some(&tx.id),
+                        Some("Planned package transaction"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", serde_json::to_string_pretty(&tx).unwrap_or_default());
+                    } else {
+                        println!("Planned Package Transaction: {}", tx.id);
+                        println!("  Actions:     {}", tx.actions.len());
+                        println!("  Dry Run:     {}", tx.dry_run);
+                        println!("  Delta Bytes: {} bytes", tx.total_size_delta_bytes);
+                        for (i, act) in tx.actions.iter().enumerate() {
+                            println!("  [{}] {:?} on package '{}'", i + 1, act.action, act.package_name);
+                        }
+                    }
+                    0
+                }
+                Err(e) => {
+                    classify_and_emit(
+                        &mut ctx,
+                        "package",
+                        "plan",
+                        json!({ "error": e }),
+                        "failure",
+                        None,
+                        Some("Failed to plan package transaction"),
+                        "operator",
+                        None,
+                    );
+                    eprintln!("plan failed: {}", e);
+                    2
+                }
+            }
+        }
         Some("validate") => {
             if let Some(name) = parse_flag(rest, "--name") {
                 let res = aiosh_core::package::validate_package_name(&name);
@@ -1102,7 +1304,7 @@ fn cmd_package(args: &[String]) -> i32 {
             }
         }
         Some("--help") | Some("-h") | None => {
-            println!("aiosh package — Linux Package Management Data Model & Validation Control\n\nUsage:\n  aiosh package validate --name <name> [--json]\n  aiosh package validate --spec <json_or_file> [--json]");
+            println!("aiosh package — Linux Package Management Data Model, Core Service & Store Control\n\nUsage:\n  aiosh package list [--format <deb|apk|flatpak|tarball>] [--state <state>] [--pattern <pattern>] [--limit <n>] [--store <path>] [--json]\n  aiosh package show <name> [--store <path>] [--json]\n  aiosh package plan --actions <json_or_file> [--dry-run] [--store <path>] [--json]\n  aiosh package validate --name <name> [--json]\n  aiosh package validate --spec <json_or_file> [--json]");
             0
         }
         Some(other) => {
@@ -4276,5 +4478,32 @@ mod task_cli_tests {
 
         let code_unknown = cmd_package(&["unknown".to_string()]);
         assert_eq!(code_unknown, 2);
+
+        // list
+        let code_list = cmd_package(&["list".to_string()]);
+        assert_eq!(code_list, 0);
+
+        let code_list_json = cmd_package(&["list".to_string(), "--json".to_string(), "--format".to_string(), "deb".to_string()]);
+        assert_eq!(code_list_json, 0);
+
+        // show
+        let code_show = cmd_package(&["show".to_string(), "curl".to_string()]);
+        assert_eq!(code_show, 0);
+
+        let code_show_missing = cmd_package(&["show".to_string(), "nonexistent".to_string()]);
+        assert_eq!(code_show_missing, 2);
+
+        // plan
+        let actions_json = r#"[{"action":"install","package_name":"libssl3","target_version":null},{"action":"install","package_name":"curl","target_version":null}]"#;
+        let code_plan = cmd_package(&["plan".to_string(), "--actions".to_string(), actions_json.to_string()]);
+        assert_eq!(code_plan, 0);
+
+        let code_plan_dry = cmd_package(&["plan".to_string(), "--actions".to_string(), actions_json.to_string(), "--dry-run".to_string(), "--json".to_string()]);
+        assert_eq!(code_plan_dry, 0);
+
+        // plan missing dep
+        let bad_actions_json = r#"[{"action":"install","package_name":"curl","target_version":null}]"#;
+        let code_plan_bad = cmd_package(&["plan".to_string(), "--actions".to_string(), bad_actions_json.to_string()]);
+        assert_eq!(code_plan_bad, 2);
     }
 }

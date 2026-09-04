@@ -49,6 +49,7 @@ pub mod handoff_service;
 pub mod ledger;
 pub mod ledger_config;
 pub mod package;
+pub mod package_service;
 pub mod pentest;
 pub mod pep;
 pub mod release;
@@ -80,5 +81,6 @@ pub use package::{
     PackageAction, PackageActionType, PackageDependency, PackageFormat, PackageQuery, PackageSpec,
     PackageState, PackageTransaction,
 };
+pub use package_service::{PackageStore, TransactionReport};
 pub use pep::PepStore;
 pub use types::GENESIS_HASH;

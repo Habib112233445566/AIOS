@@ -599,6 +599,55 @@ impl Server {
                 "additionalProperties": false
             }
         }));
+        tools.push(json!({
+            "name": "aios.package.list",
+            "description": "List packages in the package store matching optional filters (format, state, pattern, limit).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "format": { "type": "string", "description": "Package format filter: deb, apk, flatpak, tarball" },
+                    "state": { "type": "string", "description": "Package state filter: available, installed, upgradable, etc." },
+                    "pattern": { "type": "string", "description": "Case-insensitive substring filter for package name" },
+                    "limit": { "type": "integer", "description": "Maximum number of packages to return" },
+                    "store_path": { "type": "string", "description": "Optional path to package store JSON file" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.package.get",
+            "description": "Get detailed PackageSpec for a package by name from the package store.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string", "description": "Package name to look up" },
+                    "store_path": { "type": "string", "description": "Optional path to package store JSON file" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "required": ["name"],
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.package.plan",
+            "description": "Plan a package transaction validating dependency closure and calculating size delta (CS2..CS4).",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "actions": {
+                        "type": "array",
+                        "items": { "type": "object" },
+                        "description": "List of package actions to execute in the transaction"
+                    },
+                    "dry_run": { "type": "boolean", "description": "Whether to plan transaction as dry-run" },
+                    "store_path": { "type": "string", "description": "Optional path to package store JSON file" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "required": ["actions"],
+                "additionalProperties": false
+            }
+        }));
         tools
     }
 
@@ -1294,6 +1343,111 @@ impl Server {
                 dispatch::recorded_call(
                     &mut self.ring, &self.pep,
                     "aios.package.validate", "Validate package name or specification", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.package.list" => {
+                let format_opt = arguments.get("format").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let state_opt = arguments.get("state").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let pattern_opt = arguments.get("pattern").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let limit_opt = arguments.get("limit").and_then(|v| v.as_u64()).map(|u| u as usize);
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+                let f = move || -> Result<Value, String> {
+                    let store = match store_path_opt {
+                        Some(ref p) => aiosh_core::package_service::PackageStore::load_from_path(std::path::Path::new(p))?,
+                        None => aiosh_core::package_service::PackageStore::new(),
+                    };
+                    let format = match format_opt.as_deref() {
+                        Some("deb") => Some(aiosh_core::package::PackageFormat::Deb),
+                        Some("apk") => Some(aiosh_core::package::PackageFormat::Apk),
+                        Some("flatpak") => Some(aiosh_core::package::PackageFormat::Flatpak),
+                        Some("tarball") => Some(aiosh_core::package::PackageFormat::Tarball),
+                        Some(other) => return Err(format!("Unknown format: {}", other)),
+                        None => None,
+                    };
+                    let state = match state_opt.as_deref() {
+                        Some("available") => Some(aiosh_core::package::PackageState::Available),
+                        Some("installed") => Some(aiosh_core::package::PackageState::Installed),
+                        Some("upgradable") => Some(aiosh_core::package::PackageState::Upgradable),
+                        Some("pending_install") => Some(aiosh_core::package::PackageState::PendingInstall),
+                        Some("pending_removal") => Some(aiosh_core::package::PackageState::PendingRemoval),
+                        Some("broken") => Some(aiosh_core::package::PackageState::Broken),
+                        Some(other) => return Err(format!("Unknown state: {}", other)),
+                        None => None,
+                    };
+                    let query = aiosh_core::package::PackageQuery {
+                        name_pattern: pattern_opt.clone(),
+                        format,
+                        state,
+                        limit: limit_opt,
+                    };
+                    let pkgs = store.query(&query);
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.package.list",
+                        "count": pkgs.len(),
+                        "packages": pkgs
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.package.list", "List packages in package store", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.package.get" => {
+                let name = match arguments.get("name").and_then(|v| v.as_str()) {
+                    Some(n) => n.to_string(),
+                    None => return json!({ "ok": false, "error": "Missing required field: name" }),
+                };
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let name_clone = name.clone();
+                let f = move || -> Result<Value, String> {
+                    let store = match store_path_opt {
+                        Some(ref p) => aiosh_core::package_service::PackageStore::load_from_path(std::path::Path::new(p))?,
+                        None => aiosh_core::package_service::PackageStore::new(),
+                    };
+                    match store.get_package(&name_clone) {
+                        Some(pkg) => Ok(json!({
+                            "ok": true,
+                            "tool": "aios.package.get",
+                            "package": pkg
+                        })),
+                        None => Err(format!("Package '{}' not found in store", name_clone)),
+                    }
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.package.get", "Get package specification from store", arguments,
+                    Some(&name), grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.package.plan" => {
+                let actions_val = match arguments.get("actions") {
+                    Some(v) => v.clone(),
+                    None => return json!({ "ok": false, "error": "Missing required field: actions" }),
+                };
+                let dry_run = arguments.get("dry_run").and_then(|v| v.as_bool()).unwrap_or(false);
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+                let f = move || -> Result<Value, String> {
+                    let actions: Vec<aiosh_core::package::PackageAction> = serde_json::from_value(actions_val.clone())
+                        .map_err(|e| format!("failed to parse actions: {}", e))?;
+                    let store = match store_path_opt {
+                        Some(ref p) => aiosh_core::package_service::PackageStore::load_from_path(std::path::Path::new(p))?,
+                        None => aiosh_core::package_service::PackageStore::new(),
+                    };
+                    let plan = store.plan_transaction(actions, dry_run)?;
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.package.plan",
+                        "transaction": plan
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.package.plan", "Plan a package transaction", arguments,
                     None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
                 )
             }
@@ -2858,5 +3012,38 @@ mod tests {
         // 6. aios.package.validate - missing arguments
         let res_missing = server.call_tool("aios.package.validate", &json!({}));
         assert_eq!(res_missing.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 7. aios.package.list
+        let res_list = server.call_tool("aios.package.list", &json!({}));
+        assert_eq!(res_list.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_list.get("count").and_then(|v| v.as_u64()), Some(8));
+
+        let res_list_filtered = server.call_tool("aios.package.list", &json!({ "format": "deb" }));
+        assert_eq!(res_list_filtered.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_list_filtered.get("count").and_then(|v| v.as_u64()), Some(5));
+
+        // 8. aios.package.get
+        let res_get_valid = server.call_tool("aios.package.get", &json!({ "name": "curl" }));
+        assert_eq!(res_get_valid.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_get_valid.pointer("/package/name").and_then(|v| v.as_str()), Some("curl"));
+
+        let res_get_missing = server.call_tool("aios.package.get", &json!({ "name": "non-existent" }));
+        assert_eq!(res_get_missing.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 9. aios.package.plan - valid
+        let actions = json!([
+            { "action": "install", "package_name": "libssl3", "target_version": null },
+            { "action": "install", "package_name": "curl", "target_version": null }
+        ]);
+        let res_plan = server.call_tool("aios.package.plan", &json!({ "actions": actions }));
+        assert_eq!(res_plan.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_plan.pointer("/transaction/total_size_delta_bytes").and_then(|v| v.as_i64()), Some(5242880 + 4194304));
+
+        // 10. aios.package.plan - missing dependency
+        let bad_actions = json!([
+            { "action": "install", "package_name": "curl", "target_version": null }
+        ]);
+        let res_plan_bad = server.call_tool("aios.package.plan", &json!({ "actions": bad_actions }));
+        assert_eq!(res_plan_bad.get("ok").and_then(|v| v.as_bool()), Some(false));
     }
 }
