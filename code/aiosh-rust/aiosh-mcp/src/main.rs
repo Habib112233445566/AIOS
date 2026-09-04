@@ -573,6 +573,19 @@ impl Server {
                 "additionalProperties": false
             }
         }));
+        tools.push(json!({
+            "name": "aios.image.check",
+            "description": "Validate structural integrity, schema rules, and corruption resilience for Linux base image registry.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "store_path": { "type": "string", "description": "Optional path to custom image_store.json" },
+                    "auto_recover": { "type": "boolean", "description": "Automatically repair corrupted or invalid registry" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
         tools
     }
 
@@ -1190,6 +1203,42 @@ impl Server {
                 dispatch::recorded_call(
                     &mut self.ring, &self.pep,
                     "aios.image.report", "Generate base image observability report", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.image.check" => {
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                if let Some(ref p) = store_path_opt {
+                    if p.len() > 4096 {
+                        return json!({ "ok": false, "error": "store_path exceeds maximum length of 4096 characters" });
+                    }
+                }
+                let auto_recover = arguments.get("auto_recover").and_then(|v| v.as_bool()).unwrap_or(false);
+                let f = move || -> Result<Value, String> {
+                    let (store, recovery_action) = if auto_recover {
+                        let p = store_path_opt.as_deref().unwrap_or("/var/lib/aios/images");
+                        aiosh_core::base_image_recovery::load_or_recover(std::path::Path::new(p))
+                    } else {
+                        match store_path_opt {
+                            Some(ref p) => {
+                                let s = aiosh_core::base_image_service::ImageStore::load_from_path(std::path::Path::new(p))?;
+                                (s, aiosh_core::base_image_recovery::RecoveryAction::LoadedExisting)
+                            }
+                            None => (aiosh_core::base_image_service::ImageStore::new(), aiosh_core::base_image_recovery::RecoveryAction::LoadedExisting),
+                        }
+                    };
+                    let report = aiosh_core::base_image_recovery::validate_store(&store);
+                    report.validate_invariants()?;
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.image.check",
+                        "report": report,
+                        "recovery_action": recovery_action
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.image.check", "Validate and check base image store integrity", arguments,
                     None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
                 )
             }
@@ -2689,5 +2738,14 @@ mod tests {
 
         let res_report_bad_path = server.call_tool("aios.image.report", &json!({ "store_path": "a".repeat(4097) }));
         assert_eq!(res_report_bad_path.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 7. aios.image.check
+        let res_check = server.call_tool("aios.image.check", &json!({}));
+        assert_eq!(res_check.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_check.pointer("/report/healthy").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_check.pointer("/report/total_manifests").and_then(|v| v.as_u64()), Some(4));
+
+        let res_check_bad_path = server.call_tool("aios.image.check", &json!({ "store_path": "a".repeat(4097) }));
+        assert_eq!(res_check_bad_path.get("ok").and_then(|v| v.as_bool()), Some(false));
     }
 }

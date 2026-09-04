@@ -906,8 +906,19 @@ Evidence: `tasks/evidence/T-01001-data-model-research.md` .. `tasks/evidence/T-0
 - Audit Trail: Immutable hash-chained audit logging emitted to SQLite WAL ring on each execution.
 - Limitations: Read-only aggregation across disk registry; unbounded external image stores capped by file reader limits; metrics computed synchronously.
 
+**Recovery & Validation Subsystem (`code/aiosh-rust/aiosh-core/src/base_image_recovery.rs`):**
+- Manifest & Store Validation: Semantic validation via `validate_manifest` and `validate_store` emitting structured `BaseImageValidationReport`.
+- Non-Destructive Recovery (`load_or_recover`): Detects JSON corruption or syntax errors, archives the corrupted file to `<path>.bak.<timestamp>` to preserve forensic evidence, and restores fresh defaults with canonical reference targets.
+- Invariants (RV1..RV4):
+  - `RV1`: `valid_manifests + invalid_manifests == total_manifests`
+  - `RV2`: `healthy == (errors.is_empty() && invalid_manifests == 0)`
+  - `RV3`: `invalid_manifests > 0 ==> errors.len() >= invalid_manifests`
+  - `RV4`: Non-destructive recovery creates `<path>.bak.<timestamp>` before re-seeding with clean defaults.
+- CLI Surface: `aiosh image check [--fix] [--json] [--store <path>]`
+- MCP Tool Surface: `aios.image.check` with optional `store_path` and `auto_recover: bool`.
+
 **Architecture & Operational Guide (`docs/base_image_build.md`):**
-- Comprehensive 9-section operational and architectural guide covering reproducible 4-stage image build lifecycle, data models, configuration precedence, security policy lockdown, observability telemetry, CLI/MCP tool surfaces, and SQLite WAL audit trails.
+- Comprehensive 9-section operational and architectural guide covering reproducible 4-stage image build lifecycle, data models, configuration precedence, security policy lockdown, observability telemetry, recovery protocols, CLI/MCP tool surfaces, and SQLite WAL audit trails.
 
 **Standalone Test Runner (`tools/test_image_suites.py`):**
 ```bash
@@ -920,10 +931,11 @@ python tools/test_image_suites.py
 # [+] B6 base image automated integration test suite (T1..T7)
 # [+] B7 base image security policy enforcement & invariants (P1..P7)
 # [+] B8 base image observability report aggregation & invariants (OB1..OB5)
-# PASS: image_suites criteria (B1..B8)
+# [+] B9 base image recovery & validation suite (RV1..RV4)
+# PASS: image_suites criteria (B1..B9)
 ```
 
-Evidence: `tasks/evidence/T-01101-base-image-data-model-research.md` .. `tasks/evidence/T-01189-base-image-documentation-documentation.md`.
+Evidence: `tasks/evidence/T-01101-base-image-data-model-research.md` .. `tasks/evidence/T-01200-recovery-validation-verification-evidenc.md`.
 
 
 

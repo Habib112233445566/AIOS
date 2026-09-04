@@ -29,6 +29,19 @@ substrate but is no longer the shipping path.
 
 ## Status (live — 2026-09-04)
 
+### 2026-09-04 — MILESTONE: Base Image Build Recovery & Validation CLOSED 10/10 (T-01191..T-01200) — BASE IMAGE BUILD EPIC COMPLETE (100/100, TASK 1200 ACHIEVED!)
+
+Complete implementation, governance, verification, and hardening for Phase 1 `Base Image Build / recovery & validation`:
+- **Corruption Recovery & Validation Subsystem**: `code/aiosh-rust/aiosh-core/src/base_image_recovery.rs` delivering manifest and store validation (`validate_manifest`, `validate_store`) and non-destructive corruption recovery (`load_or_recover`).
+- **Mathematical Invariants (RV1..RV4)**: Verified arithmetic equality of manifests (`valid + invalid == total`), health flag consistency, error count tracking, and `.bak.<timestamp>` forensic anti-tampering backups.
+- **Operator CLI & MCP Surfaces**: `aiosh image check [--fix] [--json] [--store <path>]` and `aios.image.check` tools with error envelopes and SQLite WAL audit logging.
+- **Hardening & Defenses**: 1024 package limit, 100 GiB image size cap, 10 MiB store limit, and forensic backups.
+- **Master Test Runner Matrix (`tools/test_image_suites.py`)**: All criteria `B1..B9` PASS.
+- **Unit Suite**: `code/aiosh-rust/aiosh-core/tests/test_base_image_recovery.rs` (5 tests passing in isolation).
+- **Full Epic Closure**: 100/100 tasks completed across Data Model (`T-01101..T-01110`), Core Service (`T-01111..T-01120`), CLI (`T-01121..T-01130`), MCP (`T-01131..T-01140`), Configuration (`T-01141..T-01150`), Automated Integration (`T-01151..T-01160`), Security Policy (`T-01161..T-01170`), Observability (`T-01171..T-01180`), Documentation (`T-01181..T-01190`), and Recovery & Validation (`T-01191..T-01200`).
+- **Milestone Metric**: **TASK 1,200 / 10,000 (12.00%) REACHED!**
+- **Ledger Pointer**: Advances to **T-01201** (`Phase 1 — Linux Base System & Bootable Target / Package Management / data model: Research`).
+
 ### 2026-09-04 — MILESTONE: Base Image Build Documentation CLOSED 10/10 (T-01181..T-01190)
 
 Complete implementation, governance, verification, and hardening for Phase 1 `Base Image Build / documentation`:

@@ -885,8 +885,94 @@ fn cmd_image(args: &[String]) -> i32 {
             }
             0
         }
+        Some("check") => {
+            let is_fix = has_flag(rest, "--fix");
+            let store_path_opt = parse_flag(rest, "--store");
+            let (active_store, recovery_action) = if is_fix {
+                let p = store_path_opt.as_deref().unwrap_or("/var/lib/aios/images");
+                aiosh_core::base_image_recovery::load_or_recover(std::path::Path::new(p))
+            } else if let Some(ref path_str) = store_path_opt {
+                match aiosh_core::base_image_service::ImageStore::load_from_path(std::path::Path::new(path_str)) {
+                    Ok(s) => (s, aiosh_core::base_image_recovery::RecoveryAction::LoadedExisting),
+                    Err(e) => {
+                        let report = aiosh_core::base_image_recovery::BaseImageValidationReport {
+                            healthy: false,
+                            total_manifests: 0,
+                            valid_manifests: 0,
+                            invalid_manifests: 0,
+                            errors: vec![format!("failed to load image store: {}", e)],
+                            warnings: vec![],
+                            generated_at: chrono::Utc::now().to_rfc3339(),
+                        };
+                        classify_and_emit(
+                            &mut ctx,
+                            "image",
+                            "check",
+                            json!({ "healthy": false, "errors": report.errors }),
+                            "failure",
+                            None,
+                            Some("Image store validation failed"),
+                            "operator",
+                            None,
+                        );
+                        if is_json {
+                            println!("{}", serde_json::to_string_pretty(&report).unwrap_or_default());
+                        } else {
+                            eprintln!("Image Store Validation: UNHEALTHY");
+                            for err in &report.errors {
+                                eprintln!("  [-] {}", err);
+                            }
+                        }
+                        return 1;
+                    }
+                }
+            } else {
+                (aiosh_core::base_image_service::ImageStore::new(), aiosh_core::base_image_recovery::RecoveryAction::LoadedExisting)
+            };
+
+            let report = aiosh_core::base_image_recovery::validate_store(&active_store);
+            let action_name = if is_fix { "image.repair" } else { "image.check" };
+            classify_and_emit(
+                &mut ctx,
+                "image",
+                action_name,
+                json!({
+                    "healthy": report.healthy,
+                    "total": report.total_manifests,
+                    "valid": report.valid_manifests,
+                    "invalid": report.invalid_manifests,
+                    "recovery_action": recovery_action
+                }),
+                if report.healthy { "success" } else { "failure" },
+                None,
+                Some("Validated base image registry manifests and integrity"),
+                "operator",
+                None,
+            );
+
+            if is_json {
+                let out = json!({
+                    "report": report,
+                    "recovery_action": recovery_action,
+                });
+                println!("{}", serde_json::to_string_pretty(&out).unwrap_or_default());
+            } else {
+                println!("Image Store Validation: {}", if report.healthy { "HEALTHY" } else { "UNHEALTHY" });
+                println!("  Total:   {}", report.total_manifests);
+                println!("  Valid:   {}", report.valid_manifests);
+                println!("  Invalid: {}", report.invalid_manifests);
+                if let aiosh_core::base_image_recovery::RecoveryAction::RecoveredFromBackup { backup_path, reason } = &recovery_action {
+                    println!("  Recovery: Restored clean store (backup saved at '{}', reason: {})", backup_path, reason);
+                }
+                for err in &report.errors {
+                    eprintln!("  [-] {}", err);
+                }
+            }
+
+            if report.healthy || is_fix { 0 } else { 1 }
+        }
         Some("--help") | Some("-h") | None => {
-            println!("aiosh image — Linux Base Image Build & Packaging Manager\n\nUsage:\n  aiosh image list [--json] [--store <path>]\n  aiosh image show <id> [--json] [--store <path>]\n  aiosh image plan <id> [--json] [--store <path>]\n  aiosh image filter [--format <format>] [--distro <id>] [--json] [--store <path>]\n  aiosh image config [--json] [--config <path>]\n  aiosh image policy [<id>] [--json] [--store <path>]\n  aiosh image report [--json] [--store <path>]");
+            println!("aiosh image — Linux Base Image Build & Packaging Manager\n\nUsage:\n  aiosh image list [--json] [--store <path>]\n  aiosh image show <id> [--json] [--store <path>]\n  aiosh image plan <id> [--json] [--store <path>]\n  aiosh image filter [--format <format>] [--distro <id>] [--json] [--store <path>]\n  aiosh image config [--json] [--config <path>]\n  aiosh image policy [<id>] [--json] [--store <path>]\n  aiosh image report [--json] [--store <path>]\n  aiosh image check [--fix] [--json] [--store <path>]");
             0
         }
         Some(other) => {
@@ -3994,6 +4080,15 @@ mod task_cli_tests {
 
         let code_report_json = cmd_image(&["report".to_string(), "--json".to_string()]);
         assert_eq!(code_report_json, 0);
+
+        let code_check = cmd_image(&["check".to_string()]);
+        assert_eq!(code_check, 0);
+
+        let code_check_json = cmd_image(&["check".to_string(), "--json".to_string()]);
+        assert_eq!(code_check_json, 0);
+
+        let code_check_fix = cmd_image(&["check".to_string(), "--fix".to_string()]);
+        assert_eq!(code_check_fix, 0);
 
         let code_help = cmd_image(&["--help".to_string()]);
         assert_eq!(code_help, 0);

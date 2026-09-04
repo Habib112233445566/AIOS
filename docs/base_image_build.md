@@ -169,6 +169,9 @@ aiosh image policy [<id>] [--json] [--store <path>]
 
 # Generate observability report
 aiosh image report [--json] [--store <path>]
+
+# Validate store health and recover from corruption
+aiosh image check [--fix] [--json] [--store <path>]
 ```
 
 ### Example: Generate Build Plan
@@ -229,6 +232,7 @@ aiosh image plan debian-12-minimal-x86_64 --json
 | `aios.image.config` | `config_path?: string` | Query resolved build config |
 | `aios.image.policy` | `id?: string`, `store_path?: string` | Check security policy compliance |
 | `aios.image.report` | `store_path?: string` | Generate observability report |
+| `aios.image.check` | `store_path?: string`, `auto_recover?: bool` | Validate store and recover from corruption |
 
 ### Example Tool Call: `aios.image.report`
 ```json
@@ -269,3 +273,26 @@ All failures are encapsulated in the standard JSON envelope:
 Every CLI and MCP operation emits a record into SQLite WAL (`audit.db`):
 - Action, actor, timestamp, input digest, and outcome status.
 - Linked via SHA-256 hash chaining to ensure tamper evidence.
+
+### Corruption Recovery and Validation Protocol (`code/aiosh-rust/aiosh-core/src/base_image_recovery.rs`)
+The base image recovery subsystem validates image manifests and stores, preventing corrupted files from bricking the build system and automatically restoring healthy canonical states when instructed.
+
+#### Deep Manifest & Store Validation:
+- `validate_manifest(&manifest)`: Deep structural audit ensuring identifier syntax, non-empty rootfs type, kernel specification, and legal package limits (max 1024 packages, max 100 GiB artifact size).
+- `validate_store(&store)`: Verifies all manifests in store memory or loaded from disk. Emits structured `BaseImageValidationReport`.
+
+#### Invariants (RV1..RV4):
+- **RV1**: `valid_manifests + invalid_manifests == total_manifests`
+- **RV2**: `healthy == (errors.is_empty() && invalid_manifests == 0)`
+- **RV3**: `invalid_manifests > 0 ==> errors.len() >= invalid_manifests`
+- **RV4**: Non-destructive recovery creates `<path>.bak.<timestamp>` before re-seeding with clean defaults.
+
+#### Non-Destructive Recovery Protocol (`load_or_recover`):
+1. Attempts standard atomic store load.
+2. If the store JSON file is corrupted or unparseable:
+   - Preserves corrupted data by renaming `<path>` to `<path>.bak.<timestamp>` (forensic anti-tampering).
+   - Initializes a fresh canonical `ImageStore::default()`.
+   - Persists the newly initialized store to `<path>` with `0o644` permissions.
+   - Emits an auditable recovery report recording the original path and backup destination.
+3. If auto-recovery is not requested (`--fix` omitted), emits validation diagnostics and halts with code 1.
+

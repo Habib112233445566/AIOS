@@ -1,6 +1,35 @@
 # Progress Log
 
-## 2026-09-04 — T-01181..T-01190 SHIPPED: Base Image Build Documentation CLOSED (10/10 tasks)
+## 2026-09-04 — T-01191..T-01200 SHIPPED: Base Image Build Recovery & Validation CLOSED (Criteria B1..B9, FULL EPIC COMPLETE 100/100, TASK 1200 ACHIEVED!)
+
+**What shipped:**
+- Created Base Image Build Recovery & Validation subsystem in `code/aiosh-rust/aiosh-core/src/base_image_recovery.rs`.
+- Implemented deep manifest and store validation (`validate_manifest`, `validate_store`) and non-destructive corruption recovery (`load_or_recover`).
+- Enforced and mathematically verified invariants `RV1..RV4`:
+  - `RV1`: `valid_manifests + invalid_manifests == total_manifests`
+  - `RV2`: `healthy == (errors.is_empty() && invalid_manifests == 0)`
+  - `RV3`: `invalid_manifests > 0 ==> errors.len() >= invalid_manifests`
+  - `RV4`: Non-destructive recovery creates `<path>.bak.<timestamp>` before re-seeding with clean defaults.
+- Integrated operator CLI subcommand: `aiosh image check [--fix] [--json] [--store <path>]`.
+- Integrated autonomous agent MCP tool: `aios.image.check` with optional `store_path` and `auto_recover: bool`.
+- Enforced hardening caps (1024 package limit, 100 GiB image size cap, 10 MiB store limit, forensic `.bak` anti-tampering).
+- Extended master test runner `tools/test_image_suites.py` with criterion `B9`.
+- Created standalone integration test suite in `code/aiosh-rust/aiosh-core/tests/test_base_image_recovery.rs`.
+- Updated architectural guide `docs/base_image_build.md` (Sections 7, 8, and 9) and `docs/README.md` (Section 8.11).
+- Completed the entire **Base Image Build Epic (T-01101..T-01200 — 100/100 tasks)**!
+- Milestone metric: **TASK 1,200 / 10,000 (12.00%) REACHED!**
+
+**Verified:**
+- `python tools/test_image_suites.py` (B1..B9 PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --test test_base_image_recovery` (5/5 PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --bin aiosh test_cmd_image_flow` (PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --bin aiosh-mcp test_mcp_image_tools` (PASS).
+- `python tools/test_base_image_doc.py` (D1..D5 PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- Evidence chain: `docs/tasks/evidence/T-01191-recovery-validation-research.md` … `T-01200-verify.md`.
+- Milestone: **Base Image Build Epic CLOSED — 100/100 tasks (T-01101..T-01200)**. Pointer $\to$ **T-01201** (`Phase 1 — Linux Base System & Bootable Target / Package Management / data model: Research`).
+
+
 
 **What shipped:**
 - Created comprehensive 9-section operational and architectural guide in `docs/base_image_build.md` covering target formats (`raw`, `qcow2`, `iso`), core data models, 4-stage build lifecycle with Mermaid diagram, configuration precedence, security invariants (`P1..P7`), observability invariants (`OB1..OB5`), CLI subcommands, MCP tools, error envelopes, and SQLite WAL audit logging.
