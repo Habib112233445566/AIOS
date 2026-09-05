@@ -961,6 +961,7 @@ Comprehensive architecture and operational guide: [docs/package_management.md](p
 - `aiosh package config [--config <path>] [--json]`: Inspect active configuration settings, repository whitelists, and validation status.
 - `aiosh package policy [--package <name>] [--config <path>] [--json]`: Inspect and enforce security policy baselines (PP1..PP6) including prohibited packages, mandatory checksums, and transport security.
 - `aiosh package stats [--store <path>] [--config <path>] [--json]`: Generate comprehensive package ecosystem observability and inventory telemetry report (PO1..PO6).
+- `aiosh package check [--store <path>] [--fix] [--json]`: Verify store structural integrity, validate package specifications (RV1..RV3), and execute non-destructive self-healing with timestamped forensic backup (RV4).
 
 **Autonomous Agent MCP Tool Surface (`aiosh-mcp`, T-01231..T-01240):**
 - `aios.package.validate`: Validates package name syntax (PM1) or full `PackageSpec` against PM1..PM5 invariants with PEP capability checks and immutable SQLite WAL audit logging.
@@ -972,6 +973,7 @@ Comprehensive architecture and operational guide: [docs/package_management.md](p
 - `aios.package.config`: Query active package configuration, store bounds, and trusted repository endpoints.
 - `aios.package.policy`: Evaluate package security policy (PP1..PP6) with PEP enforcement and audit trail.
 - `aios.package.stats`: Retrieve package observability telemetry report with footprint breakdowns and policy compliance metrics (PO1..PO6).
+- `aios.package.check`: Verify on-disk package store integrity and optionally execute non-destructive recovery with timestamped backup.
 
 **Package Management Configuration Subsystem (`aiosh-core::package_config`, T-01241..T-01250):**
 - **Configuration Invariants (PC1..PC6)**:
@@ -999,6 +1001,13 @@ Comprehensive architecture and operational guide: [docs/package_management.md](p
   - `PO4`: Dependency distribution histogram — bounded categorical buckets (`"0"`, `"1-5"`, `"6-10"`, `"11+"`) guaranteeing $O(1)$ telemetry memory usage.
   - `PO5`: Compliance telemetry — evaluates registered packages against security policy, reporting compliant package counts, violation counts, and prohibited package occurrences.
   - `PO6`: Deterministic telemetry reports — read-only telemetry reports with standard error envelopes and immutable audit logging.
+
+**Package Recovery & Validation Subsystem (`aiosh-core::package_recovery`, T-01291..T-01300):**
+- **Invariants Enforced (RV1..RV4)**:
+  - `RV1`: Count conservation — $\text{valid\_packages} + \text{invalid\_packages} == \text{total\_packages}$.
+  - `RV2`: Health equivalence — $\text{healthy} \iff (\text{errors.is\_empty}() \land \text{invalid\_packages} == 0)$.
+  - `RV3`: Error completeness — each invalid package produces at least one explicit error diagnostic ($\text{errors.len}() \ge \text{invalid\_packages}$).
+  - `RV4`: Non-destructive forensic preservation — corrupted stores are timestamp-backed up (`<path>.bak.<ts>`) before reseed.
 
 **Core Service & Registry (`aiosh-core::package_service`, T-01211..T-01220):**
 - **In-Memory Store Registry (`PackageStore`)**: In-memory repository seeded with canonical reference packages for Debian 12 (`libc6`, `coreutils`, `bash`, `libssl3`, `curl`) and Alpine 3.19 (`musl`, `busybox`, `apk-tools`).
@@ -1048,6 +1057,12 @@ aiosh package policy --package curl --json
 
 # View package ecosystem observability and footprint statistics
 aiosh package stats --json
+
+# Verify store integrity and validate package specifications
+aiosh package check --json
+
+# Heal corrupted package store with timestamped forensic backup
+aiosh package check --store ./packages.json --fix --json
 ```
 
 **MCP Autonomous Agent JSON-RPC Examples:**
@@ -1087,6 +1102,19 @@ aiosh package stats --json
     "arguments": {}
   }
 }
+
+// Tool Call: aios.package.check
+{
+  "jsonrpc": "2.0",
+  "id": 4,
+  "method": "tools/call",
+  "params": {
+    "name": "aios.package.check",
+    "arguments": {
+      "auto_recover": true
+    }
+  }
+}
 ```
 
 **Standalone Test Runner (`tools/test_package_suites.py` & `tools/test_package_doc.py`):**
@@ -1101,10 +1129,11 @@ python tools/test_package_suites.py
 # [+] PM7 package security policy evaluation & invariants (PP1..PP6)
 # [+] PM8 package observability telemetry report & invariants (PO1..PO6)
 # [+] PM9 package documentation guide & invariants (D1..D5)
-# PASS: package_suites criteria (PM1..PM9)
+# [+] PM10 package recovery & validation integrity (RV1..RV4)
+# PASS: package_suites criteria (PM1..PM10)
 ```
 
-Evidence: `docs/tasks/evidence/T-01201-data-model-research.md` .. `docs/tasks/evidence/T-01289-documentation-documentation.md`.
+Evidence: `docs/tasks/evidence/T-01201-data-model-research.md` .. `docs/tasks/evidence/T-01299-recovery-validation-documentation.md`.
 
 
 

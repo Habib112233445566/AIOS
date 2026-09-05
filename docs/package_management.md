@@ -248,6 +248,15 @@ aiosh package policy --package telnet --json
 aiosh package stats --json
 ```
 
+### 10. `check`
+```bash
+# Verify store integrity and validate all package specs (RV1..RV3)
+aiosh package check --json
+
+# Automatically heal corrupted store with timestamped backup (RV4)
+aiosh package check --store /var/lib/aios/packages.json --fix --json
+```
+
 ---
 
 ## 8. Autonomous Agent MCP Tool Surface Reference
@@ -264,6 +273,7 @@ Model Context Protocol tools exposed under `aios.package.*` in `aiosh-mcp`:
 | `aios.package.config` | `config_path?: string` | Retrieves active package configuration settings. |
 | `aios.package.policy` | `package?: string, config_path?: string` | Evaluates security policy compliance and prohibited items. |
 | `aios.package.stats` | `store_path?: string, config_path?: string` | Retrieves observability and telemetry analytics report. |
+| `aios.package.check` | `store_path?: string, auto_recover?: boolean` | Checks store integrity and optionally recovers corrupted store. |
 
 ### Example Agent JSON-RPC Tool Invocations
 
@@ -299,6 +309,21 @@ Model Context Protocol tools exposed under `aios.package.*` in `aiosh-mcp`:
 }
 ```
 
+#### Verifying Store Integrity & Self-Healing (`aios.package.check`):
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 103,
+  "method": "tools/call",
+  "params": {
+    "name": "aios.package.check",
+    "arguments": {
+      "auto_recover": true
+    }
+  }
+}
+```
+
 ---
 
 ## 9. Failure Modes, Error Envelopes, and Audit Trail
@@ -328,6 +353,14 @@ All CLI subcommands (`--json`) and MCP tool invocations report results in standa
 - `PLAN_FAILED`: Transaction planning failed dependency closure or delta checks.
 - `PERSISTENCE_FAILED`: Atomic store write or rename operation failed.
 - `CONFIG_RESOLUTION_FAILED`: Configuration hierarchy resolution failed invariants PC1..PC6.
+- `RECOVERY_FAILED`: Automated store restoration failed during backup or file reseeding.
+- `UNHEALTHY_STORE`: Store integrity check identified package specification or capacity errors.
+
+### Store Recovery & Validation Invariants (RV1..RV4)
+- **`RV1` (Count Conservation)**: $\text{valid\_packages} + \text{invalid\_packages} = \text{total\_packages}$.
+- **`RV2` (Health Equivalence)**: $\text{healthy} \iff (\text{errors.is\_empty}() \land \text{invalid\_packages} == 0)$.
+- **`RV3` (Error Completeness)**: $\text{errors.len}() \ge \text{invalid\_packages}$ (every invalid package yields explicit error diagnostics).
+- **`RV4` (Non-Destructive Forensic Preservation)**: Corrupted stores are immutably archived to `<path>.bak.<timestamp>` before any reseed occurs.
 
 ### Non-Repudiation Audit Trail
 - **CLI Logging**: Every execution path in `aiosh package` calls `classify_and_emit`, recording action, parameters, success/failure status, error classification, and actor to `audit.db`.
