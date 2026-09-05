@@ -1,5 +1,211 @@
 # Progress Log
 
+## 2026-09-05 — T-01281..T-01290 SHIPPED: Package Management Documentation CLOSED (Criteria PM1..PM9, 10/10 tasks)
+
+**What shipped:**
+- Created dedicated architecture and operational guide: `docs/package_management.md`:
+  - 9 core architectural sections covering Executive Overview with Mermaid diagram, Core Data Model (`PM1..PM5`), Store Registry (`CS1..CS5`), Configuration (`PC1..PC6`), Security Policy (`PP1..PP6`), Observability (`PO1..PO6`), Operator CLI reference, Autonomous Agent MCP reference, and Failure Modes / Audit Trail.
+- Implemented automated documentation test suite: `tools/test_package_doc.py`:
+  - Enforces criteria `D1..D6`: file existence & size bounds ($[1000 \dots 5\text{ MiB}]$), all 9 required section headings, zero rot markers (`TODO`, `FIXME`, `TBD`, etc.), complete invariant token coverage, negative rejection assertions, and zero volatile snapshot counters.
+- Master Test Runner Matrix (`tools/test_package_suites.py`):
+  - Added criterion `PM9` (`test_package_doc`). All criteria `PM1..PM9` PASS.
+- Repository Index Synchronization:
+  - Linked guide in `docs/README.md` under section 8.12.
+
+**Verified:**
+- `python tools/test_package_suites.py` (PM1..PM9 PASS).
+- `python tools/test_package_doc.py` (D1..D6 PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- Evidence chain: `docs/tasks/evidence/T-01281-documentation-research.md` … `T-01290-documentation-verification-evidenc.md`.
+- Milestone: **Package Management / documentation CLOSED — 10/10 tasks** (T-01281..T-01290). Pointer $\to$ **T-01291** (`Phase 1 — Linux Base System & Bootable Target / Package Management / recovery & validation: Research`).
+
+
+## 2026-09-05 — T-01271..T-01280 SHIPPED: Package Management Observability CLOSED (Criteria PM1..PM8, 10/10 tasks)
+
+**What shipped:**
+- Implemented package observability and telemetry report engine in `code/aiosh-rust/aiosh-core/src/package_observability.rs`:
+  - `PackageObservabilityReport`, multi-dimensional breakdowns (`state_breakdown`, `format_breakdown`, `architecture_breakdown`), footprint metrics (`total_installed_size_bytes`, `average_package_size_bytes`), and dependency histogram (`0`, `1-5`, `6-10`, `11+`).
+  - Invariants `PO1..PO6`: inventory completeness, multi-dimensional distributions, footprint saturation arithmetic (`u64::saturating_add`), bounded histogram buckets, security policy compliance evaluation, and deterministic read-only JSON serialization.
+- Operator CLI surface:
+  - `aiosh package stats [--store <path>] [--config <path>] [--json]` in `aiosh-cli/src/main.rs`.
+- MCP tool surface:
+  - `aios.package.stats` tool in `aiosh-mcp/src/main.rs` with structured responses and SQLite WAL ring audit logging.
+- Master Test Runner Matrix (`tools/test_package_suites.py`):
+  - Added criterion `PM8` (`test_package_observability`). All criteria `PM1..PM8` PASS.
+- Hardening & Security Controls:
+  - Path string bounds & control character validation on `generate_from_paths`, oversized path rejection (>1024 characters), explicit error envelopes (`LOAD_STORE_FAILED`, `LOAD_POLICY_FAILED`, `INVALID_ARGUMENT`), and fail-open honest audit logging to `audit.db` via `classify_and_emit`.
+- Documentation:
+  - Documented telemetry architecture, invariants PO1..PO6, CLI/MCP usage examples, and honest constraints.
+
+**Verified:**
+- `python tools/test_package_suites.py` (PM1..PM8 PASS).
+- `cargo test -p aiosh-core --test test_package_observability` (7 unit tests PASS).
+- `cargo test --bin aiosh test_cmd_package_flow` (PASS).
+- `cargo test --bin aiosh-mcp test_mcp_package_tools` (PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- Evidence chain: `docs/tasks/evidence/T-01271-observability-research.md` … `T-01280-observability-verification-evidenc.md`.
+- Milestone: **Package Management / observability CLOSED — 10/10 tasks** (T-01271..T-01280). Pointer $\to$ **T-01281** (`Phase 1 — Linux Base System & Bootable Target / Package Management / documentation: Research`).
+
+
+## 2026-09-04 — T-01261..T-01270 SHIPPED: Package Management Security Policy CLOSED (Criteria PM1..PM7, 10/10 tasks)
+
+**What shipped:**
+- Implemented package security policy engine in `code/aiosh-rust/aiosh-core/src/package_policy.rs`:
+  - `PackageSecurityPolicy`, `PackagePolicyMode` (`Enforcing`, `Audit`, `Permissive`), `PackagePolicyVerdict`, and `PackagePolicyViolation`.
+  - Invariants `PP1..PP6`: configuration bounds, prohibited packages blocking (`telnet`, `rsh`, etc.), mandatory SHA-256 validation, transport security (`https://` or `file://`), architecture/format/size whitelisting, and pre-execution transaction evaluation.
+- Operator CLI surface:
+  - `aiosh package policy [--config <path>] [--package <name>] [--json]` in `aiosh-cli/src/main.rs`.
+- MCP tool surface:
+  - `aios.package.policy` tool in `aiosh-mcp/src/main.rs` with structured responses and PEP SQLite audit logging.
+- Master Test Runner Matrix (`tools/test_package_suites.py`):
+  - Added criterion `PM7` (`test_package_policy`). All criteria `PM1..PM7` PASS.
+- Hardening & Security Controls:
+  - Path string bounds & control character validation on `from_file`, 64 KiB read stream bounding (`MAX_POLICY_FILE_BYTES`), allowed repository ceiling (256 entries), and fail-closed evaluation rules.
+- Documentation:
+  - Documented architecture, invariants PP1..PP6, CLI/MCP usage examples, and environment variables.
+
+**Verified:**
+- `python tools/test_package_suites.py` (PM1..PM7 PASS).
+- `cargo test -p aiosh-core --test test_package_policy` (7 unit tests PASS).
+- `cargo test --bin aiosh test_cmd_package_flow` (PASS).
+- `cargo test --bin aiosh-mcp test_mcp_package_tools` (PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- Evidence chain: `docs/tasks/evidence/T-01261-security-policy-research.md` … `T-01270-security-policy-verification-evidenc.md`.
+- Milestone: **Package Management / security policy CLOSED — 10/10 tasks** (T-01261..T-01270). Pointer $\to$ **T-01271** (`Phase 1 — Linux Base System & Bootable Target / Package Management / observability: Research`).
+
+
+## 2026-09-04 — T-01251..T-01260 SHIPPED: Package Management Automated Tests CLOSED (Criteria PM1..PM6, 10/10 tasks)
+
+**What shipped:**
+- Implemented comprehensive automated integration test suite in `code/aiosh-rust/aiosh-core/tests/test_package_automated.rs` covering criteria `PT1..PT6`:
+  - `PT1`: Deterministic plan reproducibility over 50 iterations with SHA-256 hash stability.
+  - `PT2`: Multi-step lifecycle state transitions (`Available` $\to$ `Installed` $\to$ `Upgraded` $\to$ `Available`) with size delta arithmetic (`CS4`).
+  - `PT3`: Dependency closure failure modes (unsatisfied dependencies, missing packages, joint satisfaction) (`CS3`).
+  - `PT4`: Configuration-governed store capacity limits (`PC2`, `PC3`) and disk reload persistence.
+  - `PT5`: Anti-tamper detection on delta tampering and clean rollback to pristine state. Dry-run isolation.
+  - `PT6`: Negative boundary matrix (empty action lists, >256 action overflow, duplicate registration `CS1`).
+- Master Test Runner Matrix (`tools/test_package_suites.py`):
+  - Added criterion `PM6` (`test_package_automated`). All criteria `PM1..PM6` PASS.
+- Hardening & Security Controls:
+  - 120s timeout bounds on runner subprocesses, RAII temporary directory lifecycle management, and fail-fast non-zero exit behavior.
+- Documentation:
+  - Updated documentation with test runner usage, matrix breakdown, copy-pasteable examples, and honest constraints.
+
+**Verified:**
+- `python tools/test_package_suites.py` (PM1..PM6 PASS).
+- `cargo test -p aiosh-core --test test_package_automated` (6 tests PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- Evidence chain: `docs/tasks/evidence/T-01251-automated-tests-research.md` … `T-01260-automated-tests-verification-evidenc.md`.
+- Milestone: **Package Management / automated tests CLOSED — 10/10 tasks** (T-01251..T-01260). Pointer $\to$ **T-01261** (`Phase 1 — Linux Base System & Bootable Target / Package Management / security policy: Research`).
+
+
+## 2026-09-04 — T-01241..T-01250 SHIPPED: Package Management Configuration CLOSED (Criteria PM1..PM5, 10/10 tasks)
+
+**What shipped:**
+- Implemented hierarchical configuration subsystem in `code/aiosh-rust/aiosh-core/src/package_config.rs`:
+  - `PackageConfig`: Struct representing runtime configuration (`store_path`, `max_store_size_bytes`, `max_entity_count`, `allowed_repositories`, `default_format`, `auto_update`).
+  - Strict validation against invariants `PC1..PC6`.
+  - Deterministic resolution precedence: file config (`--config`) > environment variables (`AIOS_PACKAGE_*`) > hardcoded defaults.
+  - Safe bounded file parsing: 64 KiB read cap (`MAX_CONFIG_FILE_BYTES = 65_536`) with bounded stream reading (`take(65_536 + 1)`).
+- Operator CLI surface:
+  - `aiosh package config [--config <path>] [--json]` supporting human and machine-readable output and error envelopes.
+- MCP tool surface:
+  - `aios.package.config`: Autonomous agent configuration inspection tool with PEP gating and SQLite audit emission.
+- Master Test Runner Matrix (`tools/test_package_suites.py`):
+  - Added criterion `PM5` (`test_package_config`).
+- Documentation:
+  - Updated `docs/README.md` (§8.12) with invariants `PC1..PC6`, copy-pasteable CLI commands, and MCP JSON-RPC examples.
+
+**Verified:**
+- `python tools/test_package_suites.py` (PM1..PM5 PASS).
+- `cargo test -p aiosh-core --test test_package_config` (7 unit tests PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- Evidence chain: `docs/tasks/evidence/T-01241-configuration-research.md` … `T-01250-configuration-verification-evidenc.md`.
+- Milestone: **Package Management / configuration CLOSED — 10/10 tasks** (T-01241..T-01250). Pointer $\to$ **T-01251** (`Phase 1 — Linux Base System & Bootable Target / Package Management / automated tests: Research`).
+
+
+## 2026-09-04 — T-01231..T-01240 SHIPPED: Package Management MCP/API Surface CLOSED (Criteria PM1..PM4, 10/10 tasks)
+
+**What shipped:**
+- Implemented complete autonomous agent MCP tool surface in `code/aiosh-rust/aiosh-mcp/src/main.rs`:
+  - `aios.package.validate`: Syntax validation of package names (`PM1`) and deep specification checks (`PM1..PM5`).
+  - `aios.package.list`: Enumerate packages with format, state, pattern, and limit filters.
+  - `aios.package.get`: Detailed specification lookup for a single package.
+  - `aios.package.plan`: Transaction planning with dependency closure validation (`CS2`, `CS3`) and delta calculation (`CS4`).
+  - `aios.package.search`: Substring search on names and descriptions with pagination limit [1..10,000].
+  - `aios.package.apply`: Transaction execution with dry-run support, state transitions (`CS5`), and atomic persistence.
+- Security and hardening defenses:
+  - PEP authorization gating and immutable audit row emission via `dispatch::recorded_call` on all 6 tool paths (ADR-0035).
+  - Strict input validation: package names <= 128 chars, search patterns <= 256 chars, store paths <= 1,024 chars, action arrays <= 10,000 items, and ASCII control-character rejection.
+  - Limit pagination bounds [1..10,000].
+  - Standard JSON result envelope `{ "ok": bool, ... }` with zero silent failures.
+  - RAII cleanup of temporary files on write errors.
+- Master Test Runner Matrix (`tools/test_package_suites.py`):
+  - Added criterion `PM4` (`test_mcp_package_tools`).
+- Documentation:
+  - Updated `docs/README.md` (§8.12) with tool specifications and JSON-RPC copy-pasteable examples.
+
+**Verified:**
+- `python tools/test_package_suites.py` (PM1..PM4 PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --bin aiosh-mcp test_mcp_package_tools` (28 assertions PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- Evidence chain: `docs/tasks/evidence/T-01231-mcp-api-surface-research.md` … `T-01240-mcp-api-surface-verification-evidenc.md`.
+- Milestone: **Package Management / MCP/API surface CLOSED — 10/10 tasks** (T-01231..T-01240). Pointer $\to$ **T-01241** (`Phase 1 — Linux Base System & Bootable Target / Package Management / configuration: Research`).
+
+
+## 2026-09-04 — T-01221..T-01230 SHIPPED: Package Management CLI Surface CLOSED (Criteria PM1..PM3, 10/10 tasks)
+
+**What shipped:**
+- Implemented comprehensive operator CLI surface in `code/aiosh-rust/aiosh-cli/src/main.rs`:
+  - `aiosh package validate`: Syntax (PM1) and complete specification deep-audit (PM1..PM5).
+  - `aiosh package list`: Enumerate packages with format, state, pattern filters and bounded limit [1..10,000].
+  - `aiosh package show`: Inspect package details, dependencies, and sizing with bounds and control-character sanitization.
+  - `aiosh package search`: Substring search on package names and descriptions with pattern length caps (<=256) and control-character rejection.
+  - `aiosh package plan`: Deterministic transaction planning, dependency closure validation, and size delta calculation.
+  - `aiosh package apply`: Transaction execution, state transitions, atomic persistence (`--store <path>`), and ADR-0035 audit emission.
+- Hardening and security defenses:
+  - 1 MiB payload ceiling on `--actions`, `--plan`, and `--spec` inputs (inline and files).
+  - Control-character rejection and length bounding on patterns, package names, and store paths.
+  - Standard error result envelopes with explicit machine-readable codes.
+  - Complete SQLite `audit.db` logging via `classify_and_emit` on all paths.
+- Added criterion `PM3` to `tools/test_package_suites.py`.
+- Documented CLI surface in `docs/README.md` (§8.12).
+
+**Verified:**
+- `python tools/test_package_suites.py` (PM1..PM3 PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --bin aiosh test_cmd_package_flow` (PASS).
+- `cargo run --manifest-path code/aiosh-rust/Cargo.toml --bin aiosh -- package list --json` (PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- Evidence chain: `docs/tasks/evidence/T-01221-cli-surface-research.md` … `T-01230-cli-surface-verification-evidenc.md`.
+- Milestone: **Package Management / CLI surface CLOSED — 10/10 tasks** (T-01221..T-01230). Pointer $\to$ **T-01231** (`Phase 1 — Linux Base System & Bootable Target / Package Management / MCP/API surface: Research`).
+
+
+## 2026-09-04 — T-01211..T-01220 SHIPPED: Package Management Core Service CLOSED (Criteria PM1..PM2, 10/10 tasks)
+ 
+**What shipped:**
+- Implemented `PackageStore` in `code/aiosh-rust/aiosh-core/src/package_service.rs` supporting Debian, Alpine, Flatpak, and Tarball packages.
+- Implemented core invariants `CS1..CS5`:
+  - `CS1`: Registry package identifier uniqueness.
+  - `CS2`: Deterministic transaction planning with SHA-256 fingerprinting.
+  - `CS3`: Dependency closure validation across action batches.
+  - `CS4`: Delta arithmetic verification and tamper detection.
+  - `CS5`: Safe persistence with atomic rename, `.tmp` RAII cleanup, 10 MiB stream ceiling, and 10,000 package count limit.
+- Integrated operator CLI subcommands: `aiosh package list`, `aiosh package show`, `aiosh package plan` with 1 MiB payload limits and structured error envelopes.
+- Integrated autonomous agent MCP tools: `aios.package.list`, `aios.package.get`, `aios.package.plan` with PEP capability gating and SQLite WAL audit logging.
+- Extended standalone test runner `tools/test_package_suites.py` with criterion `PM2`.
+- Created unit test suite in `code/aiosh-rust/aiosh-core/tests/test_package_service.rs` (9 tests passing).
+- Documented Package Management core service in `docs/README.md` (Section 8.12).
+ 
+**Verified:**
+- `python tools/test_package_suites.py` (PM1..PM2 PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --test test_package_service` (9/9 PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --bin aiosh test_cmd_package_flow` (PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --bin aiosh-mcp test_mcp_package_tools` (PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- Evidence chain: `docs/tasks/evidence/T-01211-core-service-research.md` … `T-01220-core-service-verification-evidenc.md`.
+- Milestone: **Package Management / core service CLOSED — 10/10 tasks** (T-01211..T-01220). Pointer $\to$ **T-01221** (`Phase 1 — Linux Base System & Bootable Target / Package Management / CLI surface: Research`).
+ 
+ 
 ## 2026-09-04 — T-01201..T-01210 SHIPPED: Package Management Data Model CLOSED (Criterion PM1, 10/10 tasks)
 
 **What shipped:**

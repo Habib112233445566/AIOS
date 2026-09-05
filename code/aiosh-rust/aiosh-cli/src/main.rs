@@ -198,7 +198,7 @@ fn main() {
         Some("image") => cmd_image(&args[1..]),
         Some("package") => cmd_package(&args[1..]),
         Some("--help") | Some("-h") | None => {
-            println!("aiosh — AIOS shell CLI (Rust)\n\nUsage: aiosh <status|run|agent|audit|grant|pentest|classify|task|ci|release|backup|toolchain|doc|evidence|repo|secrets|triage|handoff|distro|image|package> ...\n\n  aiosh task <status|done|block|unblock|skip|rebuild|check>  Task ledger control\n  aiosh ci <show|failures|check|config|metrics> [--file PATH]  CI smoke reports\n  aiosh release generate  Create bootable ISO\n  aiosh backup create  Create system snapshot zip\n  aiosh toolchain check [--config <path>]  Verify host environment against ToolchainManifest\n  aiosh toolchain show [--config <path>]   Display the resolved ToolchainManifest\n  aiosh doc <show|check|search>  Documentation Index Control\n  aiosh evidence <verify|hash|scan>   Evidence & Audit Trail Control\n  aiosh repo <health|check>  Repository Health Diagnostics\n  aiosh secrets <scan|check> [--config <path>]  Secrets & Access Hygiene Scanner\n  aiosh triage <list|show|record|resolve|ingest|check>  Regression Triage Manager\n  aiosh handoff <list|show|initiate|accept|reject|complete|cancel>  Agent Handoff Protocol Manager\n  aiosh distro <list|show|evaluate|recommend|policy|stats|check>  Linux Distro Selection & Justification Manager\n  aiosh image <list|show|plan|filter>  Linux Base Image Build & Packaging Manager\n  aiosh package <validate>  Linux Package Management & Validation Control");
+            println!("aiosh — AIOS shell CLI (Rust)\n\nUsage: aiosh <status|run|agent|audit|grant|pentest|classify|task|ci|release|backup|toolchain|doc|evidence|repo|secrets|triage|handoff|distro|image|package> ...\n\n  aiosh task <status|done|block|unblock|skip|rebuild|check>  Task ledger control\n  aiosh ci <show|failures|check|config|metrics> [--file PATH]  CI smoke reports\n  aiosh release generate  Create bootable ISO\n  aiosh backup create  Create system snapshot zip\n  aiosh toolchain check [--config <path>]  Verify host environment against ToolchainManifest\n  aiosh toolchain show [--config <path>]   Display the resolved ToolchainManifest\n  aiosh doc <show|check|search>  Documentation Index Control\n  aiosh evidence <verify|hash|scan>   Evidence & Audit Trail Control\n  aiosh repo <health|check>  Repository Health Diagnostics\n  aiosh secrets <scan|check> [--config <path>]  Secrets & Access Hygiene Scanner\n  aiosh triage <list|show|record|resolve|ingest|check>  Regression Triage Manager\n  aiosh handoff <list|show|initiate|accept|reject|complete|cancel>  Agent Handoff Protocol Manager\n  aiosh distro <list|show|evaluate|recommend|policy|stats|check>  Linux Distro Selection & Justification Manager\n  aiosh image <list|show|plan|filter>  Linux Base Image Build & Packaging Manager\n  aiosh package <list|show|search|plan|apply|validate>  Linux Package Management & Store Control");
             0
         }
         Some(other) => {
@@ -990,6 +990,28 @@ fn cmd_package(args: &[String]) -> i32 {
     let is_json = has_flag(rest, "--json");
 
     let store_path_opt = parse_flag(rest, "--store");
+    if let Some(ref p) = store_path_opt {
+        if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+            let msg = "store path cannot exceed 1024 characters and cannot contain control characters";
+            classify_and_emit(
+                &mut ctx,
+                "package",
+                sub.unwrap_or("unknown"),
+                json!({ "error": msg }),
+                "failure",
+                None,
+                Some("Invalid store path"),
+                "operator",
+                None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENT", "message": msg } }));
+            } else {
+                eprintln!("{}", msg);
+            }
+            return 2;
+        }
+    }
     let load_store = || -> Result<aiosh_core::package_service::PackageStore, String> {
         match store_path_opt {
             Some(ref p) => aiosh_core::package_service::PackageStore::load_from_path(std::path::Path::new(p)),
@@ -1002,7 +1024,22 @@ fn cmd_package(args: &[String]) -> i32 {
             let store = match load_store() {
                 Ok(s) => s,
                 Err(e) => {
-                    eprintln!("failed to load package store: {}", e);
+                    classify_and_emit(
+                        &mut ctx,
+                        "package",
+                        "list",
+                        json!({ "error": e }),
+                        "failure",
+                        None,
+                        Some("Failed to load package store"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "LOAD_STORE_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("failed to load package store: {}", e);
+                    }
                     return 1;
                 }
             };
@@ -1012,7 +1049,23 @@ fn cmd_package(args: &[String]) -> i32 {
                 Some("flatpak") => Some(aiosh_core::package::PackageFormat::Flatpak),
                 Some("tarball") => Some(aiosh_core::package::PackageFormat::Tarball),
                 Some(other) => {
-                    eprintln!("unknown format: {}", other);
+                    let msg = format!("unknown format: {}", other);
+                    classify_and_emit(
+                        &mut ctx,
+                        "package",
+                        "list",
+                        json!({ "error": msg }),
+                        "failure",
+                        None,
+                        Some("Invalid format argument"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENT", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
                     return 2;
                 }
                 None => None,
@@ -1025,13 +1078,77 @@ fn cmd_package(args: &[String]) -> i32 {
                 Some("pending_removal") => Some(aiosh_core::package::PackageState::PendingRemoval),
                 Some("broken") => Some(aiosh_core::package::PackageState::Broken),
                 Some(other) => {
-                    eprintln!("unknown state: {}", other);
+                    let msg = format!("unknown state: {}", other);
+                    classify_and_emit(
+                        &mut ctx,
+                        "package",
+                        "list",
+                        json!({ "error": msg }),
+                        "failure",
+                        None,
+                        Some("Invalid state argument"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENT", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
                     return 2;
                 }
                 None => None,
             };
             let pattern = parse_flag(rest, "--pattern");
-            let limit = parse_flag(rest, "--limit").and_then(|s| s.parse::<usize>().ok());
+            if let Some(ref p) = pattern {
+                if p.len() > 256 || p.chars().any(|c| c.is_control()) {
+                    let msg = "filter pattern cannot exceed 256 characters and cannot contain control characters";
+                    classify_and_emit(
+                        &mut ctx,
+                        "package",
+                        "list",
+                        json!({ "error": msg }),
+                        "failure",
+                        None,
+                        Some("Invalid filter pattern"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENT", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+            }
+            let limit = if let Some(s) = parse_flag(rest, "--limit") {
+                match s.parse::<usize>() {
+                    Ok(n) if n > 0 && n <= 10_000 => Some(n),
+                    _ => {
+                        let msg = "limit must be a positive integer between 1 and 10,000";
+                        classify_and_emit(
+                            &mut ctx,
+                            "package",
+                            "list",
+                            json!({ "error": msg }),
+                            "failure",
+                            None,
+                            Some("Invalid limit argument"),
+                            "operator",
+                            None,
+                        );
+                        if is_json {
+                            println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENT", "message": msg } }));
+                        } else {
+                            eprintln!("{}", msg);
+                        }
+                        return 2;
+                    }
+                }
+            } else {
+                None
+            };
 
             let query = aiosh_core::package::PackageQuery {
                 name_pattern: pattern,
@@ -1071,14 +1188,65 @@ fn cmd_package(args: &[String]) -> i32 {
             let name = match name_arg {
                 Some(n) => n,
                 None => {
-                    eprintln!("missing package name: aiosh package show <name>");
+                    let msg = "missing package name: aiosh package show <name>";
+                    classify_and_emit(
+                        &mut ctx,
+                        "package",
+                        "show",
+                        json!({ "error": msg }),
+                        "failure",
+                        None,
+                        Some("Missing package name argument"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENT", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
                     return 2;
                 }
             };
+            if name.len() > 64 || name.chars().any(|c| c.is_control()) {
+                let msg = format!("package name '{}' is invalid: exceeds 64 characters or contains control characters", name);
+                classify_and_emit(
+                    &mut ctx,
+                    "package",
+                    "show",
+                    json!({ "name": name, "error": msg }),
+                    "failure",
+                    Some(&name),
+                    Some("Invalid package name"),
+                    "operator",
+                    None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENT", "message": msg } }));
+                } else {
+                    eprintln!("{}", msg);
+                }
+                return 2;
+            }
             let store = match load_store() {
                 Ok(s) => s,
                 Err(e) => {
-                    eprintln!("failed to load package store: {}", e);
+                    classify_and_emit(
+                        &mut ctx,
+                        "package",
+                        "show",
+                        json!({ "error": e }),
+                        "failure",
+                        None,
+                        Some("Failed to load package store"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "LOAD_STORE_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("failed to load package store: {}", e);
+                    }
                     return 1;
                 }
             };
@@ -1110,7 +1278,23 @@ fn cmd_package(args: &[String]) -> i32 {
                     0
                 }
                 None => {
-                    eprintln!("package '{}' not found in store", name);
+                    let msg = format!("package '{}' not found in store", name);
+                    classify_and_emit(
+                        &mut ctx,
+                        "package",
+                        "show",
+                        json!({ "name": name, "error": "not found" }),
+                        "failure",
+                        Some(&name),
+                        Some("Package not found in store"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "PACKAGE_NOT_FOUND", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
                     2
                 }
             }
@@ -1119,25 +1303,116 @@ fn cmd_package(args: &[String]) -> i32 {
             let actions_str = match parse_flag(rest, "--actions") {
                 Some(s) => s,
                 None => {
-                    eprintln!("missing --actions <json_or_file>: aiosh package plan --actions <json_or_file> [--dry-run]");
+                    let msg = "missing --actions <json_or_file>: aiosh package plan --actions <json_or_file> [--dry-run]";
+                    classify_and_emit(
+                        &mut ctx,
+                        "package",
+                        "plan",
+                        json!({ "error": msg }),
+                        "failure",
+                        None,
+                        Some("Missing --actions argument"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENT", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
                     return 2;
                 }
             };
             let content = if std::path::Path::new(&actions_str).exists() {
-                match std::fs::read_to_string(&actions_str) {
+                let path = std::path::Path::new(&actions_str);
+                if let Ok(meta) = std::fs::metadata(path) {
+                    if meta.len() > 1024 * 1024 {
+                        let err_msg = format!("actions file '{}' exceeds 1 MiB size limit (was {} bytes)", actions_str, meta.len());
+                        classify_and_emit(
+                            &mut ctx,
+                            "package",
+                            "plan",
+                            json!({ "error": err_msg }),
+                            "failure",
+                            None,
+                            Some("Actions file exceeds size limit"),
+                            "operator",
+                            None,
+                        );
+                        if is_json {
+                            println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "PAYLOAD_TOO_LARGE", "message": err_msg } }));
+                        } else {
+                            eprintln!("{}", err_msg);
+                        }
+                        return 2;
+                    }
+                }
+                match std::fs::read_to_string(path) {
                     Ok(c) => c,
                     Err(e) => {
-                        eprintln!("failed to read actions file '{}': {}", actions_str, e);
+                        let err_msg = format!("failed to read actions file '{}': {}", actions_str, e);
+                        classify_and_emit(
+                            &mut ctx,
+                            "package",
+                            "plan",
+                            json!({ "error": err_msg }),
+                            "failure",
+                            None,
+                            Some("Failed to read actions file"),
+                            "operator",
+                            None,
+                        );
+                        if is_json {
+                            println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "FILE_READ_ERROR", "message": err_msg } }));
+                        } else {
+                            eprintln!("{}", err_msg);
+                        }
                         return 1;
                     }
                 }
             } else {
+                if actions_str.len() > 1024 * 1024 {
+                    let err_msg = "inline actions JSON payload exceeds 1 MiB size limit".to_string();
+                    classify_and_emit(
+                        &mut ctx,
+                        "package",
+                        "plan",
+                        json!({ "error": err_msg }),
+                        "failure",
+                        None,
+                        Some("Inline actions JSON exceeds size limit"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "PAYLOAD_TOO_LARGE", "message": err_msg } }));
+                    } else {
+                        eprintln!("{}", err_msg);
+                    }
+                    return 2;
+                }
                 actions_str
             };
             let actions: Vec<aiosh_core::package::PackageAction> = match serde_json::from_str(&content) {
                 Ok(a) => a,
                 Err(e) => {
-                    eprintln!("failed to parse actions JSON: {}", e);
+                    let err_msg = format!("failed to parse actions JSON: {}", e);
+                    classify_and_emit(
+                        &mut ctx,
+                        "package",
+                        "plan",
+                        json!({ "error": err_msg }),
+                        "failure",
+                        None,
+                        Some("Failed to parse actions JSON"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_JSON", "message": err_msg } }));
+                    } else {
+                        eprintln!("{}", err_msg);
+                    }
                     return 2;
                 }
             };
@@ -1145,7 +1420,22 @@ fn cmd_package(args: &[String]) -> i32 {
             let store = match load_store() {
                 Ok(s) => s,
                 Err(e) => {
-                    eprintln!("failed to load package store: {}", e);
+                    classify_and_emit(
+                        &mut ctx,
+                        "package",
+                        "plan",
+                        json!({ "error": e }),
+                        "failure",
+                        None,
+                        Some("Failed to load package store"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "LOAD_STORE_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("failed to load package store: {}", e);
+                    }
                     return 1;
                 }
             };
@@ -1187,7 +1477,11 @@ fn cmd_package(args: &[String]) -> i32 {
                         "operator",
                         None,
                     );
-                    eprintln!("plan failed: {}", e);
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "PLAN_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("plan failed: {}", e);
+                    }
                     2
                 }
             }
@@ -1239,13 +1533,40 @@ fn cmd_package(args: &[String]) -> i32 {
                     match std::fs::read_to_string(path) {
                         Ok(c) => c,
                         Err(e) => {
-                            eprintln!("failed to read spec file '{}': {}", spec_str, e);
+                            let err_msg = format!("failed to read spec file '{}': {}", spec_str, e);
+                            classify_and_emit(
+                                &mut ctx,
+                                "package",
+                                "validate",
+                                json!({ "error": err_msg }),
+                                "failure",
+                                None,
+                                Some("Failed to read spec file"),
+                                "operator",
+                                None,
+                            );
+                            if is_json {
+                                println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "FILE_READ_ERROR", "message": err_msg } }));
+                            } else {
+                                eprintln!("{}", err_msg);
+                            }
                             return 1;
                         }
                     }
                 } else {
                     if spec_str.len() > 1024 * 1024 {
                         let err_msg = "inline spec JSON payload exceeds 1 MiB size limit".to_string();
+                        classify_and_emit(
+                            &mut ctx,
+                            "package",
+                            "validate",
+                            json!({ "error": err_msg }),
+                            "failure",
+                            None,
+                            Some("Inline spec payload exceeds size limit"),
+                            "operator",
+                            None,
+                        );
                         if is_json {
                             println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "PAYLOAD_TOO_LARGE", "message": err_msg } }));
                         } else {
@@ -1259,6 +1580,17 @@ fn cmd_package(args: &[String]) -> i32 {
                     Ok(s) => s,
                     Err(e) => {
                         let err_msg = format!("failed to parse package spec JSON: {}", e);
+                        classify_and_emit(
+                            &mut ctx,
+                            "package",
+                            "validate",
+                            json!({ "error": err_msg }),
+                            "failure",
+                            None,
+                            Some("Failed to parse package spec JSON"),
+                            "operator",
+                            None,
+                        );
                         if is_json {
                             println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_JSON", "message": err_msg } }));
                         } else {
@@ -1303,8 +1635,884 @@ fn cmd_package(args: &[String]) -> i32 {
                 2
             }
         }
+        Some("search") => {
+            let pattern = match rest.first() {
+                Some(s) if !s.starts_with("--") => Some(s.to_string()),
+                _ => parse_flag(rest, "--pattern"),
+            };
+            let pattern_str = match pattern {
+                Some(p) => p,
+                None => {
+                    let msg = "missing search pattern: aiosh package search <pattern>";
+                    classify_and_emit(
+                        &mut ctx,
+                        "package",
+                        "search",
+                        json!({ "error": msg }),
+                        "failure",
+                        None,
+                        Some("Missing pattern argument"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENT", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+            };
+            if pattern_str.len() > 256 || pattern_str.chars().any(|c| c.is_control()) {
+                let msg = "search pattern cannot exceed 256 characters and cannot contain control characters";
+                classify_and_emit(
+                    &mut ctx,
+                    "package",
+                    "search",
+                    json!({ "error": msg }),
+                    "failure",
+                    None,
+                    Some("Invalid search pattern"),
+                    "operator",
+                    None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENT", "message": msg } }));
+                } else {
+                    eprintln!("{}", msg);
+                }
+                return 2;
+            }
+            let store = match load_store() {
+                Ok(s) => s,
+                Err(e) => {
+                    classify_and_emit(
+                        &mut ctx,
+                        "package",
+                        "search",
+                        json!({ "error": e }),
+                        "failure",
+                        None,
+                        Some("Failed to load package store"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "LOAD_STORE_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("failed to load package store: {}", e);
+                    }
+                    return 1;
+                }
+            };
+            let limit = if let Some(s) = parse_flag(rest, "--limit") {
+                match s.parse::<usize>() {
+                    Ok(n) if n > 0 && n <= 10_000 => Some(n),
+                    _ => {
+                        let msg = "limit must be a positive integer between 1 and 10,000";
+                        classify_and_emit(
+                            &mut ctx,
+                            "package",
+                            "search",
+                            json!({ "error": msg }),
+                            "failure",
+                            None,
+                            Some("Invalid limit argument"),
+                            "operator",
+                            None,
+                        );
+                        if is_json {
+                            println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENT", "message": msg } }));
+                        } else {
+                            eprintln!("{}", msg);
+                        }
+                        return 2;
+                    }
+                }
+            } else {
+                None
+            };
+            let query = aiosh_core::package::PackageQuery {
+                name_pattern: Some(pattern_str.clone()),
+                format: None,
+                state: None,
+                limit,
+            };
+            let packages = store.query(&query);
+            classify_and_emit(
+                &mut ctx,
+                "package",
+                "search",
+                json!({ "pattern": pattern_str, "matches": packages.len() }),
+                "success",
+                None,
+                Some("Searched package store"),
+                "operator",
+                None,
+            );
+            if is_json {
+                println!("{}", serde_json::to_string_pretty(&packages).unwrap_or_default());
+            } else {
+                println!("AIOS Package Search results for '{}' ({} matches):", pattern_str, packages.len());
+                for pkg in packages {
+                    println!("  {:<16} {:<16} {:<8} {:<10} {:>10} bytes",
+                        pkg.name, pkg.version, format!("{:?}", pkg.format).to_lowercase(),
+                        format!("{:?}", pkg.state).to_lowercase(), pkg.installed_size_bytes);
+                }
+            }
+            0
+        }
+        Some("apply") => {
+            let (input_str, is_plan_file) = if let Some(s) = parse_flag(rest, "--plan") {
+                (s, true)
+            } else if let Some(s) = parse_flag(rest, "--actions") {
+                (s, false)
+            } else {
+                let msg = "missing --actions or --plan: aiosh package apply (--actions <json_or_file> | --plan <json_or_file>) [--dry-run] [--store <path>] [--json]";
+                classify_and_emit(
+                    &mut ctx,
+                    "package",
+                    "apply",
+                    json!({ "error": msg }),
+                    "failure",
+                    None,
+                    Some("Missing --actions or --plan argument"),
+                    "operator",
+                    None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENT", "message": msg } }));
+                } else {
+                    eprintln!("{}", msg);
+                }
+                return 2;
+            };
+
+            let content = if std::path::Path::new(&input_str).exists() {
+                let path = std::path::Path::new(&input_str);
+                if let Ok(meta) = std::fs::metadata(path) {
+                    if meta.len() > 1024 * 1024 {
+                        let err_msg = format!("payload file '{}' exceeds 1 MiB size limit (was {} bytes)", input_str, meta.len());
+                        classify_and_emit(
+                            &mut ctx,
+                            "package",
+                            "apply",
+                            json!({ "error": err_msg }),
+                            "failure",
+                            None,
+                            Some("Payload file exceeds size limit"),
+                            "operator",
+                            None,
+                        );
+                        if is_json {
+                            println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "PAYLOAD_TOO_LARGE", "message": err_msg } }));
+                        } else {
+                            eprintln!("{}", err_msg);
+                        }
+                        return 2;
+                    }
+                }
+                match std::fs::read_to_string(path) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        let err_msg = format!("failed to read payload file '{}': {}", input_str, e);
+                        classify_and_emit(
+                            &mut ctx,
+                            "package",
+                            "apply",
+                            json!({ "error": err_msg }),
+                            "failure",
+                            None,
+                            Some("Failed to read payload file"),
+                            "operator",
+                            None,
+                        );
+                        if is_json {
+                            println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "FILE_READ_ERROR", "message": err_msg } }));
+                        } else {
+                            eprintln!("{}", err_msg);
+                        }
+                        return 1;
+                    }
+                }
+            } else {
+                if input_str.len() > 1024 * 1024 {
+                    let err_msg = "inline JSON payload exceeds 1 MiB size limit".to_string();
+                    classify_and_emit(
+                        &mut ctx,
+                        "package",
+                        "apply",
+                        json!({ "error": err_msg }),
+                        "failure",
+                        None,
+                        Some("Inline JSON exceeds size limit"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "PAYLOAD_TOO_LARGE", "message": err_msg } }));
+                    } else {
+                        eprintln!("{}", err_msg);
+                    }
+                    return 2;
+                }
+                input_str
+            };
+
+            let dry_run = has_flag(rest, "--dry-run");
+            let mut store = match load_store() {
+                Ok(s) => s,
+                Err(e) => {
+                    classify_and_emit(
+                        &mut ctx,
+                        "package",
+                        "apply",
+                        json!({ "error": e }),
+                        "failure",
+                        None,
+                        Some("Failed to load package store"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "LOAD_STORE_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("failed to load package store: {}", e);
+                    }
+                    return 1;
+                }
+            };
+
+            let transaction: aiosh_core::package::PackageTransaction = if is_plan_file {
+                match serde_json::from_str::<aiosh_core::package::PackageTransaction>(&content) {
+                    Ok(mut tx) => {
+                        if dry_run {
+                            tx.dry_run = true;
+                        }
+                        tx
+                    }
+                    Err(e) => {
+                        let err_msg = format!("failed to parse plan JSON: {}", e);
+                        classify_and_emit(
+                            &mut ctx,
+                            "package",
+                            "apply",
+                            json!({ "error": err_msg }),
+                            "failure",
+                            None,
+                            Some("Failed to parse plan JSON"),
+                            "operator",
+                            None,
+                        );
+                        if is_json {
+                            println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_JSON", "message": err_msg } }));
+                        } else {
+                            eprintln!("{}", err_msg);
+                        }
+                        return 2;
+                    }
+                }
+            } else {
+                let actions: Vec<aiosh_core::package::PackageAction> = match serde_json::from_str(&content) {
+                    Ok(a) => a,
+                    Err(e) => {
+                        let err_msg = format!("failed to parse actions JSON: {}", e);
+                        classify_and_emit(
+                            &mut ctx,
+                            "package",
+                            "apply",
+                            json!({ "error": err_msg }),
+                            "failure",
+                            None,
+                            Some("Failed to parse actions JSON"),
+                            "operator",
+                            None,
+                        );
+                        if is_json {
+                            println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_JSON", "message": err_msg } }));
+                        } else {
+                            eprintln!("{}", err_msg);
+                        }
+                        return 2;
+                    }
+                };
+                match store.plan_transaction(actions, dry_run) {
+                    Ok(tx) => tx,
+                    Err(e) => {
+                        classify_and_emit(
+                            &mut ctx,
+                            "package",
+                            "apply",
+                            json!({ "error": e }),
+                            "failure",
+                            None,
+                            Some("Failed to plan package transaction"),
+                            "operator",
+                            None,
+                        );
+                        if is_json {
+                            println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "PLAN_FAILED", "message": e } }));
+                        } else {
+                            eprintln!("plan failed: {}", e);
+                        }
+                        return 2;
+                    }
+                }
+            };
+
+            let report = match store.execute_transaction(&transaction) {
+                Ok(rep) => rep,
+                Err(e) => {
+                    classify_and_emit(
+                        &mut ctx,
+                        "package",
+                        "apply",
+                        json!({ "error": e }),
+                        "failure",
+                        Some(&transaction.id),
+                        Some("Failed to execute package transaction"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "EXECUTION_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("execution failed: {}", e);
+                    }
+                    return 2;
+                }
+            };
+
+            if !transaction.dry_run {
+                if let Some(ref store_path) = store_path_opt {
+                    if let Err(e) = store.save_to_path(std::path::Path::new(store_path)) {
+                        let err_msg = format!("failed to persist store to '{}': {}", store_path, e);
+                        classify_and_emit(
+                            &mut ctx,
+                            "package",
+                            "apply",
+                            json!({ "error": err_msg }),
+                            "failure",
+                            Some(&transaction.id),
+                            Some("Failed to persist package store"),
+                            "operator",
+                            None,
+                        );
+                        if is_json {
+                            println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "PERSISTENCE_FAILED", "message": err_msg } }));
+                        } else {
+                            eprintln!("{}", err_msg);
+                        }
+                        return 1;
+                    }
+                }
+            }
+
+            classify_and_emit(
+                &mut ctx,
+                "package",
+                "apply",
+                json!({
+                    "transaction_id": report.transaction_id,
+                    "installed": report.packages_installed.len(),
+                    "removed": report.packages_removed.len(),
+                    "upgraded": report.packages_upgraded.len(),
+                    "delta_bytes": report.total_size_delta_bytes,
+                    "dry_run": transaction.dry_run,
+                }),
+                "success",
+                Some(&report.transaction_id),
+                Some("Applied package transaction"),
+                "operator",
+                None,
+            );
+
+            if is_json {
+                println!("{}", serde_json::to_string_pretty(&report).unwrap_or_default());
+            } else {
+                println!("Applied Package Transaction: {}", report.transaction_id);
+                println!("  Dry Run:   {}", transaction.dry_run);
+                println!("  Installed: {}", if report.packages_installed.is_empty() { "none".into() } else { report.packages_installed.join(", ") });
+                println!("  Removed:   {}", if report.packages_removed.is_empty() { "none".into() } else { report.packages_removed.join(", ") });
+                println!("  Upgraded:  {}", if report.packages_upgraded.is_empty() { "none".into() } else { report.packages_upgraded.join(", ") });
+                println!("  Delta:     {} bytes", report.total_size_delta_bytes);
+            }
+            0
+        }
+        Some("config") => {
+            let config_path_opt = parse_flag(rest, "--config");
+            if let Some(ref p) = config_path_opt {
+                if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+                    let msg = "config path cannot exceed 1024 characters and cannot contain control characters";
+                    classify_and_emit(
+                        &mut ctx,
+                        "package",
+                        "config",
+                        json!({ "error": msg }),
+                        "failure",
+                        None,
+                        Some("Invalid config path"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENT", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+            }
+            let resolved = match aiosh_core::package_config::PackageConfig::resolve(config_path_opt.as_deref().map(std::path::Path::new)) {
+                Ok(c) => c,
+                Err(e) => {
+                    classify_and_emit(
+                        &mut ctx,
+                        "package",
+                        "config",
+                        json!({ "error": e }),
+                        "failure",
+                        None,
+                        Some("Failed to resolve package config"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "CONFIG_RESOLUTION_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("Failed to resolve package config: {}", e);
+                    }
+                    return 1;
+                }
+            };
+            classify_and_emit(
+                &mut ctx,
+                "package",
+                "config",
+                json!({ "store_path": resolved.store_path, "default_format": resolved.default_format }),
+                "success",
+                None,
+                Some("Resolved package configuration"),
+                "operator",
+                None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 0, "data": resolved, "error": serde_json::Value::Null }));
+            } else {
+                println!("AIOS Package Management Configuration:");
+                println!("  Store Path:           {}", resolved.store_path.display());
+                println!("  Default Format:       {:?}", resolved.default_format);
+                println!("  Max Store Size:       {} bytes", resolved.max_store_size_bytes);
+                println!("  Max Entity Count:     {}", resolved.max_entity_count);
+                println!("  Auto Persist:         {}", resolved.auto_persist);
+                println!("  Allowed Repositories: {}", resolved.allowed_repositories.join(", "));
+            }
+            0
+        }
+        Some("policy") => {
+            let policy_path_opt = parse_flag(rest, "--config");
+            if let Some(ref p) = policy_path_opt {
+                if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+                    let msg = "policy path cannot exceed 1024 characters and cannot contain control characters";
+                    classify_and_emit(
+                        &mut ctx,
+                        "package",
+                        "policy",
+                        json!({ "error": msg }),
+                        "failure",
+                        None,
+                        Some("Invalid policy path"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENT", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+            }
+            let policy = match aiosh_core::package_policy::PackageSecurityPolicy::resolve(policy_path_opt.as_deref()) {
+                Ok(p) => p,
+                Err(e) => {
+                    classify_and_emit(
+                        &mut ctx,
+                        "package",
+                        "policy",
+                        json!({ "error": e }),
+                        "failure",
+                        None,
+                        Some("Failed to resolve package security policy"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "POLICY_RESOLUTION_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("Failed to resolve package security policy: {}", e);
+                    }
+                    return 1;
+                }
+            };
+
+            let pkg_name_opt = parse_flag(rest, "--package");
+            if let Some(ref name) = pkg_name_opt {
+                let store = match load_store() {
+                    Ok(s) => s,
+                    Err(e) => {
+                        if is_json {
+                            println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "LOAD_STORE_FAILED", "message": e } }));
+                        } else {
+                            eprintln!("failed to load store: {}", e);
+                        }
+                        return 1;
+                    }
+                };
+                let spec = match store.get_package(name) {
+                    Some(s) => s,
+                    None => {
+                        let msg = format!("package '{}' not found in store", name);
+                        if is_json {
+                            println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "PACKAGE_NOT_FOUND", "message": msg } }));
+                        } else {
+                            eprintln!("{}", msg);
+                        }
+                        return 2;
+                    }
+                };
+                let verdict = policy.evaluate_spec(spec);
+                classify_and_emit(
+                    &mut ctx,
+                    "package",
+                    "policy",
+                    json!({ "package": name, "allowed": verdict.allowed, "violations": verdict.violations.len() }),
+                    if verdict.allowed { "success" } else { "failure" },
+                    Some(name),
+                    Some("Evaluated package security policy"),
+                    "operator",
+                    None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 0, "data": verdict, "error": serde_json::Value::Null }));
+                } else {
+                    println!("Package Security Policy Verdict for '{}':", name);
+                    println!("  Allowed:    {}", verdict.allowed);
+                    println!("  Mode:       {:?}", verdict.mode);
+                    println!("  Violations: {}", verdict.violations.len());
+                    for v in &verdict.violations {
+                        println!("    [{}] {}: {}", if v.fatal { "FATAL" } else { "WARN" }, v.rule_id, v.description);
+                    }
+                }
+                if verdict.allowed { 0 } else { 1 }
+            } else {
+                classify_and_emit(
+                    &mut ctx,
+                    "package",
+                    "policy",
+                    json!({ "mode": format!("{:?}", policy.mode) }),
+                    "success",
+                    None,
+                    Some("Inspected package security policy"),
+                    "operator",
+                    None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 0, "data": policy, "error": serde_json::Value::Null }));
+                } else {
+                    println!("AIOS Package Security Policy:");
+                    println!("  Mode:                         {:?}", policy.mode);
+                    println!("  Require Checksum:             {}", policy.require_checksum);
+                    println!("  Require HTTPS/File Mirror:    {}", policy.require_https_or_file_repo);
+                    println!("  Max Package Size:             {} bytes", policy.max_package_size_bytes);
+                    println!("  Max Dependencies Per Package: {}", policy.max_dependencies_per_package);
+                    println!("  Prohibited Packages:          {}", policy.prohibited_packages.join(", "));
+                    println!("  Allowed Architectures:        {}", policy.allowed_architectures.join(", "));
+                    println!("  Allowed Repositories:         {}", policy.allowed_repositories.join(", "));
+                }
+                0
+            }
+        }
+        Some("stats") => {
+            let store_path_opt = parse_flag(rest, "--store");
+            if let Some(ref p) = store_path_opt {
+                if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+                    let msg = "store path cannot exceed 1024 characters and cannot contain control characters";
+                    classify_and_emit(
+                        &mut ctx,
+                        "package",
+                        "stats",
+                        json!({ "error": msg }),
+                        "failure",
+                        Some("INVALID_ARGUMENT"),
+                        Some("Invalid store path"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENT", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+            }
+            let config_path_opt = parse_flag(rest, "--config");
+            if let Some(ref p) = config_path_opt {
+                if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+                    let msg = "config path cannot exceed 1024 characters and cannot contain control characters";
+                    classify_and_emit(
+                        &mut ctx,
+                        "package",
+                        "stats",
+                        json!({ "error": msg }),
+                        "failure",
+                        Some("INVALID_ARGUMENT"),
+                        Some("Invalid config path"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENT", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+            }
+            let store = match load_store() {
+                Ok(s) => s,
+                Err(e) => {
+                    classify_and_emit(
+                        &mut ctx,
+                        "package",
+                        "stats",
+                        json!({ "error": e }),
+                        "failure",
+                        Some("LOAD_STORE_FAILED"),
+                        Some("Failed to load store"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "LOAD_STORE_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("failed to load store: {}", e);
+                    }
+                    return 1;
+                }
+            };
+            let policy = if let Some(ref p) = config_path_opt {
+                match aiosh_core::package_policy::PackageSecurityPolicy::from_file(std::path::Path::new(p)) {
+                    Ok(pol) => Some(pol),
+                    Err(e) => {
+                        classify_and_emit(
+                            &mut ctx,
+                            "package",
+                            "stats",
+                            json!({ "error": e }),
+                            "failure",
+                            Some("LOAD_POLICY_FAILED"),
+                            Some("Failed to load policy"),
+                            "operator",
+                            None,
+                        );
+                        if is_json {
+                            println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "LOAD_POLICY_FAILED", "message": e } }));
+                        } else {
+                            eprintln!("failed to load policy: {}", e);
+                        }
+                        return 1;
+                    }
+                }
+            } else {
+                aiosh_core::package_policy::PackageSecurityPolicy::resolve(None).ok()
+            };
+            let report = aiosh_core::package_observability::PackageObservabilityReport::generate(&store, policy.as_ref());
+            classify_and_emit(
+                &mut ctx,
+                "package",
+                "stats",
+                json!({ "total_packages": report.total_packages, "installed_size_bytes": report.total_installed_size_bytes }),
+                "success",
+                None,
+                Some("Generated package observability telemetry report"),
+                "operator",
+                None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 0, "data": report, "error": serde_json::Value::Null }));
+            } else {
+                println!("AIOS Package Management Observability & Telemetry Report:");
+                println!("  Total Packages:               {}", report.total_packages);
+                println!("  Total Installed Footprint:    {} bytes", report.total_installed_size_bytes);
+                println!("  Average Package Size:         {} bytes", report.average_package_size_bytes);
+                println!("  Policy Compliant Packages:    {}/{}", report.policy_compliant_count, report.total_packages);
+                println!("  Policy Violations Detected:   {}", report.policy_violations_count);
+                if !report.prohibited_packages_found.is_empty() {
+                    println!("  Prohibited Packages Found:    {}", report.prohibited_packages_found.join(", "));
+                }
+                println!("  State Breakdown:");
+                for (k, v) in &report.state_breakdown {
+                    println!("    {:<16} {}", k, v);
+                }
+                println!("  Format Breakdown:");
+                for (k, v) in &report.format_breakdown {
+                    println!("    {:<16} {}", k, v);
+                }
+                println!("  Architecture Breakdown:");
+                for (k, v) in &report.architecture_breakdown {
+                    println!("    {:<16} {}", k, v);
+                }
+                println!("  Dependency Distribution:");
+                for (k, v) in &report.dependency_distribution {
+                    println!("    {:<16} {}", k, v);
+                }
+            }
+            0
+        }
+        Some("check") => {
+            let is_fix = has_flag(rest, "--fix");
+            let target_path = if let Some(ref p) = store_path_opt {
+                std::path::PathBuf::from(p)
+            } else {
+                std::path::PathBuf::from("/var/lib/aios/packages.json")
+            };
+
+            let (_store, report, recovered, backup_opt) = if is_fix {
+                match aiosh_core::package_recovery::load_or_recover(&target_path) {
+                    Ok(res) => res,
+                    Err(e) => {
+                        let msg = format!("recovery failed: {}", e);
+                        classify_and_emit(
+                            &mut ctx,
+                            "package",
+                            "check",
+                            json!({ "error": msg }),
+                            "failure",
+                            Some("RECOVERY_FAILED"),
+                            Some("Failed to recover package store"),
+                            "operator",
+                            None,
+                        );
+                        if is_json {
+                            println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "RECOVERY_FAILED", "message": msg } }));
+                        } else {
+                            eprintln!("{}", msg);
+                        }
+                        return 1;
+                    }
+                }
+            } else if target_path.exists() {
+                match aiosh_core::package_service::PackageStore::load_from_path(&target_path) {
+                    Ok(s) => {
+                        let rep = aiosh_core::package_recovery::validate_package_store(&s, &target_path);
+                        (s, rep, false, None)
+                    }
+                    Err(e) => {
+                        let rep = aiosh_core::package_recovery::PackageValidationReport {
+                            store_path: target_path.to_string_lossy().to_string(),
+                            total_packages: 0,
+                            valid_packages: 0,
+                            invalid_packages: 0,
+                            errors: vec![format!("failed to load package store: {}", e)],
+                            healthy: false,
+                            evaluated_at: chrono::Utc::now().to_rfc3339(),
+                        };
+                        classify_and_emit(
+                            &mut ctx,
+                            "package",
+                            "check",
+                            json!({ "healthy": false, "errors": rep.errors }),
+                            "failure",
+                            Some("LOAD_STORE_FAILED"),
+                            Some("Package store check failed"),
+                            "operator",
+                            None,
+                        );
+                        if is_json {
+                            println!("{}", json!({
+                                "code": 1,
+                                "data": serde_json::Value::Null,
+                                "error": {
+                                    "code": "LOAD_STORE_FAILED",
+                                    "message": format!("Package store at {} is corrupted or unreadable. Run with --fix to recover.", target_path.display()),
+                                    "report": rep
+                                }
+                            }));
+                        } else {
+                            eprintln!("Package Store Validation: UNHEALTHY");
+                            for err in &rep.errors {
+                                eprintln!("  [-] {}", err);
+                            }
+                            eprintln!("Hint: Run with --fix to automatically recover.");
+                        }
+                        return 1;
+                    }
+                }
+            } else {
+                let s = aiosh_core::package_service::PackageStore::new();
+                let rep = aiosh_core::package_recovery::validate_package_store(&s, &target_path);
+                (s, rep, false, None)
+            };
+
+            let code = if report.healthy { 0 } else { 1 };
+            classify_and_emit(
+                &mut ctx,
+                "package",
+                "check",
+                json!({
+                    "healthy": report.healthy,
+                    "recovered": recovered,
+                    "total_packages": report.total_packages,
+                    "valid_packages": report.valid_packages,
+                    "invalid_packages": report.invalid_packages,
+                    "backup_path": backup_opt.as_ref().map(|p| p.to_string_lossy().to_string())
+                }),
+                if report.healthy { "success" } else { "failure" },
+                if report.healthy { None } else { Some("UNHEALTHY_STORE") },
+                Some("Executed package store integrity check"),
+                "operator",
+                None,
+            );
+
+            if is_json {
+                println!("{}", json!({
+                    "code": code,
+                    "data": {
+                        "report": report,
+                        "recovered": recovered,
+                        "backup_path": backup_opt.map(|p| p.to_string_lossy().to_string())
+                    },
+                    "error": if report.healthy { serde_json::Value::Null } else { json!({ "code": "UNHEALTHY_STORE", "message": "Package store validation detected errors", "errors": report.errors }) }
+                }));
+            } else {
+                if report.healthy {
+                    println!("Package Store Validation: HEALTHY");
+                } else {
+                    println!("Package Store Validation: UNHEALTHY");
+                }
+                println!("  Store Path:        {}", report.store_path);
+                println!("  Total Packages:    {}", report.total_packages);
+                println!("  Valid Packages:    {}", report.valid_packages);
+                println!("  Invalid Packages:  {}", report.invalid_packages);
+                if recovered {
+                    println!("  Recovered:         true");
+                    if let Some(ref bp) = backup_opt {
+                        println!("  Backup Path:       {}", bp.display());
+                    }
+                }
+                if !report.errors.is_empty() {
+                    println!("  Errors:");
+                    for err in &report.errors {
+                        println!("    [-] {}", err);
+                    }
+                }
+            }
+            code
+        }
         Some("--help") | Some("-h") | None => {
-            println!("aiosh package — Linux Package Management Data Model, Core Service & Store Control\n\nUsage:\n  aiosh package list [--format <deb|apk|flatpak|tarball>] [--state <state>] [--pattern <pattern>] [--limit <n>] [--store <path>] [--json]\n  aiosh package show <name> [--store <path>] [--json]\n  aiosh package plan --actions <json_or_file> [--dry-run] [--store <path>] [--json]\n  aiosh package validate --name <name> [--json]\n  aiosh package validate --spec <json_or_file> [--json]");
+            println!("aiosh package — Linux Package Management Data Model, Core Service & Store Control\n\nUsage:\n  aiosh package list [--format <deb|apk|flatpak|tarball>] [--state <state>] [--pattern <pattern>] [--limit <n>] [--store <path>] [--json]\n  aiosh package show <name> [--store <path>] [--json]\n  aiosh package search <pattern> [--limit <n>] [--store <path>] [--json]\n  aiosh package plan --actions <json_or_file> [--dry-run] [--store <path>] [--json]\n  aiosh package apply (--actions <json_or_file> | --plan <json_or_file>) [--dry-run] [--yes] [--store <path>] [--json]\n  aiosh package validate --name <name> [--json]\n  aiosh package validate --spec <json_or_file> [--json]\n  aiosh package config [--config <path>] [--json]\n  aiosh package policy [--package <name>] [--config <path>] [--json]\n  aiosh package stats [--store <path>] [--config <path>] [--json]\n  aiosh package check [--store <path>] [--fix] [--json]");
             0
         }
         Some(other) => {
@@ -4505,5 +5713,157 @@ mod task_cli_tests {
         let bad_actions_json = r#"[{"action":"install","package_name":"curl","target_version":null}]"#;
         let code_plan_bad = cmd_package(&["plan".to_string(), "--actions".to_string(), bad_actions_json.to_string()]);
         assert_eq!(code_plan_bad, 2);
+
+        // search
+        let code_search = cmd_package(&["search".to_string(), "curl".to_string()]);
+        assert_eq!(code_search, 0);
+
+        let code_search_json = cmd_package(&["search".to_string(), "lib".to_string(), "--json".to_string()]);
+        assert_eq!(code_search_json, 0);
+
+        let code_search_missing = cmd_package(&["search".to_string()]);
+        assert_eq!(code_search_missing, 2);
+
+        // apply missing arguments
+        let code_apply_missing = cmd_package(&["apply".to_string()]);
+        assert_eq!(code_apply_missing, 2);
+
+        // apply dry run via actions
+        let code_apply_dry = cmd_package(&["apply".to_string(), "--actions".to_string(), actions_json.to_string(), "--dry-run".to_string(), "--json".to_string()]);
+        assert_eq!(code_apply_dry, 0);
+
+        // apply dry run via plan
+        let plan = aiosh_core::package_service::PackageStore::new().plan_transaction(
+            vec![
+                aiosh_core::package::PackageAction {
+                    action: aiosh_core::package::PackageActionType::Install,
+                    package_name: "libssl3".into(),
+                    target_version: None,
+                },
+                aiosh_core::package::PackageAction {
+                    action: aiosh_core::package::PackageActionType::Install,
+                    package_name: "curl".into(),
+                    target_version: None,
+                },
+            ],
+            true,
+        ).unwrap();
+        let plan_json = serde_json::to_string(&plan).unwrap();
+        let code_apply_plan = cmd_package(&["apply".to_string(), "--plan".to_string(), plan_json, "--dry-run".to_string()]);
+        assert_eq!(code_apply_plan, 0);
+
+        // apply with store persistence
+        let store_file = std::env::temp_dir().join(format!("aios_package_apply_test_{}.json", std::process::id()));
+        let _ = std::fs::remove_file(&store_file);
+        let initial_store = aiosh_core::package_service::PackageStore::new();
+        initial_store.save_to_path(&store_file).unwrap();
+        let store_file_str = store_file.to_str().unwrap().to_string();
+
+        let code_apply_real = cmd_package(&[
+            "apply".to_string(),
+            "--actions".to_string(),
+            actions_json.to_string(),
+            "--store".to_string(),
+            store_file_str.clone(),
+            "--json".to_string(),
+        ]);
+        assert_eq!(code_apply_real, 0);
+
+        // verify store was updated on disk
+        let reloaded = aiosh_core::package_service::PackageStore::load_from_path(&store_file).unwrap();
+        assert_eq!(reloaded.get_package("curl").unwrap().state, aiosh_core::package::PackageState::Installed);
+        let _ = std::fs::remove_file(&store_file);
+
+        // edge cases: invalid format and state
+        let code_list_bad_format = cmd_package(&["list".to_string(), "--format".to_string(), "invalid_fmt".to_string()]);
+        assert_eq!(code_list_bad_format, 2);
+
+        let code_list_bad_state = cmd_package(&["list".to_string(), "--state".to_string(), "invalid_state".to_string()]);
+        assert_eq!(code_list_bad_state, 2);
+
+        // edge case: apply with invalid json
+        let code_apply_bad_json = cmd_package(&["apply".to_string(), "--actions".to_string(), "{bad_json}".to_string()]);
+        assert_eq!(code_apply_bad_json, 2);
+
+        // edge case: apply with dependency closure error
+        let code_apply_dep_error = cmd_package(&["apply".to_string(), "--actions".to_string(), bad_actions_json.to_string()]);
+        assert_eq!(code_apply_dep_error, 2);
+
+        // hardening: bad limits
+        let code_list_bad_limit = cmd_package(&["list".to_string(), "--limit".to_string(), "0".to_string()]);
+        assert_eq!(code_list_bad_limit, 2);
+
+        let code_search_bad_limit = cmd_package(&["search".to_string(), "curl".to_string(), "--limit".to_string(), "abc".to_string()]);
+        assert_eq!(code_search_bad_limit, 2);
+
+        // hardening: control characters in pattern and names
+        let code_search_ctrl = cmd_package(&["search".to_string(), "bad\0pattern".to_string()]);
+        assert_eq!(code_search_ctrl, 2);
+
+        let code_show_ctrl = cmd_package(&["show".to_string(), "bad\nname".to_string()]);
+        assert_eq!(code_show_ctrl, 2);
+
+        // hardening: invalid store path with control characters
+        let code_store_ctrl = cmd_package(&["list".to_string(), "--store".to_string(), "bad\0store.json".to_string()]);
+        assert_eq!(code_store_ctrl, 2);
+
+        // policy subcommand tests
+        let code_policy_default = cmd_package(&["policy".to_string()]);
+        assert_eq!(code_policy_default, 0);
+
+        let code_policy_json = cmd_package(&["policy".to_string(), "--json".to_string()]);
+        assert_eq!(code_policy_json, 0);
+
+        let code_policy_pkg_valid = cmd_package(&["policy".to_string(), "--package".to_string(), "curl".to_string()]);
+        assert_eq!(code_policy_pkg_valid, 0);
+
+        let code_policy_pkg_invalid = cmd_package(&["policy".to_string(), "--package".to_string(), "telnet".to_string()]);
+        assert_eq!(code_policy_pkg_invalid, 2);
+
+        let code_policy_pkg_not_found = cmd_package(&["policy".to_string(), "--package".to_string(), "nonexistent_pkg".to_string()]);
+        assert_eq!(code_policy_pkg_not_found, 2);
+
+        // stats subcommand tests
+        let code_stats_default = cmd_package(&["stats".to_string()]);
+        assert_eq!(code_stats_default, 0);
+
+        let code_stats_json = cmd_package(&["stats".to_string(), "--json".to_string()]);
+        assert_eq!(code_stats_json, 0);
+
+        let code_stats_bad_path = cmd_package(&["stats".to_string(), "--store".to_string(), "bad\0store".to_string()]);
+        assert_eq!(code_stats_bad_path, 2);
+
+        let code_stats_bad_config = cmd_package(&["stats".to_string(), "--config".to_string(), "bad\0config".to_string()]);
+        assert_eq!(code_stats_bad_config, 2);
+
+        let code_stats_missing_store = cmd_package(&["stats".to_string(), "--store".to_string(), "nonexistent_store_9999.json".to_string()]);
+        assert_eq!(code_stats_missing_store, 1);
+
+        let code_stats_missing_config = cmd_package(&["stats".to_string(), "--config".to_string(), "nonexistent_config_9999.json".to_string()]);
+        assert_eq!(code_stats_missing_config, 1);
+
+        // check subcommand tests
+        let code_check_default = cmd_package(&["check".to_string()]);
+        assert_eq!(code_check_default, 0);
+
+        let code_check_json = cmd_package(&["check".to_string(), "--json".to_string()]);
+        assert_eq!(code_check_json, 0);
+
+        let corrupt_store = std::env::temp_dir().join(format!("corrupt_packages_{}.json", std::process::id()));
+        let _ = std::fs::remove_file(&corrupt_store);
+        std::fs::write(&corrupt_store, b"CORRUPTED").unwrap();
+        let corrupt_store_str = corrupt_store.to_str().unwrap().to_string();
+
+        // without --fix, corrupted store returns 1
+        let code_check_corrupt = cmd_package(&["check".to_string(), "--store".to_string(), corrupt_store_str.clone(), "--json".to_string()]);
+        assert_eq!(code_check_corrupt, 1);
+
+        // with --fix, recovers and returns 0
+        let code_check_fix = cmd_package(&["check".to_string(), "--store".to_string(), corrupt_store_str.clone(), "--fix".to_string(), "--json".to_string()]);
+        assert_eq!(code_check_fix, 0);
+
+        // bad store path with control char returns 2
+        let code_check_bad_path = cmd_package(&["check".to_string(), "--store".to_string(), "bad\0store".to_string()]);
+        assert_eq!(code_check_bad_path, 2);
     }
 }

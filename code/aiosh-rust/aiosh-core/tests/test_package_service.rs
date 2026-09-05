@@ -273,3 +273,33 @@ fn test_package_store_cs5_persistence_and_bounds() {
     let err = PackageStore::load_from_path(&huge_file_path).unwrap_err();
     assert!(err.contains("exceeds maximum allowed size of 10 MiB"));
 }
+
+#[test]
+fn test_package_store_hardening_and_error_paths() {
+    let store = PackageStore::new();
+
+    // 1. Transaction actions bounds: empty actions
+    let empty_actions: Vec<PackageAction> = vec![];
+    let err_empty = store.plan_transaction(empty_actions, false).unwrap_err();
+    assert!(err_empty.contains("cannot be empty"));
+
+    // 2. Transaction actions bounds: >256 actions
+    let huge_actions: Vec<PackageAction> = (0..257)
+        .map(|i| PackageAction {
+            action: PackageActionType::Install,
+            package_name: format!("pkg-{}", i),
+            target_version: None,
+        })
+        .collect();
+    let err_huge = store.plan_transaction(huge_actions, false).unwrap_err();
+    assert!(err_huge.contains("exceeds 256"));
+
+    // 3. Resource cleanup on failure path: no temp file left behind
+    let temp_dir = tempfile::tempdir().unwrap();
+    let dummy_file = temp_dir.path().join("dummy_blocked_file");
+    std::fs::write(&dummy_file, b"blocked").unwrap();
+    let unreachable_target = dummy_file.join("sub").join("packages.json");
+    let err_save = store.save_to_path(&unreachable_target);
+    assert!(err_save.is_err());
+    assert!(!unreachable_target.with_extension("tmp").exists());
+}

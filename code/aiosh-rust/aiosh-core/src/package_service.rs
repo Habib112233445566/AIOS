@@ -474,8 +474,10 @@ impl PackageStore {
             let _ = std::fs::create_dir_all(parent);
         }
         let tmp_path = path.with_extension("tmp");
-        std::fs::write(&tmp_path, content.as_bytes())
-            .map_err(|e| format!("failed to write temp package store: {}", e))?;
+        if let Err(e) = std::fs::write(&tmp_path, content.as_bytes()) {
+            let _ = std::fs::remove_file(&tmp_path);
+            return Err(format!("failed to write temp package store: {}", e));
+        }
 
         #[cfg(unix)]
         {
@@ -483,8 +485,10 @@ impl PackageStore {
             let _ = std::fs::set_permissions(&tmp_path, std::fs::Permissions::from_mode(0o644));
         }
 
-        std::fs::rename(&tmp_path, path)
-            .map_err(|e| format!("failed to persist package store to '{}': {}", path.display(), e))?;
+        if let Err(e) = std::fs::rename(&tmp_path, path) {
+            let _ = std::fs::remove_file(&tmp_path);
+            return Err(format!("failed to persist package store to '{}': {}", path.display(), e));
+        }
 
         #[cfg(unix)]
         {
@@ -524,6 +528,14 @@ impl PackageStore {
 
         let packages: HashMap<String, PackageSpec> = serde_json::from_slice(&bytes)
             .map_err(|e| format!("failed to parse package store at '{}': {}", path.display(), e))?;
+
+        if packages.len() > 10_000 {
+            return Err(format!(
+                "package store at '{}' contains {} packages, exceeding maximum allowed limit of 10,000",
+                path.display(),
+                packages.len()
+            ));
+        }
 
         for (key, spec) in &packages {
             if key != &spec.name {
@@ -663,5 +675,35 @@ mod tests {
             loaded.get_package("coreutils").unwrap().version,
             store.get_package("coreutils").unwrap().version
         );
+    }
+
+    #[test]
+    fn test_package_store_hardening_bounds_and_cleanup() {
+        let store = PackageStore::new();
+
+        // 1. Actions boundary checks
+        let empty_actions: Vec<PackageAction> = vec![];
+        let err_empty = store.plan_transaction(empty_actions, false).unwrap_err();
+        assert!(err_empty.contains("cannot be empty"));
+
+        let huge_actions: Vec<PackageAction> = (0..257)
+            .map(|i| PackageAction {
+                action: PackageActionType::Install,
+                package_name: format!("pkg-{}", i),
+                target_version: None,
+            })
+            .collect();
+        let err_huge = store.plan_transaction(huge_actions, false).unwrap_err();
+        assert!(err_huge.contains("exceeds 256"));
+
+        // 2. Temp file cleanup on persistence failure
+        let temp_dir = tempfile::tempdir().unwrap();
+        // Point to a file whose parent path is an unwritable/unusable file path rather than a directory
+        let dummy_file = temp_dir.path().join("dummy_file");
+        std::fs::write(&dummy_file, b"not a dir").unwrap();
+        let impossible_target = dummy_file.join("sub").join("packages.json");
+        let err_save = store.save_to_path(&impossible_target);
+        assert!(err_save.is_err());
+        assert!(!impossible_target.with_extension("tmp").exists());
     }
 }

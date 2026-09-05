@@ -27,7 +27,115 @@ substrate but is no longer the shipping path.
    KWin / UIA / AT-SPI.
 6. **Phase 5 — Hardening, cross-platform, release.**
 
-## Status (live — 2026-09-04)
+## Status (live — 2026-09-05)
+
+### 2026-09-05 — MILESTONE: Package Management Documentation CLOSED 10/10 (T-01281..T-01290)
+
+Complete implementation, governance, verification, and hardening for Phase 1 `Package Management / documentation`:
+- **Architecture & Operational Guide**: Created `docs/package_management.md` detailing all 9 core architectural components (Executive Overview with Mermaid diagram, Core Data Model PM1..PM5, Store Registry CS1..CS5, Configuration PC1..PC6, Security Policy PP1..PP6, Observability PO1..PO6, Operator CLI surface, Autonomous Agent MCP surface, and Failure Modes / Audit Trail).
+- **Automated Documentation Test Suite**: Implemented `tools/test_package_doc.py` verifying criteria `D1..D6`:
+  - `D1`: File existence & size constraints ($[1000 \dots 5\text{ MiB}]$).
+  - `D2`: Verbatim presence of all 9 required structural section headers.
+  - `D3`: Zero forbidden rot markers (`TODO`, `FIXME`, `TBD`, `XXX`, `PLACEHOLDER`).
+  - `D4`: Exhaustive invariant (`PM1..PM5`, `CS1..CS5`, `PC1..PC6`, `PP1..PP6`, `PO1..PO6`), CLI, and MCP tool token coverage.
+  - `D5`: Negative rejection testing on malformed documents.
+  - `D6`: Zero volatile snapshot counters (C6 compliant).
+- **Master Test Runner Matrix (`tools/test_package_suites.py`)**: Integrated criterion `PM9` (`test_package_doc`). All criteria `PM1..PM9` PASS.
+- **Repository Index Synchronization**: Linked guide in `docs/README.md` under section 8.12.
+- **Ledger Pointer**: Advances to **T-01291** (`Phase 1 — Linux Base System & Bootable Target / Package Management / recovery & validation: Research`).
+
+### 2026-09-05 — MILESTONE: Package Management Observability CLOSED 10/10 (T-01271..T-01280)
+
+Complete implementation, governance, verification, and hardening for Phase 1 `Package Management / observability`:
+- **Package Observability Subsystem**: `code/aiosh-rust/aiosh-core/src/package_observability.rs` implementing `PackageObservabilityReport`, multi-dimensional aggregations, and telemetry serialization.
+- **Invariants Enforced (PO1..PO6)**:
+  - `PO1`: Inventory completeness (exact package count tracking; robust zeroed telemetry on empty stores).
+  - `PO2`: Multi-dimensional distribution (breakdowns across state, format, and target architecture).
+  - `PO3`: Storage footprint telemetry (`total_installed_size_bytes` calculation with saturation arithmetic and `average_package_size_bytes`).
+  - `PO4`: Categorical dependency histogram bounding (`"0"`, `"1-5"`, `"6-10"`, `"11+"` with $O(1)$ memory).
+  - `PO5`: Policy compliance telemetry (integrates with `PackageSecurityPolicy`, reports compliant count, violations, and prohibited packages).
+  - `PO6`: Read-only deterministic telemetry emission with ISO timestamps and standard error envelopes.
+- **Operator CLI Surface**: Integrated `aiosh package stats [--store <path>] [--config <path>] [--json]` in `aiosh-cli/src/main.rs`.
+- **MCP API Surface**: Registered and dispatched `aios.package.stats` tool in `aiosh-mcp/src/main.rs` with immutable SQLite WAL audit logging.
+- **Master Test Runner Matrix (`tools/test_package_suites.py`)**: Added criterion `PM8` (`test_package_observability`). All criteria `PM1..PM8` PASS.
+- **Unit & Integration Suite**: `code/aiosh-rust/aiosh-core/tests/test_package_observability.rs` (7 tests covering PO1..PO7, file roundtrips, and hardening bounds).
+- **Ledger Pointer**: Advances to **T-01281** (`Phase 1 — Linux Base System & Bootable Target / Package Management / documentation: Research`).
+
+### 2026-09-04 — MILESTONE: Package Management Security Policy CLOSED 10/10 (T-01261..T-01270)
+
+Complete implementation, governance, verification, and hardening for Phase 1 `Package Management / security policy`:
+- **Package Security Policy Subsystem**: `code/aiosh-rust/aiosh-core/src/package_policy.rs` implementing `PackageSecurityPolicy`, `PackagePolicyMode` (`Enforcing`, `Audit`, `Permissive`), `PackagePolicyVerdict`, and `PackagePolicyViolation`.
+- **Invariants Enforced (PP1..PP6)**:
+  - `PP1`: Bounds validation on architectures ($\le 64$), formats, prohibited list ($\le 1024$), package sizes ($[10\text{ KiB} \dots 100\text{ GiB}]$), and dependencies ($[1 \dots 1024]$).
+  - `PP2`: Prohibited package enforcement (blocking unencrypted services `telnet`, `rsh-client`, `rsh-server`, `rlogin`, `rexec`, `nis`, `yp-tools` with case-insensitive checking).
+  - `PP3`: Cryptographic SHA-256 checksum validation mandating 64-character lowercase hexadecimal digests (`^[0-9a-f]{64}$`).
+  - `PP4`: Transport protocol and repository security (strictly mandating `https://` or `file://` mirror URLs; rejecting plaintext HTTP).
+  - `PP5`: System hygiene (architecture whitelisting, format checks, package size limits, dependency bounds).
+  - `PP6`: Operational modes and pre-mutation transaction plan scanning.
+- **Operator CLI Surface**: Integrated `aiosh package policy [--config <path>] [--package <name>] [--json]` in `aiosh-cli/src/main.rs`.
+- **MCP API Surface**: Registered and dispatched `aios.package.policy` tool in `aiosh-mcp/src/main.rs` with PEP audit logging into SQLite WAL ring buffer.
+- **Master Test Runner Matrix (`tools/test_package_suites.py`)**: Added criterion `PM7` (`test_package_policy`). All criteria `PM1..PM7` PASS.
+- **Unit & Integration Suite**: `code/aiosh-rust/aiosh-core/tests/test_package_policy.rs` (7 tests covering PP1..PP6, file roundtrips, and hardening bounds).
+- **Ledger Pointer**: Advances to **T-01271** (`Phase 1 — Linux Base System & Bootable Target / Package Management / observability: Research`).
+
+### 2026-09-04 — MILESTONE: Package Management Automated Tests CLOSED 10/10 (T-01251..T-01260)
+
+Complete implementation, governance, verification, and hardening for Phase 1 `Package Management / automated tests`:
+- **Automated Integration Test Suite**: `code/aiosh-rust/aiosh-core/tests/test_package_automated.rs` delivering comprehensive end-to-end integration and lifecycle verification for criteria `PT1..PT6`.
+- **Criteria Enforced**:
+  - `PT1`: Deterministic plan reproducibility over 50 iterations with SHA-256 plan hash stability.
+  - `PT2`: Multi-step lifecycle state transitions (`Available` $\to$ `Installed` $\to$ `Upgraded` $\to$ `Available`) with size delta arithmetic (`CS4`).
+  - `PT3`: Dependency closure failure modes (unsatisfied dependencies, missing packages, joint satisfaction) (`CS3`).
+  - `PT4`: Configuration-governed store capacity limits (`PC2`, `PC3`) and disk reload persistence.
+  - `PT5`: Anti-tamper detection on delta tampering and clean rollback to pristine state. Dry-run isolation.
+  - `PT6`: Negative boundary matrix (empty action lists, >256 action overflow, duplicate registration `CS1`).
+- **Master Test Runner Integration (`tools/test_package_suites.py`)**: Added criterion `PM6` (`test_package_automated`). All criteria `PM1..PM6` PASS.
+- **Ledger Pointer**: Advances to **T-01261** (`Phase 1 — Linux Base System & Bootable Target / Package Management / security policy: Research`).
+
+### 2026-09-04 — MILESTONE: Package Management Configuration CLOSED 10/10 (T-01241..T-01250)
+
+Complete implementation, governance, verification, and hardening for Phase 1 `Package Management / configuration`:
+- **Hierarchical Configuration Subsystem**: `code/aiosh-rust/aiosh-core/src/package_config.rs` delivering `PackageConfig` resolution with deterministic precedence: file config (`--config`) > environment variables (`AIOS_PACKAGE_*`) > secure defaults.
+- **Invariants Enforced (PC1..PC6)**: Store path validation (`PC1`), store size ceiling `[64 KiB .. 100 MiB]` (`PC2`), bounded entity counts `[10 .. 100,000]` (`PC3`), repository transport security enforcing `https://` or `file://` (`PC4`), explicit file/env precedence (`PC5`), and 64 KiB config stream bounded reads (`PC6`).
+- **Operator CLI & MCP Surfaces**: `aiosh package config [--config <path>] [--json]` and `aios.package.config` MCP tool with structured JSON output, explicit error envelopes, and full SQLite WAL audit logging.
+- **Master Test Runner Matrix (`tools/test_package_suites.py`)**: All criteria `PM1`, `PM2`, `PM3`, `PM4`, and `PM5` PASS.
+- **Unit Suite**: `test_package_config` (7 tests covering PC1..PC6 invariants, file roundtrips, and env overrides).
+- **Ledger Pointer**: Advances to **T-01251** (`Phase 1 — Linux Base System & Bootable Target / Package Management / automated tests: Research`).
+
+### 2026-09-04 — MILESTONE: Package Management MCP/API Surface CLOSED 10/10 (T-01231..T-01240)
+
+Complete implementation, governance, verification, and hardening for Phase 1 `Package Management / MCP/API surface`:
+- **Comprehensive Autonomous Agent MCP Surface**: `code/aiosh-rust/aiosh-mcp/src/main.rs` delivering 6 MCP tools under `aios.package.*`:
+  - `aios.package.validate`: Syntax validation of package names (`PM1`) and deep specification checks (`PM1..PM5`).
+  - `aios.package.list`: Enumerate packages with format, state, pattern, and limit filters.
+  - `aios.package.get`: Detailed specification lookup for a single package.
+  - `aios.package.plan`: Transaction planning with dependency closure validation (`CS2`, `CS3`) and delta calculation (`CS4`).
+  - `aios.package.search`: Substring search on names and descriptions with pagination limit [1..10,000].
+  - `aios.package.apply`: Transaction execution with dry-run support, state transitions (`CS5`), and atomic persistence.
+- **PEP Gating & Audit Logging**: Every tool execution is gated via `dispatch::recorded_call`, writing immutable SHA-256 hash-chained audit rows to SQLite WAL ring for every success, failure, or refusal.
+- **Hardening & Defenses**: String bounds (names <= 128, patterns <= 256, paths <= 1,024), limit bounding [1..10,000], action count limit (10,000), ASCII control character rejection, and explicit error envelopes.
+- **Master Test Runner Matrix (`tools/test_package_suites.py`)**: All criteria `PM1`, `PM2`, `PM3`, and `PM4` PASS.
+- **Unit Suite**: `test_mcp_package_tools` (28 assertions covering positive flows, negative bounds, control characters, and disk persistence).
+- **Ledger Pointer**: Advances to **T-01241** (`Phase 1 — Linux Base System & Bootable Target / Package Management / configuration: Research`).
+
+### 2026-09-04 — MILESTONE: Package Management CLI Surface CLOSED 10/10 (T-01221..T-01230)
+
+Complete implementation, governance, verification, and hardening for Phase 1 `Package Management / CLI surface`:
+- **Comprehensive Operator CLI Surface**: `code/aiosh-rust/aiosh-cli/src/main.rs` delivering `aiosh package validate` (syntax and deep specification audit), `aiosh package list` (query and filter with bounds), `aiosh package show` (deep attribute inspection), `aiosh package search` (substring query engine), `aiosh package plan` (deterministic planning), and `aiosh package apply` (transaction execution with atomic store persistence).
+- **Hardening & Security Controls**: 1 MiB payload protection on `--actions`, `--plan`, `--spec`, string bounds (names <= 64, patterns <= 256, paths <= 1,024), limit bounding [1..10,000], ASCII control character rejection, structured error envelopes, and complete SQLite `audit.db` logging via `classify_and_emit` on all execution branches (ADR-0035).
+- **Master Test Runner Matrix (`tools/test_package_suites.py`)**: Criteria `PM1`, `PM2`, and `PM3` PASS.
+- **Unit Suite**: `aiosh-cli::task_cli_tests::test_cmd_package_flow` exercising happy paths, dry-run flags, invalid inputs, error codes, and persistent store roundtrips.
+- **Ledger Pointer**: Advances to **T-01231** (`Phase 1 — Linux Base System & Bootable Target / Package Management / MCP/API surface: Research`).
+
+### 2026-09-04 — MILESTONE: Package Management Core Service CLOSED 10/10 (T-01211..T-01220)
+
+Complete implementation, governance, verification, and hardening for Phase 1 `Package Management / core service`:
+- **In-Memory Store Subsystem**: `code/aiosh-rust/aiosh-core/src/package_service.rs` delivering `PackageStore` with canonical Debian and Alpine reference packages, query engine, transaction planner (`plan_transaction`), execution engine (`execute_transaction`), and atomic disk persistence (`save_to_path`, `load_from_path`).
+- **Core Invariants (CS1..CS5)**: Strictly enforced package ID uniqueness (`CS1`), deterministic transaction hash planning (`CS2`), dependency closure validation (`CS3`), delta arithmetic and anti-tamper checking (`CS4`), atomic persistence with RAII cleanup and bounded 10 MiB / 10,000 package limits (`CS5`).
+- **Operator CLI & MCP Surfaces**: `aiosh package list/show/plan` and `aios.package.list/get/plan` tools with structured JSON error envelopes (`LOAD_STORE_FAILED`, `INVALID_ARGUMENT`, `PACKAGE_NOT_FOUND`, `PAYLOAD_TOO_LARGE`, `INVALID_JSON`, `PLAN_FAILED`) and SQLite WAL audit logging.
+- **Master Test Runner Matrix (`tools/test_package_suites.py`)**: Criteria `PM1` and `PM2` PASS.
+- **Unit Suite**: `code/aiosh-rust/aiosh-core/tests/test_package_service.rs` (9 tests passing in isolation).
+- **Ledger Pointer**: Advances to **T-01221** (`Phase 1 — Linux Base System & Bootable Target / Package Management / CLI surface: Research`).
 
 ### 2026-09-04 — MILESTONE: Package Management Data Model CLOSED 10/10 (T-01201..T-01210)
 

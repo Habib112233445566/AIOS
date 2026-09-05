@@ -939,6 +939,8 @@ Evidence: `tasks/evidence/T-01101-base-image-data-model-research.md` .. `tasks/e
 
 ### 8.12 Linux Package Management Subsystem (`aiosh-core::package`, T-01201..T-01300)
 
+Comprehensive architecture and operational guide: [docs/package_management.md](package_management.md).
+
 **Architecture & Core Data Model (`code/aiosh-rust/aiosh-core/src/package.rs`):**
 - Data model: `PackageSpec`, `PackageFormat` (`deb`, `apk`, `flatpak`, `tarball`), `PackageState` (`available`, `installed`, `upgradable`, `pending_install`, `pending_removal`, `broken`), `PackageDependency`, `PackageAction`, `PackageTransaction`, and `PackageQuery`.
 - Invariants (PM1..PM5):
@@ -948,21 +950,161 @@ Evidence: `tasks/evidence/T-01101-base-image-data-model-research.md` .. `tasks/e
   - `PM4`: Provenance & integrity: exact 64-character hexadecimal SHA-256 digests and mandatory HTTPS repository URLs.
   - `PM5`: State consistency: installed packages must have non-zero size (`installed_size_bytes > 0`).
 
-**Operator CLI Surface (`aiosh package`):**
+**Operator CLI Surface (`aiosh package`, T-01221..T-01230):**
 - `aiosh package validate --name <name> [--json]`: Validate package name syntax (PM1).
 - `aiosh package validate --spec <file_or_inline_json> [--json]`: Deep-audit full package specification against invariants PM1..PM5 with 1 MiB payload ceiling.
+- `aiosh package list [--format <deb|apk|flatpak|tarball>] [--state <state>] [--pattern <str>] [--limit <n>] [--json] [--store <path>]`: Query and enumerate packages in store with pattern sanitization and limit bounding [1..10,000].
+- `aiosh package show <name> [--json] [--store <path>]`: Deep inspect package attributes, dependencies, and sizing with name length validation and control-character rejection.
+- `aiosh package search <pattern> [--limit <n>] [--store <path>] [--json]`: Substring search on package name and description with pattern length ceiling (<=256) and control-character rejection.
+- `aiosh package plan --actions <json_or_file> [--dry-run] [--json] [--store <path>]`: Plan transaction, build topological execution order, and inspect delta sizing with 1 MiB payload ceiling.
+- `aiosh package apply (--actions <json_or_file> | --plan <json_or_file>) [--dry-run] [--yes] [--store <path>] [--json]`: Apply transaction plan, execute state transitions, atomically persist store mutations to disk (CS5), and record structured audit entries to `audit.db` (ADR-0035).
+- `aiosh package config [--config <path>] [--json]`: Inspect active configuration settings, repository whitelists, and validation status.
+- `aiosh package policy [--package <name>] [--config <path>] [--json]`: Inspect and enforce security policy baselines (PP1..PP6) including prohibited packages, mandatory checksums, and transport security.
+- `aiosh package stats [--store <path>] [--config <path>] [--json]`: Generate comprehensive package ecosystem observability and inventory telemetry report (PO1..PO6).
 
-**Autonomous Agent MCP Tool Surface (`aiosh-mcp`):**
-- `aios.package.validate`: Validates package name syntax or full `PackageSpec` against PM1..PM5 invariants with PEP capability checks and immutable SQLite WAL audit logging.
+**Autonomous Agent MCP Tool Surface (`aiosh-mcp`, T-01231..T-01240):**
+- `aios.package.validate`: Validates package name syntax (PM1) or full `PackageSpec` against PM1..PM5 invariants with PEP capability checks and immutable SQLite WAL audit logging.
+- `aios.package.list`: Enumerate packages with optional format, state, pattern, and limit query filters.
+- `aios.package.get`: Retrieve complete `PackageSpec` by package name from the package store.
+- `aios.package.plan`: Plan a deterministic package transaction with dependency closure validation (CS2, CS3) and delta calculation (CS4).
+- `aios.package.search`: Search packages in store by substring on package name or description with pattern bounding (<=256 chars) and control-character rejection.
+- `aios.package.apply`: Apply a planned package transaction or list of actions, executing state transitions (CS5), supporting dry-run execution, and atomically persisting updates to disk.
+- `aios.package.config`: Query active package configuration, store bounds, and trusted repository endpoints.
+- `aios.package.policy`: Evaluate package security policy (PP1..PP6) with PEP enforcement and audit trail.
+- `aios.package.stats`: Retrieve package observability telemetry report with footprint breakdowns and policy compliance metrics (PO1..PO6).
 
-**Standalone Test Runner (`tools/test_package_suites.py`):**
+**Package Management Configuration Subsystem (`aiosh-core::package_config`, T-01241..T-01250):**
+- **Configuration Invariants (PC1..PC6)**:
+  - `PC1`: Store path validity — non-empty, $\le 1024$ bytes, free of control characters or null bytes.
+  - `PC2`: Store size ceiling bounds — within $[64 \text{ KiB} \dots 100 \text{ MiB}]$ range.
+  - `PC3`: Entity count bounds — within $[10 \dots 100,000]$ range.
+  - `PC4`: Repository transport security — mandatory `https://` or `file://` transport; insecure plaintext `http://` prohibited.
+  - `PC5`: Precedence resolution — explicit configuration file > environment variables (`AIOS_PACKAGE_*`) > embedded defaults.
+  - `PC6`: Configuration file size ceiling — maximum 64 KiB read cap with metadata and stream bounds.
+
+**Package Security Policy Subsystem (`aiosh-core::package_policy`, T-01261..T-01270):**
+- **Invariants Enforced (PP1..PP6)**:
+  - `PP1`: Bounds validation — architectures ($\le 64$), formats, prohibited list ($\le 1024$), package sizes ($[10\text{ KiB} \dots 100\text{ GiB}]$), dependencies ($[1 \dots 1024]$), and policy file ceiling (64 KiB).
+  - `PP2`: Prohibited package blocking — case-insensitive blocking of legacy unencrypted services (`telnet`, `rsh`, `rlogin`, `rexec`, `nis`, `yp-tools`).
+  - `PP3`: Cryptographic checksum enforcement — mandatory 64-character lowercase hexadecimal SHA-256 digests (`^[0-9a-f]{64}$`).
+  - `PP4`: Transport protocol & repository security — mandatory `https://` or `file://` repository URLs; plaintext `http://` prohibited.
+  - `PP5`: System hygiene — target architecture whitelist, format checks, size limits, and dependency counts.
+  - `PP6`: Operational modes — `Enforcing` (denies fatal violations), `Audit` (logs violations without blocking), and `Permissive` (blocks only prohibited packages).
+
+**Package Observability Subsystem (`aiosh-core::package_observability`, T-01271..T-01280):**
+- **Invariants Enforced (PO1..PO6)**:
+  - `PO1`: Inventory completeness — aggregate count matches sum of individual breakdown dimensions; safe zeroed metrics on empty store.
+  - `PO2`: Multi-dimensional distribution — categorized breakdowns across package states, formats, and target architectures.
+  - `PO3`: Storage footprint telemetry — calculates `total_installed_size_bytes` (installed + upgradable) and `average_package_size_bytes` via saturation arithmetic (`u64::saturating_add`).
+  - `PO4`: Dependency distribution histogram — bounded categorical buckets (`"0"`, `"1-5"`, `"6-10"`, `"11+"`) guaranteeing $O(1)$ telemetry memory usage.
+  - `PO5`: Compliance telemetry — evaluates registered packages against security policy, reporting compliant package counts, violation counts, and prohibited package occurrences.
+  - `PO6`: Deterministic telemetry reports — read-only telemetry reports with standard error envelopes and immutable audit logging.
+
+**Core Service & Registry (`aiosh-core::package_service`, T-01211..T-01220):**
+- **In-Memory Store Registry (`PackageStore`)**: In-memory repository seeded with canonical reference packages for Debian 12 (`libc6`, `coreutils`, `bash`, `libssl3`, `curl`) and Alpine 3.19 (`musl`, `busybox`, `apk-tools`).
+- **Core Invariants (CS1..CS5)**:
+  - `CS1`: Registry uniqueness — package names are unique within a store instance (`store.packages.contains_key(&spec.name)`).
+  - `CS2`: Deterministic transaction planning — transaction IDs are computed via SHA-256 over ordered actions and size delta.
+  - `CS3`: Dependency closure — every dependency must either be already installed or scheduled in the transaction batch.
+  - `CS4`: Delta arithmetic & anti-tampering — total size delta matches sum of installed sizes minus removed sizes; tampered deltas are rejected.
+  - `CS5`: Atomic disk persistence — safe atomic persistence via `.tmp` file, RAII cleanup on failure, bounded 10 MiB stream read, and 10,000 package entity ceiling.
+- **Hardening & Security Defenses**:
+  - 10 MiB store size limit and 10,000 package entity count limit in `load_from_path`.
+  - 1 MiB payload ceiling on `--actions`, `--plan`, and `--spec` file reads and inline JSON payloads.
+  - Pattern and name bounds (<=256 characters, rejection of ASCII control characters).
+  - Positive integer limit bounds [1..10,000] for `--limit`.
+  - Structured JSON error envelopes (`LOAD_STORE_FAILED`, `INVALID_ARGUMENT`, `PACKAGE_NOT_FOUND`, `PAYLOAD_TOO_LARGE`, `INVALID_JSON`, `FILE_READ_ERROR`, `PLAN_FAILED`, `PERSISTENCE_FAILED`, `CONFIG_RESOLUTION_FAILED`).
+  - Immutable SHA-256 hash-chained audit rows logged to SQLite WAL ring on all success and failure branches via `dispatch::recorded_call`.
+- **Constraints & Known Limitations (honest)**:
+  - Multi-package dependency graphs must be provided in a single batch; automatic remote network dependency fetching is deferred to later Phase 1 tasks.
+  - Store operations modify in-memory state; physical file unpack and dpkg/apk hooks will be orchestrated by wrapper layers.
+  - In-memory store size is capped at 10,000 packages.
+
+**Copy-Pasteable Invocations:**
+```bash
+# Validate a package name
+aiosh package validate --name "curl"
+
+# List all Debian packages currently installed
+aiosh package list --format deb --state installed
+
+# Show details of a specific package
+aiosh package show curl
+
+# Search for packages matching "lib"
+aiosh package search lib --json
+
+# Plan an installation transaction (dry run)
+aiosh package plan --actions '[{"action":"install","package_name":"libssl3"},{"action":"install","package_name":"curl"}]' --dry-run --json
+
+# Apply an installation transaction with store persistence
+aiosh package apply --actions '[{"action":"install","package_name":"libssl3"},{"action":"install","package_name":"curl"}]' --store ./packages.json --json
+
+# View active package management configuration
+aiosh package config --json
+
+# Audit security policy on a specific package
+aiosh package policy --package curl --json
+
+# View package ecosystem observability and footprint statistics
+aiosh package stats --json
+```
+
+**MCP Autonomous Agent JSON-RPC Examples:**
+```json
+// Tool Call: aios.package.search
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "aios.package.search",
+    "arguments": {
+      "pattern": "curl",
+      "limit": 10
+    }
+  }
+}
+
+// Tool Call: aios.package.config
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "tools/call",
+  "params": {
+    "name": "aios.package.config",
+    "arguments": {}
+  }
+}
+
+// Tool Call: aios.package.stats
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "method": "tools/call",
+  "params": {
+    "name": "aios.package.stats",
+    "arguments": {}
+  }
+}
+```
+
+**Standalone Test Runner (`tools/test_package_suites.py` & `tools/test_package_doc.py`):**
 ```bash
 python tools/test_package_suites.py
 # [+] PM1 package data model integrity & invariants (PM1..PM5)
-# PASS: package_suites criteria (PM1)
+# [+] PM2 package core service integrity & invariants (CS1..CS5)
+# [+] PM3 package CLI surface commands & options (validate/list/show/search/plan/apply)
+# [+] PM4 package MCP tool surface (validate/list/get/plan/search/apply)
+# [+] PM5 package configuration resolution & invariants (PC1..PC6)
+# [+] PM6 package automated integration test matrix (PT1..PT6)
+# [+] PM7 package security policy evaluation & invariants (PP1..PP6)
+# [+] PM8 package observability telemetry report & invariants (PO1..PO6)
+# [+] PM9 package documentation guide & invariants (D1..D5)
+# PASS: package_suites criteria (PM1..PM9)
 ```
 
-Evidence: `tasks/evidence/T-01201-data-model-research.md` .. `tasks/evidence/T-01210-data-model-verification-evidenc.md`.
+Evidence: `docs/tasks/evidence/T-01201-data-model-research.md` .. `docs/tasks/evidence/T-01289-documentation-documentation.md`.
 
 
 

@@ -648,6 +648,95 @@ impl Server {
                 "additionalProperties": false
             }
         }));
+        tools.push(json!({
+            "name": "aios.package.search",
+            "description": "Search packages in package store by substring on package name or description.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "pattern": { "type": "string", "description": "Substring search pattern for package name or description" },
+                    "limit": { "type": "integer", "description": "Maximum number of packages to return (default 50)" },
+                    "store_path": { "type": "string", "description": "Optional path to package store JSON file" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "required": ["pattern"],
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.package.apply",
+            "description": "Apply a package transaction to the store, executing state transitions and optionally persisting updates to disk.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "actions": {
+                        "type": "array",
+                        "items": { "type": "object" },
+                        "description": "List of package actions to execute in the transaction (mutually exclusive with 'plan')"
+                    },
+                    "plan": {
+                        "type": "object",
+                        "description": "Pre-computed PackageTransaction object to apply (mutually exclusive with 'actions')"
+                    },
+                    "dry_run": { "type": "boolean", "description": "Whether to execute as a dry-run without mutating store or disk state" },
+                    "store_path": { "type": "string", "description": "Optional path to package store JSON file to update and persist" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.package.config",
+            "description": "Get active configuration settings for Linux package management subsystem.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "config_path": { "type": "string", "description": "Optional path to custom package_config.json" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.package.policy",
+            "description": "Inspect package management security policy or evaluate a package against security rules.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "package_name": { "type": "string", "description": "Optional package name to evaluate against security policy" },
+                    "config_path": { "type": "string", "description": "Optional path to custom policy JSON file" },
+                    "store_path": { "type": "string", "description": "Optional path to package store file" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.package.stats",
+            "description": "Get observability and telemetry metrics report for package management subsystem.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "store_path": { "type": "string", "description": "Optional path to package store file" },
+                    "config_path": { "type": "string", "description": "Optional path to custom policy JSON file" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.package.check",
+            "description": "Validate on-disk package store integrity and optionally perform non-destructive recovery",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "store_path": { "type": "string", "description": "Optional custom path to the package store JSON file" },
+                    "auto_recover": { "type": "boolean", "description": "Automatically repair corrupted or invalid store with timestamped backup" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
         tools
     }
 
@@ -1354,6 +1443,21 @@ impl Server {
                 let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
 
                 let f = move || -> Result<Value, String> {
+                    if let Some(ref p) = store_path_opt {
+                        if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+                            return Err("Invalid store path: exceeds 1024 chars or contains control characters".into());
+                        }
+                    }
+                    if let Some(ref pattern) = pattern_opt {
+                        if pattern.len() > 256 || pattern.chars().any(|c| c.is_control()) {
+                            return Err("Invalid pattern: exceeds 256 chars or contains control characters".into());
+                        }
+                    }
+                    if let Some(l) = limit_opt {
+                        if l == 0 || l > 10_000 {
+                            return Err("Limit must be between 1 and 10,000".into());
+                        }
+                    }
                     let store = match store_path_opt {
                         Some(ref p) => aiosh_core::package_service::PackageStore::load_from_path(std::path::Path::new(p))?,
                         None => aiosh_core::package_service::PackageStore::new(),
@@ -1404,6 +1508,14 @@ impl Server {
                 let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
                 let name_clone = name.clone();
                 let f = move || -> Result<Value, String> {
+                    if name_clone.len() > 128 || name_clone.chars().any(|c| c.is_control()) {
+                        return Err("Invalid package name: exceeds 128 chars or contains control characters".into());
+                    }
+                    if let Some(ref p) = store_path_opt {
+                        if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+                            return Err("Invalid store path: exceeds 1024 chars or contains control characters".into());
+                        }
+                    }
                     let store = match store_path_opt {
                         Some(ref p) => aiosh_core::package_service::PackageStore::load_from_path(std::path::Path::new(p))?,
                         None => aiosh_core::package_service::PackageStore::new(),
@@ -1432,8 +1544,16 @@ impl Server {
                 let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
 
                 let f = move || -> Result<Value, String> {
+                    if let Some(ref p) = store_path_opt {
+                        if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+                            return Err("Invalid store path: exceeds 1024 chars or contains control characters".into());
+                        }
+                    }
                     let actions: Vec<aiosh_core::package::PackageAction> = serde_json::from_value(actions_val.clone())
                         .map_err(|e| format!("failed to parse actions: {}", e))?;
+                    if actions.len() > 10_000 {
+                        return Err("Actions array exceeds maximum limit of 10,000 items".into());
+                    }
                     let store = match store_path_opt {
                         Some(ref p) => aiosh_core::package_service::PackageStore::load_from_path(std::path::Path::new(p))?,
                         None => aiosh_core::package_service::PackageStore::new(),
@@ -1448,6 +1568,277 @@ impl Server {
                 dispatch::recorded_call(
                     &mut self.ring, &self.pep,
                     "aios.package.plan", "Plan a package transaction", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.package.search" => {
+                let pattern_opt = arguments.get("pattern").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let limit = arguments.get("limit").and_then(|v| v.as_u64()).map(|n| n as usize);
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+                let f = move || -> Result<Value, String> {
+                    if let Some(ref p) = store_path_opt {
+                        if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+                            return Err("Invalid store path: exceeds 1024 chars or contains control characters".into());
+                        }
+                    }
+                    let pattern = pattern_opt.as_deref().ok_or_else(|| "Missing required parameter 'pattern'".to_string())?;
+                    if pattern.len() > 256 || pattern.chars().any(|c| c.is_control()) {
+                        return Err("Invalid search pattern: exceeds 256 chars or contains control characters".into());
+                    }
+                    if let Some(l) = limit {
+                        if l == 0 || l > 10_000 {
+                            return Err("Limit must be between 1 and 10,000".into());
+                        }
+                    }
+                    let store = match store_path_opt {
+                        Some(ref p) => aiosh_core::package_service::PackageStore::load_from_path(std::path::Path::new(p))?,
+                        None => aiosh_core::package_service::PackageStore::new(),
+                    };
+                    let query = aiosh_core::package::PackageQuery {
+                        name_pattern: Some(pattern.to_string()),
+                        format: None,
+                        state: None,
+                        limit,
+                    };
+                    let packages = store.query(&query);
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.package.search",
+                        "pattern": pattern,
+                        "matches": packages.len(),
+                        "packages": packages
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.package.search", "Search packages in store", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.package.apply" => {
+                let actions_val_opt = arguments.get("actions").cloned();
+                let plan_val_opt = arguments.get("plan").cloned();
+                let dry_run = arguments.get("dry_run").and_then(|v| v.as_bool()).unwrap_or(false);
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+                let f = move || -> Result<Value, String> {
+                    if let Some(ref p) = store_path_opt {
+                        if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+                            return Err("Invalid store path: exceeds 1024 chars or contains control characters".into());
+                        }
+                    }
+
+                    let mut store = match store_path_opt {
+                        Some(ref p) => aiosh_core::package_service::PackageStore::load_from_path(std::path::Path::new(p))?,
+                        None => aiosh_core::package_service::PackageStore::new(),
+                    };
+
+                    let transaction = if let Some(ref plan_val) = plan_val_opt {
+                        let mut tx: aiosh_core::package::PackageTransaction = serde_json::from_value(plan_val.clone())
+                            .map_err(|e| format!("Invalid transaction plan JSON: {}", e))?;
+                        if dry_run {
+                            tx.dry_run = true;
+                        }
+                        tx
+                    } else if let Some(ref actions_val) = actions_val_opt {
+                        let actions: Vec<aiosh_core::package::PackageAction> = serde_json::from_value(actions_val.clone())
+                            .map_err(|e| format!("Invalid actions JSON: {}", e))?;
+                        store.plan_transaction(actions, dry_run)?
+                    } else {
+                        return Err("Either 'actions' or 'plan' parameter must be provided".into());
+                    };
+
+                    let report = store.execute_transaction(&transaction)?;
+
+                    if !transaction.dry_run {
+                        if let Some(ref p) = store_path_opt {
+                            store.save_to_path(std::path::Path::new(p))?;
+                        }
+                    }
+
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.package.apply",
+                        "dry_run": transaction.dry_run,
+                        "persisted": !transaction.dry_run && store_path_opt.is_some(),
+                        "report": report
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.package.apply", "Apply a package transaction", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.package.config" => {
+                let config_path_opt = arguments.get("config_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                if let Some(ref p) = config_path_opt {
+                    if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+                        return json!({ "ok": false, "error": "config_path exceeds maximum length of 1024 characters or contains control characters" });
+                    }
+                }
+                let f = move || -> Result<Value, String> {
+                    let config = aiosh_core::package_config::PackageConfig::resolve(config_path_opt.as_deref().map(std::path::Path::new))?;
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.package.config",
+                        "config": config
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.package.config", "Get package management configuration", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.package.policy" => {
+                let config_path_opt = arguments.get("config_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                if let Some(ref p) = config_path_opt {
+                    if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+                        return json!({ "ok": false, "error": "config_path exceeds maximum length of 1024 characters or contains control characters" });
+                    }
+                }
+                let pkg_name_opt = arguments.get("package_name")
+                    .or_else(|| arguments.get("package"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                if let Some(ref n) = pkg_name_opt {
+                    if n.len() > 128 || n.chars().any(|c| c.is_control()) {
+                        return json!({ "ok": false, "error": "package_name exceeds maximum length of 128 characters or contains control characters" });
+                    }
+                }
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                if let Some(ref p) = store_path_opt {
+                    if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+                        return json!({ "ok": false, "error": "store_path exceeds maximum length of 1024 characters or contains control characters" });
+                    }
+                }
+
+                let f = move || -> Result<Value, String> {
+                    let policy = aiosh_core::package_policy::PackageSecurityPolicy::resolve(config_path_opt.as_deref())?;
+                    if let Some(ref name) = pkg_name_opt {
+                        if policy.prohibited_packages.iter().any(|p| p.eq_ignore_ascii_case(name)) {
+                            let verdict = aiosh_core::package_policy::PackagePolicyVerdict {
+                                package_name: name.clone(),
+                                allowed: policy.mode != aiosh_core::package_policy::PackagePolicyMode::Enforcing,
+                                mode: policy.mode,
+                                violations: vec![aiosh_core::package_policy::PackagePolicyViolation {
+                                    rule_id: "PP2-PROHIBITED-PACKAGE".into(),
+                                    package_name: name.clone(),
+                                    description: format!("package '{}' is prohibited by security policy", name),
+                                    fatal: true,
+                                }],
+                                evaluated_at: "2026-09-04T00:00:00Z".into(),
+                            };
+                            return Ok(json!({
+                                "ok": verdict.allowed,
+                                "tool": "aios.package.policy",
+                                "verdict": verdict
+                            }));
+                        }
+                        let store = match store_path_opt {
+                            Some(ref sp) => aiosh_core::package_service::PackageStore::load_from_path(std::path::Path::new(sp))?,
+                            None => aiosh_core::package_service::PackageStore::new(),
+                        };
+                        let spec = store.get_package(name).ok_or_else(|| format!("package '{}' not found in store", name))?;
+                        let verdict = policy.evaluate_spec(spec);
+                        Ok(json!({
+                            "ok": verdict.allowed,
+                            "tool": "aios.package.policy",
+                            "verdict": verdict
+                        }))
+                    } else {
+                        Ok(json!({
+                            "ok": true,
+                            "tool": "aios.package.policy",
+                            "policy": policy
+                        }))
+                    }
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.package.policy", "Evaluate or inspect package security policy", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.package.stats" => {
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                if let Some(ref p) = store_path_opt {
+                    if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+                        return json!({ "ok": false, "error": "store_path exceeds maximum length of 1024 characters or contains control characters" });
+                    }
+                }
+                let config_path_opt = arguments.get("config_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                if let Some(ref p) = config_path_opt {
+                    if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+                        return json!({ "ok": false, "error": "config_path exceeds maximum length of 1024 characters or contains control characters" });
+                    }
+                }
+
+                let f = move || -> Result<Value, String> {
+                    let store = match store_path_opt {
+                        Some(ref sp) => aiosh_core::package_service::PackageStore::load_from_path(std::path::Path::new(sp))?,
+                        None => aiosh_core::package_service::PackageStore::new(),
+                    };
+                    let policy = if let Some(ref cp) = config_path_opt {
+                        Some(aiosh_core::package_policy::PackageSecurityPolicy::from_file(std::path::Path::new(cp))?)
+                    } else {
+                        aiosh_core::package_policy::PackageSecurityPolicy::resolve(None).ok()
+                    };
+                    let report = aiosh_core::package_observability::PackageObservabilityReport::generate(&store, policy.as_ref());
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.package.stats",
+                        "report": report
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.package.stats", "Get package observability telemetry report", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.package.check" => {
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                if let Some(ref p) = store_path_opt {
+                    if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+                        return json!({ "ok": false, "error": "store_path exceeds maximum length of 1024 characters or contains control characters" });
+                    }
+                }
+                let auto_recover = arguments.get("auto_recover").and_then(|v| v.as_bool()).unwrap_or(false);
+
+                let f = move || -> Result<Value, String> {
+                    let target_path = if let Some(ref p) = store_path_opt {
+                        std::path::PathBuf::from(p)
+                    } else {
+                        std::path::PathBuf::from("/var/lib/aios/packages.json")
+                    };
+
+                    let (store, report, recovered, backup_opt) = if auto_recover {
+                        aiosh_core::package_recovery::load_or_recover(&target_path)?
+                    } else if target_path.exists() {
+                        let s = aiosh_core::package_service::PackageStore::load_from_path(&target_path)?;
+                        let rep = aiosh_core::package_recovery::validate_package_store(&s, &target_path);
+                        (s, rep, false, None)
+                    } else {
+                        let s = aiosh_core::package_service::PackageStore::new();
+                        let rep = aiosh_core::package_recovery::validate_package_store(&s, &target_path);
+                        (s, rep, false, None)
+                    };
+
+                    Ok(json!({
+                        "ok": report.healthy,
+                        "tool": "aios.package.check",
+                        "report": report,
+                        "recovered": recovered,
+                        "backup_path": backup_opt.map(|p| p.to_string_lossy().to_string()),
+                        "total_packages": store.packages.len()
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.package.check", "Validate and check package store integrity", arguments,
                     None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
                 )
             }
@@ -3045,5 +3436,164 @@ mod tests {
         ]);
         let res_plan_bad = server.call_tool("aios.package.plan", &json!({ "actions": bad_actions }));
         assert_eq!(res_plan_bad.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 11. aios.package.search - valid
+        let res_search = server.call_tool("aios.package.search", &json!({ "pattern": "curl" }));
+        assert_eq!(res_search.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_search.get("matches").and_then(|v| v.as_u64()), Some(1));
+
+        // 12. aios.package.search - missing pattern
+        let res_search_missing = server.call_tool("aios.package.search", &json!({}));
+        assert_eq!(res_search_missing.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 13. aios.package.apply - missing arguments
+        let res_apply_missing = server.call_tool("aios.package.apply", &json!({}));
+        assert_eq!(res_apply_missing.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 14. aios.package.apply - dry run via actions
+        let res_apply_dry = server.call_tool("aios.package.apply", &json!({ "actions": actions, "dry_run": true }));
+        assert_eq!(res_apply_dry.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_apply_dry.get("dry_run").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_apply_dry.pointer("/report/total_size_delta_bytes").and_then(|v| v.as_i64()), Some(5242880 + 4194304));
+
+        // 15. aios.package.apply - plan input
+        let plan_obj = res_plan.get("transaction").unwrap();
+        let res_apply_plan = server.call_tool("aios.package.apply", &json!({ "plan": plan_obj, "dry_run": true }));
+        assert_eq!(res_apply_plan.get("ok").and_then(|v| v.as_bool()), Some(true));
+
+        // 16. aios.package.apply - dependency failure
+        let res_apply_bad = server.call_tool("aios.package.apply", &json!({ "actions": bad_actions }));
+        assert_eq!(res_apply_bad.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 17. aios.package.apply - real persistence
+        let store_file = std::env::temp_dir().join(format!("aios_mcp_package_apply_test_{}.json", std::process::id()));
+        let _ = std::fs::remove_file(&store_file);
+        let init_store = aiosh_core::package_service::PackageStore::new();
+        init_store.save_to_path(&store_file).unwrap();
+        let store_path_str = store_file.to_str().unwrap().to_string();
+
+        let res_apply_persist = server.call_tool("aios.package.apply", &json!({
+            "actions": actions,
+            "store_path": store_path_str,
+            "dry_run": false
+        }));
+        assert_eq!(res_apply_persist.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_apply_persist.get("persisted").and_then(|v| v.as_bool()), Some(true));
+
+        // verify reloaded store from disk
+        let reloaded = aiosh_core::package_service::PackageStore::load_from_path(&store_file).unwrap();
+        assert_eq!(reloaded.get_package("curl").unwrap().state, aiosh_core::package::PackageState::Installed);
+        let _ = std::fs::remove_file(&store_file);
+
+        // 18. aios.package.search - custom limit
+        let res_search_limit = server.call_tool("aios.package.search", &json!({ "pattern": "a", "limit": 2 }));
+        assert_eq!(res_search_limit.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert!(res_search_limit.pointer("/packages").and_then(|v| v.as_array()).map(|a| a.len()).unwrap_or(0) <= 2);
+
+        // 19. aios.package.search - control character in pattern
+        let res_search_ctrl = server.call_tool("aios.package.search", &json!({ "pattern": "bad\0pattern" }));
+        assert_eq!(res_search_ctrl.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 20. aios.package.search - oversized pattern (>256 chars)
+        let long_pattern = "a".repeat(257);
+        let res_search_long = server.call_tool("aios.package.search", &json!({ "pattern": long_pattern }));
+        assert_eq!(res_search_long.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 21. aios.package.search - invalid limit (0)
+        let res_search_bad_limit = server.call_tool("aios.package.search", &json!({ "pattern": "curl", "limit": 0 }));
+        assert_eq!(res_search_bad_limit.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 22. aios.package.apply - invalid store path with control characters
+        let res_apply_ctrl = server.call_tool("aios.package.apply", &json!({ "actions": actions, "store_path": "bad\0store.json" }));
+        assert_eq!(res_apply_ctrl.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 23. aios.package.apply - malformed plan JSON
+        let res_apply_bad_plan = server.call_tool("aios.package.apply", &json!({ "plan": "not_an_object" }));
+        assert_eq!(res_apply_bad_plan.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 24. Hardening checks: list with invalid limit & control char pattern
+        let res_list_bad_lim = server.call_tool("aios.package.list", &json!({ "limit": 0 }));
+        assert_eq!(res_list_bad_lim.get("ok").and_then(|v| v.as_bool()), Some(false));
+        let res_list_bad_pat = server.call_tool("aios.package.list", &json!({ "pattern": "bad\0pat" }));
+        assert_eq!(res_list_bad_pat.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 25. Hardening checks: get with control char name or bad store path
+        let res_get_ctrl = server.call_tool("aios.package.get", &json!({ "name": "bad\0name" }));
+        assert_eq!(res_get_ctrl.get("ok").and_then(|v| v.as_bool()), Some(false));
+        let res_get_bad_path = server.call_tool("aios.package.get", &json!({ "name": "curl", "store_path": "bad\0path" }));
+        assert_eq!(res_get_bad_path.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 26. Hardening checks: plan with bad store path
+        let res_plan_bad_path = server.call_tool("aios.package.plan", &json!({ "actions": actions, "store_path": "bad\0path" }));
+        assert_eq!(res_plan_bad_path.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 27. Hardening checks: search with bad store path
+        let res_search_bad_path = server.call_tool("aios.package.search", &json!({ "pattern": "curl", "store_path": "bad\0path" }));
+        assert_eq!(res_search_bad_path.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 28. aios.package.config tool invocation
+        let res_cfg = server.call_tool("aios.package.config", &json!({}));
+        assert_eq!(res_cfg.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_cfg.pointer("/config/default_format").and_then(|v| v.as_str()), Some("deb"));
+        assert_eq!(res_cfg.pointer("/config/max_entity_count").and_then(|v| v.as_u64()), Some(10_000));
+
+        // 29. tool discovery in tool_manifest
+        let tools = server.tool_manifest();
+        assert!(tools.iter().any(|t| t.get("name").and_then(|v| v.as_str()) == Some("aios.package.search")));
+        assert!(tools.iter().any(|t| t.get("name").and_then(|v| v.as_str()) == Some("aios.package.apply")));
+        assert!(tools.iter().any(|t| t.get("name").and_then(|v| v.as_str()) == Some("aios.package.config")));
+        assert!(tools.iter().any(|t| t.get("name").and_then(|v| v.as_str()) == Some("aios.package.policy")));
+        assert!(tools.iter().any(|t| t.get("name").and_then(|v| v.as_str()) == Some("aios.package.stats")));
+        assert!(tools.iter().any(|t| t.get("name").and_then(|v| v.as_str()) == Some("aios.package.check")));
+
+        // 30. aios.package.policy tool invocation
+        let res_pol_def = server.call_tool("aios.package.policy", &json!({}));
+        assert_eq!(res_pol_def.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_pol_def.pointer("/policy/mode").and_then(|v| v.as_str()), Some("enforcing"));
+
+        let res_pol_pkg = server.call_tool("aios.package.policy", &json!({ "package": "curl" }));
+        assert_eq!(res_pol_pkg.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_pol_pkg.pointer("/verdict/allowed").and_then(|v| v.as_bool()), Some(true));
+
+        let res_pol_prohibited = server.call_tool("aios.package.policy", &json!({ "package": "telnet" }));
+        assert_eq!(res_pol_prohibited.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 31. aios.package.stats tool invocation
+        let res_stats = server.call_tool("aios.package.stats", &json!({}));
+        assert_eq!(res_stats.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert!(res_stats.pointer("/report/total_packages").and_then(|v| v.as_u64()).unwrap() > 0);
+        assert_eq!(res_stats.pointer("/report/prohibited_packages_found").and_then(|v| v.as_array()).map(|a| a.len()), Some(0));
+
+        let res_stats_ctrl = server.call_tool("aios.package.stats", &json!({ "store_path": "bad\0store" }));
+        assert_eq!(res_stats_ctrl.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        let res_stats_ctrl_cfg = server.call_tool("aios.package.stats", &json!({ "config_path": "bad\0config" }));
+        assert_eq!(res_stats_ctrl_cfg.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        let res_stats_bad_store = server.call_tool("aios.package.stats", &json!({ "store_path": "nonexistent_store_9999.json" }));
+        assert_eq!(res_stats_bad_store.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        let res_stats_bad_cfg = server.call_tool("aios.package.stats", &json!({ "config_path": "nonexistent_cfg_9999.json" }));
+        assert_eq!(res_stats_bad_cfg.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 32. aios.package.check tool invocation
+        let res_check_def = server.call_tool("aios.package.check", &json!({}));
+        assert_eq!(res_check_def.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_check_def.pointer("/report/healthy").and_then(|v| v.as_bool()), Some(true));
+
+        let res_check_ctrl = server.call_tool("aios.package.check", &json!({ "store_path": "bad\0store" }));
+        assert_eq!(res_check_ctrl.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        let corrupt_mcp_store = std::env::temp_dir().join(format!("mcp_corrupt_packages_{}.json", std::process::id()));
+        let _ = std::fs::remove_file(&corrupt_mcp_store);
+        std::fs::write(&corrupt_mcp_store, b"CORRUPTED").unwrap();
+        let corrupt_mcp_str = corrupt_mcp_store.to_str().unwrap().to_string();
+
+        let res_check_no_fix = server.call_tool("aios.package.check", &json!({ "store_path": corrupt_mcp_str.clone(), "auto_recover": false }));
+        assert_eq!(res_check_no_fix.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        let res_check_with_fix = server.call_tool("aios.package.check", &json!({ "store_path": corrupt_mcp_str, "auto_recover": true }));
+        assert_eq!(res_check_with_fix.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_check_with_fix.get("recovered").and_then(|v| v.as_bool()), Some(true));
     }
 }

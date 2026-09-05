@@ -1215,3 +1215,82 @@
 {"seq":1215,"ts":"2026-09-04T02:37:30Z","event":"completed","task_id":1215,"note":"Created unit test suite in test_package_service.rs","evidence":[]}
 {"seq":1216,"ts":"2026-09-04T02:43:00Z","event":"completed","task_id":1216,"note":"Integrated PackageStore list, show, and plan into CLI and MCP tools","evidence":[]}
 {"seq":1217,"ts":"2026-09-04T02:43:59Z","event":"completed","task_id":1217,"note":"Security reviewed PackageStore against path traversal, memory exhaustion, cyclic graphs, and delta fraud","evidence":[]}
+{"seq":1218,"ts":"2026-09-04T13:50:22Z","event":"completed","task_id":1218,"note":"Hardened PackageStore with temp file RAII cleanup, 10k entity limit, 1 MiB CLI action payload limit, and PM2 test criteria","evidence":[]}
+{"seq":1219,"ts":"2026-09-04T13:51:37Z","event":"completed","task_id":1219,"note":"Documented PackageStore, CS1..CS5 invariants, CLI commands, MCP tools, and examples in docs/README.md","evidence":[]}
+{"seq":1220,"ts":"2026-09-04T13:53:14Z","event":"completed","task_id":1220,"note":"Closed Package Management Core Service milestone (T-01211..T-01220 10/10), verified all tests and docs","evidence":[]}
+{"seq":1221,"ts":"2026-09-04T13:54:11Z","event":"completed","task_id":1221,"note":"Researched Package Management CLI surface ergonomics, prior art (apt, apk), command grammar, and exit codes","evidence":[]}
+{"seq":1222,"ts":"2026-09-04T14:02:56Z","event":"completed","task_id":1222,"note":"Specified Package Management CLI surface grammar, validate/list/show/search/plan/apply subcommands, error envelopes, and audit guarantees","evidence":[]}
+{"seq":1223,"ts":"2026-09-04T14:05:27Z","event":"completed","task_id":1223,"note":"Scaffolded search and apply subcommands in aiosh package, updated --help, and verified tests","evidence":[]}
+{"seq":1224,"ts":"2026-09-04T14:08:43Z","event":"completed","task_id":1224,"note":"Implemented full aiosh package apply functionality with actions/plan execution, dry-run, store persistence, and tests","evidence":[]}
+{"seq":1225,"ts":"2026-09-04T14:10:21Z","event":"completed","task_id":1225,"note":"Authored and verified comprehensive unit tests covering validate/list/show/search/plan/apply in test_cmd_package_flow","evidence":[]}
+{"seq":1226,"ts":"2026-09-04T14:14:08Z","event":"completed","task_id":1226,"note":"Integrated CLI surface commands into aiosh binary and verified automated PM3 integration suite","evidence":[]}
+{"seq":1227,"ts":"2026-09-04T14:15:46Z","event":"completed","task_id":1227,"note":"Security review completed for CLI surface; analyzed abuse scenarios and verified audit emission","evidence":[]}
+{"seq":1228,"ts":"2026-09-04T14:18:18Z","event":"completed","task_id":1228,"note":"Hardened CLI surface against control characters, oversized payloads, invalid limits, and store path misuse","evidence":[]}
+{"seq":1229,"ts":"2026-09-04T14:19:18Z","event":"completed","task_id":1229,"note":"Documented Package Management CLI surface in README.md with usage examples, bounds, and criteria","evidence":[]}
+{"seq":1230,"ts":"2026-09-04T14:20:38Z","event":"completed","task_id":1230,"note":"Verified PM1..PM3, C1..C6 suites and closed Package Management CLI Surface milestone (10/10 tasks)","evidence":[]}
+{"seq":1231,"ts":"2026-09-04T14:22:02Z","event":"completed","task_id":1231,"note":"Researched Package Management MCP surface, facts vs assumptions, and schemas for search and apply","evidence":[]}
+{"seq":1232,"ts":"2026-09-04T14:22:41Z","event":"completed","task_id":1232,"note":"Specified schemas, error cases, and audit effects for aios.package.search and aios.package.apply","evidence":[]}
+{"seq":1233,"ts":"2026-09-04T14:30:48Z","event":"completed","task_id":1233,"note":"Scaffolded aios.package.search and aios.package.apply MCP tools in aiosh-mcp","evidence":[]}
+{"seq":1234,"ts":"2026-09-04T14:38:16Z","event":"completed","task_id":1234,"note":"Implemented aios.package.search and aios.package.apply MCP tools with full verification","evidence":[]}
+{"seq":1235,"ts":"2026-09-04T14:39:38Z","event":"completed","task_id":1235,"note":"Added comprehensive unit tests covering all package MCP tools, failure branches, and persistence","evidence":[]}
+{"seq":1236,"ts":"2026-09-04T14:41:07Z","event":"completed","task_id":1236,"note":"Integrated MCP tools into aiosh-mcp and verified automated PM4 integration suite","evidence":[]}
+{"seq":1237,"ts":"2026-09-04T14:44:46Z","event":"completed","task_id":1237,"note":"Security review for Package Management MCP/API surface complete; documented abuse scenarios and verified PEP/audit gating","evidence":[]}
+{"seq":1238,"ts":"2026-09-04T14:45:56Z","event":"completed","task_id":1238,"note":"Hardened package MCP/API surface with bounds checking, size limits, explicit error envelope, and cleanup","evidence":[]}
+{"seq":1239,"ts":"2026-09-04T14:46:40Z","event":"completed","task_id":1239,"note":"Documented package management MCP/API surface in docs/README.md with tool descriptions and JSON-RPC examples","evidence":[]}
+{"seq":1240,"ts":"2026-09-04T14:48:16Z","event":"completed","task_id":1240,"note":"Verified package management MCP/API surface; captured PM1..PM4 pass evidence; updated task_plan.md and progress.md to close milestone","evidence":[]}
+{"seq":1241,"ts":"2026-09-04T15:00:12Z","event":"completed","task_id":1241,"note":"Researched Package Management configuration architecture, precedents, facts vs assumptions, and decision framework","evidence":[]}
+{"seq":1242,"ts":"2026-09-04T15:00:53Z","event":"completed","task_id":1242,"note":"Specified Package Management configuration schema, invariants PC1..PC6, environment variable mapping, and error envelopes","evidence":[]}
+{"seq":1243,"ts":"2026-09-04T15:02:03Z","event":"completed","task_id":1243,"note":"Created package_config.rs scaffold in aiosh-core with typed signatures, export wiring, and compilation verification","evidence":[]}
+{"seq":1244,"ts":"2026-09-04T15:03:51Z","event":"completed","task_id":1244,"note":"Implemented PackageConfig in aiosh-core with PC1..PC6 invariants, file/env resolution, and unit tests","evidence":[]}
+{"seq":1245,"ts":"2026-09-04T15:04:54Z","event":"completed","task_id":1245,"note":"Authored test_package_config suite covering defaults, PC1..PC6 invariants, boundary checks, and file roundtrips","evidence":[]}
+{"seq":1246,"ts":"2026-09-04T15:10:04Z","event":"completed","task_id":1246,"note":"Integrated PackageConfig into aiosh package config CLI, aios.package.config MCP tool, and PM5 criterion","evidence":[]}
+{"seq":1247,"ts":"2026-09-04T15:10:54Z","event":"completed","task_id":1247,"note":"Completed security review for Package Management configuration; documented abuse scenarios and verified PEP/audit gating","evidence":[]}
+{"seq":1248,"ts":"2026-09-04T15:11:43Z","event":"completed","task_id":1248,"note":"Hardened Package Management configuration against file resource exhaustion, bounds violations, and silent failures","evidence":[]}
+{"seq":1249,"ts":"2026-09-04T15:12:45Z","event":"completed","task_id":1249,"note":"Documented Package Management configuration subsystem in docs/README.md with CLI and MCP examples","evidence":[]}
+{"seq":1250,"ts":"2026-09-04T15:14:30Z","event":"completed","task_id":1250,"note":"Verified Package Management configuration; PM1..PM5 green; closed milestone","evidence":[]}
+{"seq":1251,"ts":"2026-09-04T15:15:46Z","event":"completed","task_id":1251,"note":"Researched Package Management automated test criteria PT1..PT5 and upstream specs","evidence":[]}
+{"seq":1252,"ts":"2026-09-04T15:16:29Z","event":"completed","task_id":1252,"note":"Specified Package Management automated test criteria PT1..PT5","evidence":[]}
+{"seq":1253,"ts":"2026-09-04T15:17:46Z","event":"completed","task_id":1253,"note":"Scaffolded test_package_automated.rs with PT1..PT5 signatures","evidence":[]}
+{"seq":1254,"ts":"2026-09-04T15:19:13Z","event":"completed","task_id":1254,"note":"Implemented test_package_automated.rs with criteria PT1..PT5 passing","evidence":[]}
+{"seq":1255,"ts":"2026-09-04T15:20:25Z","event":"completed","task_id":1255,"note":"Added focused automated unit test suite covering PT1..PT6 matrix","evidence":[]}
+{"seq":1256,"ts":"2026-09-04T15:21:41Z","event":"completed","task_id":1256,"note":"Integrated test_package_automated into test_package_suites.py under PM6","evidence":[]}
+{"seq":1257,"ts":"2026-09-04T15:22:22Z","event":"completed","task_id":1257,"note":"Security-reviewed automated testing suite; 5 abuse scenarios verified safe","evidence":[]}
+{"seq":1258,"ts":"2026-09-04T15:23:06Z","event":"completed","task_id":1258,"note":"Hardened automated tests with 120s timeouts, RAII cleanups, and bounded matrices","evidence":[]}
+{"seq":1259,"ts":"2026-09-04T15:24:32Z","event":"completed","task_id":1259,"note":"Documented Package Management automated test suite, criteria PT1..PT6, and runner","evidence":[]}
+{"seq":1260,"ts":"2026-09-04T15:25:55Z","event":"completed","task_id":1260,"note":"Verified Package Management automated tests; PM1..PM6 green; closed milestone","evidence":[]}
+{"seq":1261,"ts":"2026-09-04T15:27:27Z","event":"completed","task_id":1261,"note":"Researched Package Management security policy standards, facts, and invariants PP1..PP6","evidence":[]}
+{"seq":1262,"ts":"2026-09-04T15:28:06Z","event":"completed","task_id":1262,"note":"Specified Package Management security policy contract and invariants PP1..PP6","evidence":[]}
+{"seq":1263,"ts":"2026-09-04T15:29:22Z","event":"completed","task_id":1263,"note":"Scaffolded package_policy.rs and exported in lib.rs","evidence":[]}
+{"seq":1264,"ts":"2026-09-04T15:33:33Z","event":"completed","task_id":1264,"note":"Implemented package_policy.rs enforcing PP1..PP6","evidence":[]}
+{"seq":1265,"ts":"2026-09-04T15:34:52Z","event":"completed","task_id":1265,"note":"Created unit test suite test_package_policy.rs covering PP1..PP6","evidence":[]}
+{"seq":1266,"ts":"2026-09-04T15:46:52Z","event":"completed","task_id":1266,"note":"Integrated package security policy into CLI, MCP, and test runner PM7","evidence":[]}
+{"seq":1267,"ts":"2026-09-04T15:47:56Z","event":"completed","task_id":1267,"note":"Completed security review and threat analysis for package security policy PP1..PP6","evidence":[]}
+{"seq":1268,"ts":"2026-09-04T15:51:04Z","event":"completed","task_id":1268,"note":"Hardened package security policy path bounds, stream limits, and fail-closed validation","evidence":[]}
+{"seq":1269,"ts":"2026-09-04T15:51:45Z","event":"completed","task_id":1269,"note":"Documented package security policy invariants PP1..PP6, CLI/MCP APIs, and configuration","evidence":[]}
+{"seq":1270,"ts":"2026-09-04T15:52:56Z","event":"completed","task_id":1270,"note":"Verified and closed milestone Package Management / security policy (10/10 tasks, PM1..PM7 PASS)","evidence":[]}
+{"seq":1271,"ts":"2026-09-04T15:54:13Z","event":"completed","task_id":1271,"note":"Researched package management observability, telemetry schemas, and prior art","evidence":[]}
+{"seq":1272,"ts":"2026-09-04T15:54:44Z","event":"completed","task_id":1272,"note":"Specified package observability schemas, PO1..PO6 criteria, CLI and MCP contracts","evidence":[]}
+{"seq":1273,"ts":"2026-09-04T15:55:54Z","event":"completed","task_id":1273,"note":"Scaffolded package_observability.rs module and wired into lib.rs with clean compilation","evidence":[]}
+{"seq":1274,"ts":"2026-09-04T15:57:45Z","event":"completed","task_id":1274,"note":"Implemented PackageObservabilityReport::generate with PO1..PO6 metric calculations","evidence":[]}
+{"seq":1275,"ts":"2026-09-04T15:59:04Z","event":"completed","task_id":1275,"note":"Added focused automated unit tests in test_package_observability.rs (6 tests passing for PO1..PO6)","evidence":[]}
+{"seq":1276,"ts":"2026-09-04T16:03:32Z","event":"completed","task_id":1276,"note":"Integrated package observability into CLI, MCP, and test runner PM8","evidence":[]}
+{"seq":1277,"ts":"2026-09-04T16:04:25Z","event":"completed","task_id":1277,"note":"Security reviewed package observability for injection, overflow, DoS, and audit logging","evidence":[]}
+{"seq":1278,"ts":"2026-09-05T05:15:33Z","event":"completed","task_id":1278,"note":"Hardened package observability against malformed paths, oversized inputs, and arithmetic edge cases with audit error guarantees","evidence":[]}
+{"seq":1279,"ts":"2026-09-05T05:17:30Z","event":"completed","task_id":1279,"note":"Documented package observability subsystem, PO1..PO6 invariants, CLI/MCP invocations, and constraints in docs/README.md","evidence":[]}
+{"seq":1280,"ts":"2026-09-05T05:19:11Z","event":"completed","task_id":1280,"note":"Verified and closed milestone Package Management / observability (10/10 tasks, PM1..PM8 PASS)","evidence":[]}
+{"seq":1281,"ts":"2026-09-05T05:19:54Z","event":"completed","task_id":1281,"note":"Researched package management documentation requirements, prior art, facts vs assumptions, and structure","evidence":[]}
+{"seq":1282,"ts":"2026-09-05T05:20:31Z","event":"completed","task_id":1282,"note":"Specified package management documentation contract, 9-section architecture, and test_package_doc.py criteria","evidence":[]}
+{"seq":1283,"ts":"2026-09-05T05:21:14Z","event":"completed","task_id":1283,"note":"Scaffolded docs/package_management.md with all 9 contract sections","evidence":[]}
+{"seq":1284,"ts":"2026-09-05T05:22:02Z","event":"completed","task_id":1284,"note":"Implemented comprehensive docs/package_management.md guide covering all 9 architectural sections","evidence":[]}
+{"seq":1285,"ts":"2026-09-05T05:22:58Z","event":"completed","task_id":1285,"note":"Added automated documentation unit test suite tools/test_package_doc.py asserting D1..D5 criteria","evidence":[]}
+{"seq":1286,"ts":"2026-09-05T05:24:27Z","event":"completed","task_id":1286,"note":"Integrated package documentation unit test PM9 into tools/test_package_suites.py and verified PM1..PM9 PASS","evidence":[]}
+{"seq":1287,"ts":"2026-09-05T05:25:02Z","event":"completed","task_id":1287,"note":"Security reviewed package management documentation, abuse scenarios, threat model, and non-repudiation audit trail","evidence":[]}
+{"seq":1288,"ts":"2026-09-05T05:25:59Z","event":"completed","task_id":1288,"note":"Hardened package management documentation with D1..D6 verification, size bounds, and rot-proof invariants","evidence":[]}
+{"seq":1289,"ts":"2026-09-05T05:27:18Z","event":"completed","task_id":1289,"note":"Documented package management documentation deliverables, links, constraints, and test runner updates","evidence":[]}
+{"seq":1290,"ts":"2026-09-05T05:28:44Z","event":"completed","task_id":1290,"note":"Verified and closed milestone Package Management / documentation (10/10 tasks, PM1..PM9 PASS)","evidence":[]}
+{"seq":1291,"ts":"2026-09-05T05:30:13Z","event":"completed","task_id":1291,"note":"Researched package management recovery and validation invariants RV1..RV4 and prior art","evidence":["docs/tasks/evidence/T-01291-recovery-validation-research.md"]}
+{"seq":1292,"ts":"2026-09-05T05:30:43Z","event":"completed","task_id":1292,"note":"Specified PackageValidationReport, RV1..RV4 invariants, load_or_recover contract, CLI/MCP check surfaces","evidence":["docs/tasks/evidence/T-01292-recovery-validation-specification.md"]}
+{"seq":1293,"ts":"2026-09-05T05:31:51Z","event":"completed","task_id":1293,"note":"Scaffolded package_recovery.rs module, PackageValidationReport, and load_or_recover stubs","evidence":["docs/tasks/evidence/T-01293-recovery-validation-scaffold.md"]}
+{"seq":1294,"ts":"2026-09-05T05:33:39Z","event":"completed","task_id":1294,"note":"Implemented package store validation, timestamped quarantine backup, and load_or_recover in package_recovery.rs","evidence":["docs/tasks/evidence/T-01294-recovery-validation-implementation.md"]}
+{"seq":1295,"ts":"2026-09-05T05:34:45Z","event":"completed","task_id":1295,"note":"Implemented test_package_recovery.rs unit suite covering RV1..RV4 and negative scenarios","evidence":["docs/tasks/evidence/T-01295-recovery-validation-unit-test.md"]}
+{"seq":1296,"ts":"2026-09-05T05:43:59Z","event":"completed","task_id":1296,"note":"Integrated aiosh package check CLI, aios.package.check MCP tool, and PM10 test suite","evidence":["docs/tasks/evidence/T-01296-recovery-validation-integration.md"]}

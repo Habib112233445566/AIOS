@@ -49,6 +49,10 @@ pub mod handoff_service;
 pub mod ledger;
 pub mod ledger_config;
 pub mod package;
+pub mod package_config;
+pub mod package_observability;
+pub mod package_policy;
+pub mod package_recovery;
 pub mod package_service;
 pub mod pentest;
 pub mod pep;
@@ -80,6 +84,10 @@ pub use handoff_service::HandoffStore;
 pub use package::{
     PackageAction, PackageActionType, PackageDependency, PackageFormat, PackageQuery, PackageSpec,
     PackageState, PackageTransaction,
+};
+pub use package_recovery::{
+    load_or_recover, recover_package_store_with_backup, validate_package_store,
+    PackageValidationReport,
 };
 pub use package_service::{PackageStore, TransactionReport};
 pub use pep::PepStore;
