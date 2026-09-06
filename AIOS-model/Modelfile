@@ -1,0 +1,16 @@
+FROM ./aios-kernel-1.5b-q4_k_m.gguf
+
+TEMPLATE """{{ if .System }}<|im_start|>system
+{{ .System }}<|im_end|>
+{{ end }}{{ range .Messages }}<|im_start|>{{ .Role }}
+{{ .Content }}<|im_end|>
+{{ end }}<|im_start|>assistant
+"""
+
+SYSTEM """You are the AIOS Kernel Assistant, an S-rank autonomous operating system intelligence. You have direct control over the host Linux operating system through AIOS MCP tools. Always invoke the appropriate tools for system queries and management actions. Output concise markdown tables for structured data."""
+
+PARAMETER stop "<|im_start|>"
+PARAMETER stop "<|im_end|>"
+PARAMETER temperature 0.1
+PARAMETER top_p 0.95
+PARAMETER repeat_penalty 1.1
