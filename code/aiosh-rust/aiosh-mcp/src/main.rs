@@ -809,6 +809,18 @@ impl Server {
                 "additionalProperties": false
             }
         }));
+        tools.push(json!({
+            "name": "aios.service.config",
+            "description": "Inspect Init & Service Supervision configuration parameters and limits",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "config_path": { "type": "string", "description": "Optional explicit path to service config JSON file" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
         tools
     }
 
@@ -2104,6 +2116,27 @@ impl Server {
                     &mut self.ring, &self.pep,
                     "aios.service.order", &format!("Plan startup sequence for {}", name), arguments,
                     Some(&name), grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.service.config" => {
+                let config_path_opt = arguments.get("config_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                if let Some(ref p) = config_path_opt {
+                    if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+                        return json!({ "ok": false, "error": "config_path exceeds maximum length of 1024 characters or contains control characters" });
+                    }
+                }
+                let f = move || -> Result<Value, String> {
+                    let config = aiosh_core::service_config::ServiceConfig::resolve(config_path_opt.as_deref().map(std::path::Path::new))?;
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.service.config",
+                        "config": config
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.service.config", "Get Init & Service Supervision configuration", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
                 )
             }
             "aios.triage.list" => {
@@ -4048,6 +4081,13 @@ mod tests {
         assert_eq!(res_get_ssh.pointer("/status/startup_mode").and_then(|v| v.as_str()), Some("masked"));
 
         let _ = std::fs::remove_file(&default_store_file);
+
+        // 14. aios.service.config
+        assert!(tools.iter().any(|t| t.get("name").and_then(|v| v.as_str()) == Some("aios.service.config")));
+        let res_config = server.call_tool("aios.service.config", &json!({}));
+        assert_eq!(res_config.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_config.pointer("/config/default_timeout_start_secs").and_then(|v| v.as_u64()), Some(30));
+        assert_eq!(res_config.pointer("/config/auto_persist").and_then(|v| v.as_bool()), Some(true));
     }
 }
 

@@ -68,6 +68,7 @@ pub mod secrets;
 pub mod secrets_config;
 pub mod secrets_service;
 pub mod service;
+pub mod service_config;
 pub mod service_service;
 pub mod task_service;
 pub mod toolchain_config;
@@ -98,6 +99,7 @@ pub use service::{
     ServiceDependency, ServiceDependencyType, ServiceHealth, ServiceQuery, ServiceRestartPolicy,
     ServiceSpec, ServiceStartupMode, ServiceState, ServiceStatus, ServiceType,
 };
+pub use service_config::ServiceConfig;
 pub use service_service::{ServiceActionReport, ServiceStore};
 pub use types::GENESIS_HASH;
 

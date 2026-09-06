@@ -1161,13 +1161,15 @@ Evidence: `docs/tasks/evidence/T-01201-data-model-research.md` .. `docs/tasks/ev
 - `aiosh service action <name> <action> [--store <path>] [--json]`: Execute lifecycle action (`start`, `stop`, `restart`, `reload`, `enable`, `disable`, `mask`, `unmask`).
 - `aiosh service <start|stop|restart|reload|enable|disable|mask|unmask> <name> [--store <path>] [--json]`: Direct action shortcuts for operator efficiency.
 - `aiosh service order <name> [--store <path>] [--json]`: Compute topological startup sequence.
+- `aiosh service config [--config <path>] [--json]`: Inspect resolved configuration parameters, timeouts, and storage limits.
 
-**Autonomous Agent MCP Tool Surface (`aiosh-mcp`, T-01306, T-01316):**
+**Autonomous Agent MCP Tool Surface (`aiosh-mcp`, T-01306, T-01316, T-01346):**
 - `aios.service.validate`: Validates service name syntax (SS1) or full `ServiceSpec` against SS1..SS5 invariants.
 - `aios.service.list`: Dispatches filtered query over registered services.
 - `aios.service.get`: Retrieves service spec and runtime status.
 - `aios.service.action`: Executes lifecycle state transition with PEP token verification and SQLite WAL audit logging.
 - `aios.service.order`: Resolves topological dependency startup graph.
+- `aios.service.config`: Retrieves active Service Supervision configuration parameters, timeouts, and invariant bounds.
 
 **Standalone Test Runner (`tools/test_service_suites.py`):**
 ```bash

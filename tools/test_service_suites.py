@@ -4,8 +4,9 @@
 Criteria:
   SS1: service data model integrity & invariants (SS1..SS5)
   SS2: service CLI surface commands & options (validate, list, show/status, action, order)
-  SS3: service MCP tool surface (validate, list, get, action, order)
+  SS3: service MCP tool surface (validate, list, get, action, order, config)
   SS4: service core service lifecycle, FSM & dependency ordering (CS1..CS5)
+  SS5: service configuration subsystem invariants, precedence & sizing (SC1..SC7)
 """
 
 from __future__ import annotations
@@ -73,12 +74,21 @@ def test_ss4_core_service_lifecycle():
     )
 
 
+def test_ss5_configuration_subsystem():
+    return _run_cargo_test(
+        ["--test", "test_service_config"],
+        "SS5",
+        "service configuration subsystem invariants, precedence & sizing (SC1..SC7)",
+    )
+
+
 def main():
     checks = [
         test_ss1_data_model_integrity,
         test_ss2_cli_surface_commands,
         test_ss3_mcp_surface_tools,
         test_ss4_core_service_lifecycle,
+        test_ss5_configuration_subsystem,
     ]
     all_ok = True
     for c in checks:
@@ -86,7 +96,7 @@ def main():
             all_ok = False
 
     if all_ok:
-        print("\nPASS: service_suites criteria (SS1..SS4)")
+        print("\nPASS: service_suites criteria (SS1..SS5)")
         return 0
     else:
         print("\nFAIL: service_suites criteria", file=sys.stderr)

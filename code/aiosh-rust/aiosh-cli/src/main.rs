@@ -1761,8 +1761,80 @@ fn cmd_service(args: &[String]) -> i32 {
                 }
             }
         }
+        Some("config") => {
+            let config_path_opt = parse_flag(rest, "--config");
+            if let Some(ref p) = config_path_opt {
+                if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+                    let msg = "config path cannot exceed 1024 characters and cannot contain control characters";
+                    classify_and_emit(
+                        &mut ctx,
+                        "service",
+                        "config",
+                        json!({ "error": msg }),
+                        "failure",
+                        None,
+                        Some("Invalid config path"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENT", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+            }
+            let resolved = match aiosh_core::service_config::ServiceConfig::resolve(config_path_opt.as_deref().map(std::path::Path::new)) {
+                Ok(c) => c,
+                Err(e) => {
+                    classify_and_emit(
+                        &mut ctx,
+                        "service",
+                        "config",
+                        json!({ "error": e }),
+                        "failure",
+                        None,
+                        Some("Failed to resolve service config"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "CONFIG_RESOLUTION_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("Failed to resolve service config: {}", e);
+                    }
+                    return 1;
+                }
+            };
+            classify_and_emit(
+                &mut ctx,
+                "service",
+                "config",
+                json!({ "store_path": resolved.store_path, "auto_persist": resolved.auto_persist }),
+                "success",
+                None,
+                Some("Resolved service configuration"),
+                "operator",
+                None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 0, "data": resolved, "error": serde_json::Value::Null }));
+            } else {
+                println!("AIOS Init & Service Supervision Configuration:");
+                println!("  Store Path:                 {}", resolved.store_path.display());
+                println!("  Default Startup Timeout:    {}s", resolved.default_timeout_start_secs);
+                println!("  Default Stop Timeout:       {}s", resolved.default_timeout_stop_secs);
+                println!("  Max Store Size:             {} bytes", resolved.max_store_size_bytes);
+                println!("  Max Entity Count:           {}", resolved.max_entity_count);
+                println!("  Auto Persist:               {}", resolved.auto_persist);
+                println!("  Restart Backoff Delay:      {}s", resolved.restart_backoff_secs);
+                println!("  Max Restart Burst:          {}", resolved.max_restart_burst);
+            }
+            0
+        }
         Some("--help") | Some("-h") | None => {
-            println!("aiosh service — Init & Service Supervision Manager\n\nUsage: aiosh service <command> [options]\n\nCommands:\n  validate  Validate service name (SS1) or specification file/json (SS1..SS5)\n  list      List services in store with optional state, mode, and pattern filters\n  show      Display detailed service specification and runtime status (alias: status)\n  action    Execute a lifecycle action (start, stop, restart, reload, enable, disable, mask, unmask)\n  start     Start a service unit (shortcut for action <name> start)\n  stop      Stop a service unit (shortcut for action <name> stop)\n  restart   Restart a service unit (shortcut for action <name> restart)\n  reload    Reload a service unit configuration (shortcut for action <name> reload)\n  enable    Enable a service for automatic startup (shortcut for action <name> enable)\n  disable   Disable a service from automatic startup (shortcut for action <name> disable)\n  mask      Mask a service to prevent activation (shortcut for action <name> mask)\n  unmask    Unmask a service to allow activation (shortcut for action <name> unmask)\n  order     Calculate deterministic dependency startup sequence for a service");
+            println!("aiosh service — Init & Service Supervision Manager\n\nUsage: aiosh service <command> [options]\n\nCommands:\n  validate  Validate service name (SS1) or specification file/json (SS1..SS5)\n  list      List services in store with optional state, mode, and pattern filters\n  show      Display detailed service specification and runtime status (alias: status)\n  action    Execute a lifecycle action (start, stop, restart, reload, enable, disable, mask, unmask)\n  start     Start a service unit (shortcut for action <name> start)\n  stop      Stop a service unit (shortcut for action <name> stop)\n  restart   Restart a service unit (shortcut for action <name> restart)\n  reload    Reload a service unit configuration (shortcut for action <name> reload)\n  enable    Enable a service for automatic startup (shortcut for action <name> enable)\n  disable   Disable a service from automatic startup (shortcut for action <name> disable)\n  mask      Mask a service to prevent activation (shortcut for action <name> mask)\n  unmask    Unmask a service to allow activation (shortcut for action <name> unmask)\n  order     Calculate deterministic dependency startup sequence for a service\n  config    Inspect Init & Service Supervision configuration parameters");
             0
         }
         Some(other) => {
