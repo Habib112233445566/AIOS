@@ -1151,8 +1151,15 @@ Evidence: `docs/tasks/evidence/T-01201-data-model-research.md` .. `docs/tasks/ev
   - `CS3`: Topological dependency ordering via Kahn's algorithm with cycle detection.
   - `CS4`: Filtered query engine supporting name patterns, state, startup mode, and result limits.
   - `CS5`: Atomic filesystem persistence with PID isolation and 10 MiB payload ceiling.
+- Security Policy Engine (`ServiceSecurityPolicy`, `SP1..SP6`, `code/aiosh-rust/aiosh-core/src/service_policy.rs`):
+  - `SP1`: Policy configuration bounds ($\le 1024$ prohibited services, $\le 128$ paths, $[1..86400]$s timeouts).
+  - `SP2`: Prohibited services rejection (blocking insecure legacy daemons `telnet.service`, `rsh.service`, etc.).
+  - `SP3`: Executable path & directory traversal hygiene (banning `/tmp`, `/var/tmp`, `/dev/shm`, relative binaries, and `..`).
+  - `SP4`: User privilege & root restriction (`require_service_user`, `disallow_root`, `allowed_root_services` exemption list).
+  - `SP5`: Environment sanitization (banning `LD_PRELOAD`, `LD_LIBRARY_PATH`, `IFS`, bounding variable count and timeouts).
+  - `SP6`: Tri-state policy modes (`Enforcing`, `Audit`, `Permissive`) with non-repudiation audit logging.
 
-**Operator CLI Surface (`aiosh service`, T-01306, T-01316, T-01321..T-01329):**
+**Operator CLI Surface (`aiosh service`, T-01306, T-01316, T-01321..T-01329, T-01366):**
 - `aiosh service validate --name <name> [--json]`: Validate service name syntax (SS1).
 - `aiosh service validate --spec <file_or_inline_json> [--json]`: Deep-audit full service specification against invariants SS1..SS5 with 1 MiB payload ceiling.
 - `aiosh service list [--pattern <pat>] [--state <state>] [--mode <mode>] [--limit <n>] [--store <path>] [--json]`: List registered services matching query filters.
@@ -1162,28 +1169,31 @@ Evidence: `docs/tasks/evidence/T-01201-data-model-research.md` .. `docs/tasks/ev
 - `aiosh service <start|stop|restart|reload|enable|disable|mask|unmask> <name> [--store <path>] [--json]`: Direct action shortcuts for operator efficiency.
 - `aiosh service order <name> [--store <path>] [--json]`: Compute topological startup sequence.
 - `aiosh service config [--config <path>] [--json]`: Inspect resolved configuration parameters, timeouts, and storage limits.
+- `aiosh service policy [--service <name>] [--config <path>] [--json]`: Inspect or evaluate service specifications against security policy (SP1..SP6).
 
-**Autonomous Agent MCP Tool Surface (`aiosh-mcp`, T-01306, T-01316, T-01346):**
+**Autonomous Agent MCP Tool Surface (`aiosh-mcp`, T-01306, T-01316, T-01346, T-01366):**
 - `aios.service.validate`: Validates service name syntax (SS1) or full `ServiceSpec` against SS1..SS5 invariants.
 - `aios.service.list`: Dispatches filtered query over registered services.
 - `aios.service.get`: Retrieves service spec and runtime status.
 - `aios.service.action`: Executes lifecycle state transition with PEP token verification and SQLite WAL audit logging.
 - `aios.service.order`: Resolves topological dependency startup graph.
 - `aios.service.config`: Retrieves active Service Supervision configuration parameters, timeouts, and invariant bounds.
+- `aios.service.policy`: Evaluates service security policy or inspects active policy configuration for autonomous agents.
 
 **Standalone Test Runner (`tools/test_service_suites.py`):**
 ```bash
 python tools/test_service_suites.py
 # [+] SS1 service data model integrity & invariants (SS1..SS5)
 # [+] SS2 service CLI surface commands & options (validate, list, show/status, action, order)
-# [+] SS3 service MCP tool surface (validate, list, get, action, order, config)
+# [+] SS3 service MCP tool surface (validate, list, get, action, order)
 # [+] SS4 service core service lifecycle, FSM & dependency ordering (CS1..CS5)
 # [+] SS5 service configuration subsystem invariants, precedence & sizing (SC1..SC7)
 # [+] SS6 service automated integration tests (ST1..ST5)
-# PASS: service_suites criteria (SS1..SS6)
+# [+] SS7 service security policy invariants & evaluation (SP1..SP6)
+# PASS: service_suites criteria (SS1..SS7)
 ```
 
-Evidence: `docs/tasks/evidence/T-01301-data-model-research.md` .. `docs/tasks/evidence/T-01359-automated-tests-documentation.md`.
+Evidence: `docs/tasks/evidence/T-01301-data-model-research.md` .. `docs/tasks/evidence/T-01369-security-policy-documentation.md`.
 
 
 

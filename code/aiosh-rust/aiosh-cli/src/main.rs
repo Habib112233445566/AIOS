@@ -1833,8 +1833,133 @@ fn cmd_service(args: &[String]) -> i32 {
             }
             0
         }
+        Some("policy") => {
+            let config_path_opt = parse_flag(rest, "--config");
+            if let Some(ref p) = config_path_opt {
+                if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+                    let msg = "config path cannot exceed 1024 characters and cannot contain control characters";
+                    classify_and_emit(
+                        &mut ctx,
+                        "service",
+                        "policy",
+                        json!({ "error": msg }),
+                        "failure",
+                        None,
+                        Some("Invalid policy config path"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENT", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+            }
+            let policy = match aiosh_core::service_policy::ServiceSecurityPolicy::resolve(config_path_opt.as_deref()) {
+                Ok(p) => p,
+                Err(e) => {
+                    classify_and_emit(
+                        &mut ctx,
+                        "service",
+                        "policy",
+                        json!({ "error": e }),
+                        "failure",
+                        None,
+                        Some("Failed to resolve service security policy"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "POLICY_RESOLUTION_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("Failed to resolve service security policy: {}", e);
+                    }
+                    return 1;
+                }
+            };
+
+            let svc_name_opt = parse_flag(rest, "--service").or_else(|| parse_flag(rest, "--name"));
+            if let Some(ref name) = svc_name_opt {
+                let store = match load_store() {
+                    Ok(s) => s,
+                    Err(e) => {
+                        if is_json {
+                            println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "LOAD_STORE_FAILED", "message": e } }));
+                        } else {
+                            eprintln!("failed to load store: {}", e);
+                        }
+                        return 1;
+                    }
+                };
+                let spec = match store.get_service(name) {
+                    Some(s) => s,
+                    None => {
+                        let msg = format!("service '{}' not found in store", name);
+                        if is_json {
+                            println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "SERVICE_NOT_FOUND", "message": msg } }));
+                        } else {
+                            eprintln!("{}", msg);
+                        }
+                        return 2;
+                    }
+                };
+                let verdict = policy.evaluate_spec(spec);
+                classify_and_emit(
+                    &mut ctx,
+                    "service",
+                    "policy",
+                    json!({ "service": name, "allowed": verdict.allowed, "violations": verdict.violations.len() }),
+                    if verdict.allowed { "success" } else { "failure" },
+                    Some(name),
+                    Some("Evaluated service security policy"),
+                    "operator",
+                    None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 0, "data": verdict, "error": serde_json::Value::Null }));
+                } else {
+                    println!("Service Security Policy Verdict for '{}':", name);
+                    println!("  Allowed:    {}", verdict.allowed);
+                    println!("  Mode:       {:?}", verdict.mode);
+                    println!("  Violations: {}", verdict.violations.len());
+                    for v in &verdict.violations {
+                        println!("    [{}] {}: {}", if v.fatal { "FATAL" } else { "WARN" }, v.rule_id, v.description);
+                    }
+                }
+                if verdict.allowed { 0 } else { 1 }
+            } else {
+                classify_and_emit(
+                    &mut ctx,
+                    "service",
+                    "policy",
+                    json!({ "mode": format!("{:?}", policy.mode) }),
+                    "success",
+                    None,
+                    Some("Inspected service security policy"),
+                    "operator",
+                    None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 0, "data": policy, "error": serde_json::Value::Null }));
+                } else {
+                    println!("AIOS Init & Service Supervision Security Policy:");
+                    println!("  Mode:                       {:?}", policy.mode);
+                    println!("  Require Service User:       {}", policy.require_service_user);
+                    println!("  Disallow Root:              {}", policy.disallow_root);
+                    println!("  Max Environment Variables:  {}", policy.max_env_vars);
+                    println!("  Max Timeout (s):            {}s", policy.max_timeout_secs);
+                    println!("  Prohibited Services:        {}", policy.prohibited_services.join(", "));
+                    println!("  Prohibited Exec Paths:      {}", policy.prohibited_exec_paths.join(", "));
+                    println!("  Disallowed Env Vars:        {}", policy.disallow_env_vars.join(", "));
+                    println!("  Allowed Root Services:      {}", policy.allowed_root_services.join(", "));
+                }
+                0
+            }
+        }
         Some("--help") | Some("-h") | None => {
-            println!("aiosh service — Init & Service Supervision Manager\n\nUsage: aiosh service <command> [options]\n\nCommands:\n  validate  Validate service name (SS1) or specification file/json (SS1..SS5)\n  list      List services in store with optional state, mode, and pattern filters\n  show      Display detailed service specification and runtime status (alias: status)\n  action    Execute a lifecycle action (start, stop, restart, reload, enable, disable, mask, unmask)\n  start     Start a service unit (shortcut for action <name> start)\n  stop      Stop a service unit (shortcut for action <name> stop)\n  restart   Restart a service unit (shortcut for action <name> restart)\n  reload    Reload a service unit configuration (shortcut for action <name> reload)\n  enable    Enable a service for automatic startup (shortcut for action <name> enable)\n  disable   Disable a service from automatic startup (shortcut for action <name> disable)\n  mask      Mask a service to prevent activation (shortcut for action <name> mask)\n  unmask    Unmask a service to allow activation (shortcut for action <name> unmask)\n  order     Calculate deterministic dependency startup sequence for a service\n  config    Inspect Init & Service Supervision configuration parameters");
+            println!("aiosh service — Init & Service Supervision Manager\n\nUsage: aiosh service <command> [options]\n\nCommands:\n  validate  Validate service name (SS1) or specification file/json (SS1..SS5)\n  list      List services in store with optional state, mode, and pattern filters\n  show      Display detailed service specification and runtime status (alias: status)\n  action    Execute a lifecycle action (start, stop, restart, reload, enable, disable, mask, unmask)\n  start     Start a service unit (shortcut for action <name> start)\n  stop      Stop a service unit (shortcut for action <name> stop)\n  restart   Restart a service unit (shortcut for action <name> restart)\n  reload    Reload a service unit configuration (shortcut for action <name> reload)\n  enable    Enable a service for automatic startup (shortcut for action <name> enable)\n  disable   Disable a service from automatic startup (shortcut for action <name> disable)\n  mask      Mask a service to prevent activation (shortcut for action <name> mask)\n  unmask    Unmask a service to allow activation (shortcut for action <name> unmask)\n  order     Calculate deterministic dependency startup sequence for a service\n  config    Inspect Init & Service Supervision configuration parameters\n  policy    Inspect or evaluate service security policy (SP1..SP6)");
             0
         }
         Some(other) => {

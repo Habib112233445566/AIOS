@@ -821,6 +821,20 @@ impl Server {
                 "additionalProperties": false
             }
         }));
+        tools.push(json!({
+            "name": "aios.service.policy",
+            "description": "Inspect or evaluate Init & Service Supervision security policy (SP1..SP6)",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "service_name": { "type": "string", "description": "Optional service name to evaluate against policy" },
+                    "config_path": { "type": "string", "description": "Optional explicit path to service policy JSON file" },
+                    "store_path": { "type": "string", "description": "Optional path to custom service_store.json" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
         tools
     }
 
@@ -2136,6 +2150,81 @@ impl Server {
                 dispatch::recorded_call(
                     &mut self.ring, &self.pep,
                     "aios.service.config", "Get Init & Service Supervision configuration", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.service.policy" => {
+                let svc_name_opt = arguments.get("service_name").and_then(|v| v.as_str()).map(|s| s.to_string());
+                if let Some(ref name) = svc_name_opt {
+                    if let Err(err) = aiosh_core::service::validate_service_name(name) {
+                        return json!({ "ok": false, "error": format!("invalid service_name: {}", err) });
+                    }
+                }
+                let config_path_opt = arguments.get("config_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                if let Some(ref p) = config_path_opt {
+                    if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+                        return json!({ "ok": false, "error": "config_path exceeds maximum length of 1024 characters or contains control characters" });
+                    }
+                }
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                if let Some(ref p) = store_path_opt {
+                    if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+                        return json!({ "ok": false, "error": "store_path exceeds maximum length of 1024 characters or contains control characters" });
+                    }
+                }
+
+                let f = move || -> Result<Value, String> {
+                    let policy = aiosh_core::service_policy::ServiceSecurityPolicy::resolve(config_path_opt.as_deref())?;
+                    if let Some(ref name) = svc_name_opt {
+                        let name_lower = name.to_lowercase();
+                        let name_no_suffix = name_lower.strip_suffix(".service").unwrap_or(&name_lower);
+                        let is_prohibited = policy.prohibited_services.iter().any(|p| {
+                            let p_lower = p.to_lowercase();
+                            let p_no_suffix = p_lower.strip_suffix(".service").unwrap_or(&p_lower);
+                            name_lower == p_lower || name_no_suffix == p_no_suffix
+                        });
+                        if is_prohibited {
+                            let verdict = aiosh_core::service_policy::ServicePolicyVerdict {
+                                service_name: name.clone(),
+                                allowed: policy.mode == aiosh_core::service_policy::ServicePolicyMode::Audit,
+                                mode: policy.mode,
+                                violations: vec![aiosh_core::service_policy::ServicePolicyViolation {
+                                    rule_id: "SP2-PROHIBITED-SERVICE".into(),
+                                    service_name: name.clone(),
+                                    description: format!("Service '{}' is prohibited by security policy", name),
+                                    fatal: true,
+                                }],
+                                evaluated_at: "2026-09-06T00:00:00Z".into(),
+                            };
+                            return Ok(json!({
+                                "ok": verdict.allowed,
+                                "tool": "aios.service.policy",
+                                "verdict": verdict
+                            }));
+                        }
+
+                        let store = match store_path_opt {
+                            Some(ref sp) => aiosh_core::service_service::ServiceStore::load_from_path(std::path::Path::new(sp))?,
+                            None => aiosh_core::service_service::ServiceStore::new(),
+                        };
+                        let spec = store.get_service(name).ok_or_else(|| format!("service '{}' not found in store", name))?;
+                        let verdict = policy.evaluate_spec(spec);
+                        Ok(json!({
+                            "ok": verdict.allowed,
+                            "tool": "aios.service.policy",
+                            "verdict": verdict
+                        }))
+                    } else {
+                        Ok(json!({
+                            "ok": true,
+                            "tool": "aios.service.policy",
+                            "policy": policy
+                        }))
+                    }
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.service.policy", "Evaluate or inspect Init & Service Supervision security policy", arguments,
                     None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
                 )
             }
@@ -4088,6 +4177,16 @@ mod tests {
         assert_eq!(res_config.get("ok").and_then(|v| v.as_bool()), Some(true));
         assert_eq!(res_config.pointer("/config/default_timeout_start_secs").and_then(|v| v.as_u64()), Some(30));
         assert_eq!(res_config.pointer("/config/auto_persist").and_then(|v| v.as_bool()), Some(true));
+
+        // 15. aios.service.policy
+        assert!(tools.iter().any(|t| t.get("name").and_then(|v| v.as_str()) == Some("aios.service.policy")));
+        let res_policy_inspect = server.call_tool("aios.service.policy", &json!({}));
+        assert_eq!(res_policy_inspect.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert!(res_policy_inspect.pointer("/policy/prohibited_services").is_some());
+
+        let res_policy_telnet = server.call_tool("aios.service.policy", &json!({ "service_name": "telnet.service" }));
+        assert_eq!(res_policy_telnet.get("ok").and_then(|v| v.as_bool()), Some(false));
+        assert_eq!(res_policy_telnet.pointer("/verdict/allowed").and_then(|v| v.as_bool()), Some(false));
     }
 }
 

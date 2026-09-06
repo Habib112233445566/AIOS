@@ -8,6 +8,7 @@ Criteria:
   SS4: service core service lifecycle, FSM & dependency ordering (CS1..CS5)
   SS5: service configuration subsystem invariants, precedence & sizing (SC1..SC7)
   SS6: service automated integration tests (ST1..ST5)
+  SS7: service security policy invariants & evaluation (SP1..SP6)
 """
 
 from __future__ import annotations
@@ -91,6 +92,14 @@ def test_ss6_automated_integration():
     )
 
 
+def test_ss7_security_policy():
+    return _run_cargo_test(
+        ["--test", "test_service_policy"],
+        "SS7",
+        "service security policy invariants & evaluation (SP1..SP6)",
+    )
+
+
 def main():
     checks = [
         test_ss1_data_model_integrity,
@@ -99,6 +108,7 @@ def main():
         test_ss4_core_service_lifecycle,
         test_ss5_configuration_subsystem,
         test_ss6_automated_integration,
+        test_ss7_security_policy,
     ]
     all_ok = True
     for c in checks:
@@ -106,7 +116,7 @@ def main():
             all_ok = False
 
     if all_ok:
-        print("\nPASS: service_suites criteria (SS1..SS6)")
+        print("\nPASS: service_suites criteria (SS1..SS7)")
         return 0
     else:
         print("\nFAIL: service_suites criteria", file=sys.stderr)
