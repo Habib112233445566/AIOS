@@ -35,3 +35,6 @@ scratch/
 **/output/
 *.iso
 *.zip
+
+# AIOS local runtime state (service store, packages, triage, audit)
+.aios/

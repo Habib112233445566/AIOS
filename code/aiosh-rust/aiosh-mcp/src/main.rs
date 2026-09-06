@@ -1964,11 +1964,6 @@ impl Server {
                 let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
 
                 let f = move || -> Result<Value, String> {
-                    if let Some(ref p) = store_path_opt {
-                        if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
-                            return Err("store_path exceeds 1024 characters or contains control characters".into());
-                        }
-                    }
                     if let Some(ref pat) = pattern_opt {
                         if pat.len() > 256 || pat.chars().any(|c| c.is_control()) {
                             return Err("pattern exceeds 256 characters or contains control characters".into());
@@ -1993,10 +1988,7 @@ impl Server {
                         None => None,
                     };
 
-                    let store = match store_path_opt {
-                        Some(ref p) => aiosh_core::service_service::ServiceStore::load_from_path(std::path::Path::new(p))?,
-                        None => aiosh_core::service_service::ServiceStore::new(),
-                    };
+                    let (store, _) = resolve_service_store(&store_path_opt)?;
 
                     let query = aiosh_core::service::ServiceQuery {
                         name_pattern: pattern_opt.clone(),
@@ -2030,15 +2022,7 @@ impl Server {
                     if name_for_closure.len() > 128 || name_for_closure.chars().any(|c| c.is_control()) {
                         return Err("name exceeds 128 characters or contains control characters".into());
                     }
-                    if let Some(ref p) = store_path_opt {
-                        if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
-                            return Err("store_path exceeds 1024 characters or contains control characters".into());
-                        }
-                    }
-                    let store = match store_path_opt {
-                        Some(ref p) => aiosh_core::service_service::ServiceStore::load_from_path(std::path::Path::new(p))?,
-                        None => aiosh_core::service_service::ServiceStore::new(),
-                    };
+                    let (store, _) = resolve_service_store(&store_path_opt)?;
                     match (store.get_service(&name_for_closure), store.get_status(&name_for_closure)) {
                         (Some(spec), Some(status)) => Ok(json!({
                             "ok": true,
@@ -2080,19 +2064,9 @@ impl Server {
                         "unmask" => aiosh_core::service::ServiceAction::Unmask,
                         other => return Err(format!("unknown action '{}'", other)),
                     };
-                    if let Some(ref p) = store_path_opt {
-                        if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
-                            return Err("store_path exceeds 1024 characters or contains control characters".into());
-                        }
-                    }
-                    let mut store = match store_path_opt {
-                        Some(ref p) => aiosh_core::service_service::ServiceStore::load_from_path(std::path::Path::new(p))?,
-                        None => aiosh_core::service_service::ServiceStore::new(),
-                    };
+                    let (mut store, target_path) = resolve_service_store(&store_path_opt)?;
                     let report = store.execute_action(&name_for_closure, action)?;
-                    if let Some(ref p) = store_path_opt {
-                        store.save_to_path(std::path::Path::new(p))?;
-                    }
+                    store.save_to_path(&target_path)?;
                     Ok(json!({
                         "ok": true,
                         "tool": "aios.service.action",
@@ -2117,15 +2091,7 @@ impl Server {
                     if name_for_closure.len() > 128 || name_for_closure.chars().any(|c| c.is_control()) {
                         return Err("name exceeds 128 characters or contains control characters".into());
                     }
-                    if let Some(ref p) = store_path_opt {
-                        if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
-                            return Err("store_path exceeds 1024 characters or contains control characters".into());
-                        }
-                    }
-                    let store = match store_path_opt {
-                        Some(ref p) => aiosh_core::service_service::ServiceStore::load_from_path(std::path::Path::new(p))?,
-                        None => aiosh_core::service_service::ServiceStore::new(),
-                    };
+                    let (store, _) = resolve_service_store(&store_path_opt)?;
                     let order = store.plan_service_order(&name_for_closure)?;
                     Ok(json!({
                         "ok": true,
@@ -3121,6 +3087,28 @@ fn row_to_json(r: &aiosh_core::types::AuditRow) -> Value {
     Value::Object(m)
 }
 
+fn resolve_service_store(
+    store_path_opt: &Option<String>,
+) -> Result<(aiosh_core::service_service::ServiceStore, std::path::PathBuf), String> {
+    if let Some(ref p) = store_path_opt {
+        if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+            return Err("store_path exceeds 1024 characters or contains control characters".into());
+        }
+        let path = std::path::PathBuf::from(p);
+        let store = aiosh_core::service_service::ServiceStore::load_from_path(&path)?;
+        Ok((store, path))
+    } else {
+        let default_path = std::path::PathBuf::from(".aios/service_store.json");
+        if default_path.exists() {
+            let store = aiosh_core::service_service::ServiceStore::load_from_path(&default_path)?;
+            Ok((store, default_path))
+        } else {
+            let store = aiosh_core::service_service::ServiceStore::new();
+            Ok((store, default_path))
+        }
+    }
+}
+
 /// Hardening (T-00028): bound request lines so a hostile client cannot
 /// balloon server memory with a single giant JSON line. Largest
 /// legitimate request is ~70 KiB (4096-byte note + 16×4096 evidence);
@@ -4031,6 +4019,35 @@ mod tests {
 
         let res_order_missing = server.call_tool("aios.service.order", &json!({}));
         assert_eq!(res_order_missing.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 13. Default persistence across multi-turn tool calls without store_path
+        let default_store_file = std::path::PathBuf::from(".aios/service_store.json");
+        let _ = std::fs::remove_file(&default_store_file);
+
+        // Turn 1: Stop ssh.service (default active)
+        let res_stop_ssh = server.call_tool("aios.service.action", &json!({
+            "name": "ssh.service",
+            "action": "stop"
+        }));
+        assert_eq!(res_stop_ssh.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_stop_ssh.pointer("/report/new_state").and_then(|v| v.as_str()), Some("inactive"));
+
+        // Turn 2: Mask ssh.service (must succeed because it was stopped in Turn 1 and persisted!)
+        let res_mask_ssh = server.call_tool("aios.service.action", &json!({
+            "name": "ssh.service",
+            "action": "mask"
+        }));
+        assert_eq!(res_mask_ssh.get("ok").and_then(|v| v.as_bool()), Some(true));
+
+        // Turn 3: Verify with aios.service.get
+        let res_get_ssh = server.call_tool("aios.service.get", &json!({
+            "name": "ssh.service"
+        }));
+        assert_eq!(res_get_ssh.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_get_ssh.pointer("/status/state").and_then(|v| v.as_str()), Some("inactive"));
+        assert_eq!(res_get_ssh.pointer("/status/startup_mode").and_then(|v| v.as_str()), Some("masked"));
+
+        let _ = std::fs::remove_file(&default_store_file);
     }
 }
 
