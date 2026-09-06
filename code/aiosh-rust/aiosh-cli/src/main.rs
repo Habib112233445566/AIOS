@@ -197,8 +197,9 @@ fn main() {
         Some("distro") => cmd_distro(&args[1..]),
         Some("image") => cmd_image(&args[1..]),
         Some("package") => cmd_package(&args[1..]),
+        Some("service") => cmd_service(&args[1..]),
         Some("--help") | Some("-h") | None => {
-            println!("aiosh — AIOS shell CLI (Rust)\n\nUsage: aiosh <status|run|agent|audit|grant|pentest|classify|task|ci|release|backup|toolchain|doc|evidence|repo|secrets|triage|handoff|distro|image|package> ...\n\n  aiosh task <status|done|block|unblock|skip|rebuild|check>  Task ledger control\n  aiosh ci <show|failures|check|config|metrics> [--file PATH]  CI smoke reports\n  aiosh release generate  Create bootable ISO\n  aiosh backup create  Create system snapshot zip\n  aiosh toolchain check [--config <path>]  Verify host environment against ToolchainManifest\n  aiosh toolchain show [--config <path>]   Display the resolved ToolchainManifest\n  aiosh doc <show|check|search>  Documentation Index Control\n  aiosh evidence <verify|hash|scan>   Evidence & Audit Trail Control\n  aiosh repo <health|check>  Repository Health Diagnostics\n  aiosh secrets <scan|check> [--config <path>]  Secrets & Access Hygiene Scanner\n  aiosh triage <list|show|record|resolve|ingest|check>  Regression Triage Manager\n  aiosh handoff <list|show|initiate|accept|reject|complete|cancel>  Agent Handoff Protocol Manager\n  aiosh distro <list|show|evaluate|recommend|policy|stats|check>  Linux Distro Selection & Justification Manager\n  aiosh image <list|show|plan|filter>  Linux Base Image Build & Packaging Manager\n  aiosh package <list|show|search|plan|apply|validate>  Linux Package Management & Store Control");
+            println!("aiosh — AIOS shell CLI (Rust)\n\nUsage: aiosh <status|run|agent|audit|grant|pentest|classify|task|ci|release|backup|toolchain|doc|evidence|repo|secrets|triage|handoff|distro|image|package|service> ...\n\n  aiosh task <status|done|block|unblock|skip|rebuild|check>  Task ledger control\n  aiosh ci <show|failures|check|config|metrics> [--file PATH]  CI smoke reports\n  aiosh release generate  Create bootable ISO\n  aiosh backup create  Create system snapshot zip\n  aiosh toolchain check [--config <path>]  Verify host environment against ToolchainManifest\n  aiosh toolchain show [--config <path>]   Display the resolved ToolchainManifest\n  aiosh doc <show|check|search>  Documentation Index Control\n  aiosh evidence <verify|hash|scan>   Evidence & Audit Trail Control\n  aiosh repo <health|check>  Repository Health Diagnostics\n  aiosh secrets <scan|check> [--config <path>]  Secrets & Access Hygiene Scanner\n  aiosh triage <list|show|record|resolve|ingest|check>  Regression Triage Manager\n  aiosh handoff <list|show|initiate|accept|reject|complete|cancel>  Agent Handoff Protocol Manager\n  aiosh distro <list|show|evaluate|recommend|policy|stats|check>  Linux Distro Selection & Justification Manager\n  aiosh image <list|show|plan|filter>  Linux Base Image Build & Packaging Manager\n  aiosh package <list|show|search|plan|apply|validate>  Linux Package Management & Store Control\n  aiosh service <validate|list|show|status|action|start|stop|restart|reload|order>  Init & Service Supervision Control");
             0
         }
         Some(other) => {
@@ -983,7 +984,801 @@ fn cmd_image(args: &[String]) -> i32 {
     }
 }
 
+fn cmd_service(args: &[String]) -> i32 {
+    let mut ctx = open_context();
+    let sub = args.first().map(|s| s.as_str());
+    let rest = if args.len() > 1 { &args[1..] } else { &[] };
+    let is_json = has_flag(rest, "--json");
+
+    let store_path_opt = parse_flag(rest, "--store");
+    if let Some(ref p) = store_path_opt {
+        if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+            let msg = "store path cannot exceed 1024 characters and cannot contain control characters";
+            classify_and_emit(
+                &mut ctx,
+                "service",
+                sub.unwrap_or("unknown"),
+                json!({ "error": msg }),
+                "failure",
+                None,
+                Some("Invalid store path"),
+                "operator",
+                None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENT", "message": msg } }));
+            } else {
+                eprintln!("{}", msg);
+            }
+            return 2;
+        }
+    }
+    let load_store = || -> Result<aiosh_core::service_service::ServiceStore, String> {
+        match store_path_opt {
+            Some(ref p) => aiosh_core::service_service::ServiceStore::load_from_path(std::path::Path::new(p)),
+            None => Ok(aiosh_core::service_service::ServiceStore::new()),
+        }
+    };
+
+    match sub {
+        Some("validate") => {
+            if let Some(name) = parse_flag(rest, "--name") {
+                let res = aiosh_core::service::validate_service_name(&name);
+                let (code, msg, errors) = match res {
+                    Ok(()) => (0, format!("Service name '{}' is valid", name), vec![]),
+                    Err(e) => (2, format!("Service name '{}' is invalid: {}", name, e), vec![e]),
+                };
+                classify_and_emit(
+                    &mut ctx,
+                    "service",
+                    "validate",
+                    json!({ "name": name, "valid": code == 0 }),
+                    if code == 0 { "success" } else { "failure" },
+                    Some(&name),
+                    Some(&msg),
+                    "operator",
+                    None,
+                );
+                if is_json {
+                    println!("{}", json!({
+                        "code": code,
+                        "data": { "valid": code == 0, "name": name },
+                        "error": if code == 0 { serde_json::Value::Null } else { json!({ "code": "VALIDATION_FAILED", "message": msg, "errors": errors }) }
+                    }));
+                } else if code == 0 {
+                    println!("VALID: Service name '{}' conforms to SS1 naming syntax", name);
+                } else {
+                    eprintln!("INVALID: {}", msg);
+                }
+                code
+            } else if let Some(spec_str) = parse_flag(rest, "--spec") {
+                let content = if std::path::Path::new(&spec_str).exists() {
+                    let path = std::path::Path::new(&spec_str);
+                    if let Ok(meta) = std::fs::metadata(path) {
+                        if meta.len() > 1024 * 1024 {
+                            let err_msg = format!("spec file '{}' exceeds 1 MiB size limit (was {} bytes)", spec_str, meta.len());
+                            classify_and_emit(
+                                &mut ctx,
+                                "service",
+                                "validate",
+                                json!({ "error": err_msg }),
+                                "failure",
+                                None,
+                                Some("Spec file exceeds size limit"),
+                                "operator",
+                                None,
+                            );
+                            if is_json {
+                                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "PAYLOAD_TOO_LARGE", "message": err_msg } }));
+                            } else {
+                                eprintln!("{}", err_msg);
+                            }
+                            return 2;
+                        }
+                    }
+                    match std::fs::read_to_string(path) {
+                        Ok(c) => c,
+                        Err(e) => {
+                            let err_msg = format!("failed to read spec file '{}': {}", spec_str, e);
+                            classify_and_emit(
+                                &mut ctx,
+                                "service",
+                                "validate",
+                                json!({ "error": err_msg }),
+                                "failure",
+                                None,
+                                Some("Failed to read spec file"),
+                                "operator",
+                                None,
+                            );
+                            if is_json {
+                                println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "FILE_READ_ERROR", "message": err_msg } }));
+                            } else {
+                                eprintln!("{}", err_msg);
+                            }
+                            return 1;
+                        }
+                    }
+                } else {
+                    if spec_str.len() > 1024 * 1024 {
+                        let err_msg = "inline JSON payload exceeds 1 MiB size limit".to_string();
+                        classify_and_emit(
+                            &mut ctx,
+                            "service",
+                            "validate",
+                            json!({ "error": err_msg }),
+                            "failure",
+                            None,
+                            Some("Inline JSON exceeds size limit"),
+                            "operator",
+                            None,
+                        );
+                        if is_json {
+                            println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "PAYLOAD_TOO_LARGE", "message": err_msg } }));
+                        } else {
+                            eprintln!("{}", err_msg);
+                        }
+                        return 2;
+                    }
+                    spec_str
+                };
+
+                let spec: aiosh_core::service::ServiceSpec = match serde_json::from_str(&content) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        let err_msg = format!("failed to parse service specification JSON: {}", e);
+                        classify_and_emit(
+                            &mut ctx,
+                            "service",
+                            "validate",
+                            json!({ "error": err_msg }),
+                            "failure",
+                            None,
+                            Some("Failed to parse spec JSON"),
+                            "operator",
+                            None,
+                        );
+                        if is_json {
+                            println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "JSON_PARSE_ERROR", "message": err_msg } }));
+                        } else {
+                            eprintln!("{}", err_msg);
+                        }
+                        return 2;
+                    }
+                };
+
+                let res = aiosh_core::service::validate_service_spec(&spec);
+                let (code, msg, errors) = match res {
+                    Ok(()) => (0, format!("Service specification '{}' is valid", spec.name), vec![]),
+                    Err(errs) => (2, format!("Service specification '{}' violates SS1..SS5 invariants", spec.name), errs),
+                };
+
+                classify_and_emit(
+                    &mut ctx,
+                    "service",
+                    "validate",
+                    json!({ "name": spec.name, "valid": code == 0, "errors_count": errors.len() }),
+                    if code == 0 { "success" } else { "failure" },
+                    Some(&spec.name),
+                    Some(&msg),
+                    "operator",
+                    None,
+                );
+
+                if is_json {
+                    println!("{}", json!({
+                        "code": code,
+                        "data": { "valid": code == 0, "name": spec.name, "spec": spec },
+                        "error": if code == 0 { serde_json::Value::Null } else { json!({ "code": "VALIDATION_FAILED", "message": msg, "errors": errors }) }
+                    }));
+                } else if code == 0 {
+                    println!("VALID: Service specification '{}' conforms to SS1..SS5 invariants", spec.name);
+                } else {
+                    eprintln!("INVALID: {}", msg);
+                    for err in errors {
+                        eprintln!("  - {}", err);
+                    }
+                }
+                code
+            } else {
+                let msg = "Usage: aiosh service validate (--name <name> | --spec <file_or_json>) [--json]";
+                if is_json {
+                    println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_ARGUMENTS", "message": msg } }));
+                } else {
+                    eprintln!("{}", msg);
+                }
+                2
+            }
+        }
+        Some("list") => {
+            let store = match load_store() {
+                Ok(s) => s,
+                Err(e) => {
+                    classify_and_emit(
+                        &mut ctx,
+                        "service",
+                        "list",
+                        json!({ "error": e }),
+                        "failure",
+                        None,
+                        Some("Failed to load service store"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "LOAD_STORE_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("failed to load service store: {}", e);
+                    }
+                    return 1;
+                }
+            };
+            let state = match parse_flag(rest, "--state").as_deref() {
+                Some("active") => Some(aiosh_core::service::ServiceState::Active),
+                Some("inactive") => Some(aiosh_core::service::ServiceState::Inactive),
+                Some("activating") => Some(aiosh_core::service::ServiceState::Activating),
+                Some("deactivating") => Some(aiosh_core::service::ServiceState::Deactivating),
+                Some("failed") => Some(aiosh_core::service::ServiceState::Failed),
+                Some("reloading") => Some(aiosh_core::service::ServiceState::Reloading),
+                Some(other) => {
+                    let msg = format!("unknown state: {}", other);
+                    classify_and_emit(
+                        &mut ctx,
+                        "service",
+                        "list",
+                        json!({ "error": msg }),
+                        "failure",
+                        None,
+                        Some("Invalid state argument"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENT", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+                None => None,
+            };
+            let mode = match parse_flag(rest, "--mode").as_deref() {
+                Some("enabled") => Some(aiosh_core::service::ServiceStartupMode::Enabled),
+                Some("disabled") => Some(aiosh_core::service::ServiceStartupMode::Disabled),
+                Some("static") => Some(aiosh_core::service::ServiceStartupMode::Static),
+                Some("masked") => Some(aiosh_core::service::ServiceStartupMode::Masked),
+                Some(other) => {
+                    let msg = format!("unknown mode: {}", other);
+                    classify_and_emit(
+                        &mut ctx,
+                        "service",
+                        "list",
+                        json!({ "error": msg }),
+                        "failure",
+                        None,
+                        Some("Invalid mode argument"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENT", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+                None => None,
+            };
+            let pattern = parse_flag(rest, "--pattern");
+            if let Some(ref p) = pattern {
+                if p.len() > 256 || p.chars().any(|c| c.is_control()) {
+                    let msg = "filter pattern cannot exceed 256 characters and cannot contain control characters";
+                    classify_and_emit(
+                        &mut ctx,
+                        "service",
+                        "list",
+                        json!({ "error": msg }),
+                        "failure",
+                        None,
+                        Some("Invalid filter pattern"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENT", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+            }
+            let limit = if let Some(s) = parse_flag(rest, "--limit") {
+                match s.parse::<usize>() {
+                    Ok(n) if n > 0 && n <= 10_000 => Some(n),
+                    _ => {
+                        let msg = "limit must be a positive integer between 1 and 10,000";
+                        classify_and_emit(
+                            &mut ctx,
+                            "service",
+                            "list",
+                            json!({ "error": msg }),
+                            "failure",
+                            None,
+                            Some("Invalid limit argument"),
+                            "operator",
+                            None,
+                        );
+                        if is_json {
+                            println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENT", "message": msg } }));
+                        } else {
+                            eprintln!("{}", msg);
+                        }
+                        return 2;
+                    }
+                }
+            } else {
+                None
+            };
+
+            let query = aiosh_core::service::ServiceQuery {
+                name_pattern: pattern,
+                state,
+                startup_mode: mode,
+                limit,
+            };
+            let services = store.query(&query);
+            classify_and_emit(
+                &mut ctx,
+                "service",
+                "list",
+                json!({ "count": services.len() }),
+                "success",
+                None,
+                Some("Listed services from store"),
+                "operator",
+                None,
+            );
+            if is_json {
+                println!("{}", serde_json::to_string_pretty(&services).unwrap_or_default());
+            } else {
+                println!("AIOS Service Store ({} services):", services.len());
+                for svc in services {
+                    let st = store.get_status(&svc.name);
+                    let state_str = st.map(|s| format!("{:?}", s.state).to_lowercase()).unwrap_or_else(|| "unknown".into());
+                    println!("  {:<28} {:<10} {:<10} {}",
+                        svc.name,
+                        format!("{:?}", svc.service_type).to_lowercase(),
+                        state_str,
+                        svc.description);
+                }
+            }
+            0
+        }
+        Some("show") | Some("status") => {
+            let name_arg = match rest.first() {
+                Some(s) if !s.starts_with("--") => Some(s.to_string()),
+                _ => parse_flag(rest, "--name"),
+            };
+            let name = match name_arg {
+                Some(n) => n,
+                None => {
+                    let msg = "missing service name: aiosh service show <name>";
+                    classify_and_emit(
+                        &mut ctx,
+                        "service",
+                        "show",
+                        json!({ "error": msg }),
+                        "failure",
+                        None,
+                        Some("Missing service name argument"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENT", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+            };
+            if name.len() > 128 || name.chars().any(|c| c.is_control()) {
+                let msg = format!("service name '{}' is invalid: exceeds 128 characters or contains control characters", name);
+                classify_and_emit(
+                    &mut ctx,
+                    "service",
+                    "show",
+                    json!({ "name": name, "error": msg }),
+                    "failure",
+                    Some(&name),
+                    Some("Invalid service name"),
+                    "operator",
+                    None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENT", "message": msg } }));
+                } else {
+                    eprintln!("{}", msg);
+                }
+                return 2;
+            }
+            let store = match load_store() {
+                Ok(s) => s,
+                Err(e) => {
+                    classify_and_emit(
+                        &mut ctx,
+                        "service",
+                        "show",
+                        json!({ "name": name, "error": e }),
+                        "failure",
+                        Some(&name),
+                        Some("Failed to load service store"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "LOAD_STORE_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("failed to load service store: {}", e);
+                    }
+                    return 1;
+                }
+            };
+            match (store.get_service(&name), store.get_status(&name)) {
+                (Some(spec), Some(status)) => {
+                    classify_and_emit(
+                        &mut ctx,
+                        "service",
+                        "show",
+                        json!({ "name": name }),
+                        "success",
+                        Some(&name),
+                        Some("Showed service details"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({
+                            "code": 0,
+                            "data": {
+                                "service": spec,
+                                "status": status
+                            },
+                            "error": serde_json::Value::Null
+                        }));
+                    } else {
+                        println!("Service: {}", spec.name);
+                        println!("Description: {}", spec.description);
+                        println!("Type: {:?}", spec.service_type);
+                        println!("State: {:?}", status.state);
+                        println!("Startup Mode: {:?}", spec.startup_mode);
+                        println!("ExecStart: {}", spec.exec_start);
+                        if let Some(ref pid) = status.pid {
+                            println!("Main PID: {}", pid);
+                        }
+                        println!("Healthy: {}", status.health.healthy);
+                    }
+                    0
+                }
+                _ => {
+                    let msg = format!("service '{}' not found in store", name);
+                    classify_and_emit(
+                        &mut ctx,
+                        "service",
+                        "show",
+                        json!({ "name": name, "error": msg }),
+                        "failure",
+                        Some(&name),
+                        Some("Service not found"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "NOT_FOUND", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    1
+                }
+            }
+        }
+        Some("action") => {
+            let positional: Vec<&String> = rest.iter().filter(|s| !s.starts_with("--")).collect();
+            if positional.len() < 2 {
+                let msg = "Usage: aiosh service action <name> <start|stop|restart|reload|enable|disable|mask|unmask> [--store <path>] [--json]";
+                classify_and_emit(
+                    &mut ctx,
+                    "service",
+                    "action",
+                    json!({ "error": msg }),
+                    "failure",
+                    None,
+                    Some("Missing arguments for service action"),
+                    "operator",
+                    None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENT", "message": msg } }));
+                } else {
+                    eprintln!("{}", msg);
+                }
+                return 2;
+            }
+            let name = positional[0];
+            let action_str = positional[1].to_lowercase();
+            let action = match action_str.as_str() {
+                "start" => aiosh_core::service::ServiceAction::Start,
+                "stop" => aiosh_core::service::ServiceAction::Stop,
+                "restart" => aiosh_core::service::ServiceAction::Restart,
+                "reload" => aiosh_core::service::ServiceAction::Reload,
+                "enable" => aiosh_core::service::ServiceAction::Enable,
+                "disable" => aiosh_core::service::ServiceAction::Disable,
+                "mask" => aiosh_core::service::ServiceAction::Mask,
+                "unmask" => aiosh_core::service::ServiceAction::Unmask,
+                other => {
+                    let msg = format!("unknown action '{}': valid actions are start, stop, restart, reload, enable, disable, mask, unmask", other);
+                    classify_and_emit(
+                        &mut ctx,
+                        "service",
+                        "action",
+                        json!({ "name": name, "action": other, "error": msg }),
+                        "failure",
+                        Some(name),
+                        Some("Unknown action"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENT", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+            };
+            let mut store = match load_store() {
+                Ok(s) => s,
+                Err(e) => {
+                    classify_and_emit(
+                        &mut ctx,
+                        "service",
+                        "action",
+                        json!({ "name": name, "action": action_str, "error": e }),
+                        "failure",
+                        Some(name),
+                        Some("Failed to load service store"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "LOAD_STORE_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("failed to load service store: {}", e);
+                    }
+                    return 1;
+                }
+            };
+            match store.execute_action(name, action) {
+                Ok(report) => {
+                    if let Some(ref p) = store_path_opt {
+                        if let Err(e) = store.save_to_path(std::path::Path::new(p)) {
+                            let msg = format!("action succeeded but failed to persist store to '{}': {}", p, e);
+                            classify_and_emit(
+                                &mut ctx,
+                                "service",
+                                "action",
+                                json!({ "name": name, "action": action_str, "error": msg }),
+                                "failure",
+                                Some(name),
+                                Some("Failed to persist store"),
+                                "operator",
+                                None,
+                            );
+                            if is_json {
+                                println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "PERSIST_FAILED", "message": msg } }));
+                            } else {
+                                eprintln!("{}", msg);
+                            }
+                            return 1;
+                        }
+                    }
+                    classify_and_emit(
+                        &mut ctx,
+                        "service",
+                        "action",
+                        json!({ "name": name, "action": action_str, "report": report }),
+                        "success",
+                        Some(name),
+                        Some("Executed service action"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({
+                            "code": 0,
+                            "data": report,
+                            "error": serde_json::Value::Null
+                        }));
+                    } else {
+                        println!("Action '{:?}' on service '{}' succeeded (state: {:?} -> {:?})",
+                            report.action, report.service_name, report.previous_state, report.new_state);
+                    }
+                    0
+                }
+                Err(e) => {
+                    classify_and_emit(
+                        &mut ctx,
+                        "service",
+                        "action",
+                        json!({ "name": name, "action": action_str, "error": e }),
+                        "failure",
+                        Some(name),
+                        Some("Service action execution failed"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "ACTION_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("action failed: {}", e);
+                    }
+                    1
+                }
+            }
+        }
+        Some(act @ ("start" | "stop" | "restart" | "reload" | "enable" | "disable" | "mask" | "unmask")) => {
+            let positional: Vec<&String> = rest.iter().filter(|s| !s.starts_with("--")).collect();
+            if positional.is_empty() {
+                let msg = format!("Usage: aiosh service {} <name> [--store <path>] [--json]", act);
+                classify_and_emit(
+                    &mut ctx,
+                    "service",
+                    act,
+                    json!({ "error": msg }),
+                    "failure",
+                    None,
+                    Some("Missing service name argument"),
+                    "operator",
+                    None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENT", "message": msg } }));
+                } else {
+                    eprintln!("{}", msg);
+                }
+                return 2;
+            }
+            let name = positional[0];
+            let mut forwarded_args = vec!["action".to_string(), name.to_string(), act.to_string()];
+            let mut skipped_name = false;
+            for arg in rest {
+                if !skipped_name && arg == name {
+                    skipped_name = true;
+                    continue;
+                }
+                forwarded_args.push(arg.clone());
+            }
+            cmd_service(&forwarded_args)
+        }
+        Some("order") => {
+            let name_arg = match rest.first() {
+                Some(s) if !s.starts_with("--") => Some(s.to_string()),
+                _ => parse_flag(rest, "--name"),
+            };
+            let name = match name_arg {
+                Some(n) => n,
+                None => {
+                    let msg = "missing service name: aiosh service order <name>";
+                    classify_and_emit(
+                        &mut ctx,
+                        "service",
+                        "order",
+                        json!({ "error": msg }),
+                        "failure",
+                        None,
+                        Some("Missing service name argument"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENT", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+            };
+            let store = match load_store() {
+                Ok(s) => s,
+                Err(e) => {
+                    classify_and_emit(
+                        &mut ctx,
+                        "service",
+                        "order",
+                        json!({ "name": name, "error": e }),
+                        "failure",
+                        Some(&name),
+                        Some("Failed to load service store"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "LOAD_STORE_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("failed to load service store: {}", e);
+                    }
+                    return 1;
+                }
+            };
+            match store.plan_service_order(&name) {
+                Ok(order) => {
+                    classify_and_emit(
+                        &mut ctx,
+                        "service",
+                        "order",
+                        json!({ "name": name, "order": order }),
+                        "success",
+                        Some(&name),
+                        Some("Planned service dependency startup sequence"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({
+                            "code": 0,
+                            "data": {
+                                "target": name,
+                                "order": order
+                            },
+                            "error": serde_json::Value::Null
+                        }));
+                    } else {
+                        println!("Activation order for '{}' ({} steps):", name, order.len());
+                        for (idx, step) in order.iter().enumerate() {
+                            println!("  {}. {}", idx + 1, step);
+                        }
+                    }
+                    0
+                }
+                Err(e) => {
+                    classify_and_emit(
+                        &mut ctx,
+                        "service",
+                        "order",
+                        json!({ "name": name, "error": e }),
+                        "failure",
+                        Some(&name),
+                        Some("Failed to plan service order"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "ORDER_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("order planning failed: {}", e);
+                    }
+                    1
+                }
+            }
+        }
+        Some("--help") | Some("-h") | None => {
+            println!("aiosh service — Init & Service Supervision Manager\n\nUsage: aiosh service <command> [options]\n\nCommands:\n  validate  Validate service name (SS1) or specification file/json (SS1..SS5)\n  list      List services in store with optional state, mode, and pattern filters\n  show      Display detailed service specification and runtime status (alias: status)\n  action    Execute a lifecycle action (start, stop, restart, reload, enable, disable, mask, unmask)\n  start     Start a service unit (shortcut for action <name> start)\n  stop      Stop a service unit (shortcut for action <name> stop)\n  restart   Restart a service unit (shortcut for action <name> restart)\n  reload    Reload a service unit configuration (shortcut for action <name> reload)\n  enable    Enable a service for automatic startup (shortcut for action <name> enable)\n  disable   Disable a service from automatic startup (shortcut for action <name> disable)\n  mask      Mask a service to prevent activation (shortcut for action <name> mask)\n  unmask    Unmask a service to allow activation (shortcut for action <name> unmask)\n  order     Calculate deterministic dependency startup sequence for a service");
+            0
+        }
+        Some(other) => {
+            let msg = format!("unknown service subcommand: {}", other);
+            if is_json {
+                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "UNKNOWN_SUBCOMMAND", "message": msg } }));
+            } else {
+                eprintln!("{}", msg);
+            }
+            2
+        }
+    }
+}
+
 fn cmd_package(args: &[String]) -> i32 {
+
     let mut ctx = open_context();
     let sub = args.first().map(|s| s.as_str());
     let rest = if args.len() > 1 { &args[1..] } else { &[] };
@@ -5866,4 +6661,183 @@ mod task_cli_tests {
         let code_check_bad_path = cmd_package(&["check".to_string(), "--store".to_string(), "bad\0store".to_string()]);
         assert_eq!(code_check_bad_path, 2);
     }
+
+    #[test]
+    fn test_cmd_service_flow() {
+        // help
+        let code_help = cmd_service(&["--help".to_string()]);
+        assert_eq!(code_help, 0);
+
+        // unknown subcommand
+        let code_unknown = cmd_service(&["unknown_cmd".to_string()]);
+        assert_eq!(code_unknown, 2);
+
+        // validate missing args
+        let code_missing = cmd_service(&["validate".to_string()]);
+        assert_eq!(code_missing, 2);
+
+        // validate valid name
+        let code_name_valid = cmd_service(&["validate".to_string(), "--name".to_string(), "aios-securityd.service".to_string()]);
+        assert_eq!(code_name_valid, 0);
+
+        let code_name_valid_json = cmd_service(&["validate".to_string(), "--name".to_string(), "aios-securityd.service".to_string(), "--json".to_string()]);
+        assert_eq!(code_name_valid_json, 0);
+
+        // validate invalid name
+        let code_name_invalid = cmd_service(&["validate".to_string(), "--name".to_string(), "invalid/service".to_string()]);
+        assert_eq!(code_name_invalid, 2);
+
+        // validate valid spec inline
+        let valid_spec_json = serde_json::json!({
+            "name": "aios-securityd.service",
+            "description": "AIOS Security Daemon",
+            "exec_start": "/usr/bin/aios-securityd --daemon",
+            "exec_stop": null,
+            "exec_reload": null,
+            "service_type": "simple",
+            "restart_policy": "always",
+            "startup_mode": "enabled",
+            "user": "aios",
+            "group": "aios",
+            "working_dir": "/var/lib/aios",
+            "environment": {},
+            "dependencies": [],
+            "timeout_start_secs": 30,
+            "timeout_stop_secs": 30
+        }).to_string();
+
+        let code_spec_valid = cmd_service(&["validate".to_string(), "--spec".to_string(), valid_spec_json.clone()]);
+        assert_eq!(code_spec_valid, 0);
+
+        let code_spec_valid_json = cmd_service(&["validate".to_string(), "--spec".to_string(), valid_spec_json, "--json".to_string()]);
+        assert_eq!(code_spec_valid_json, 0);
+
+        // validate invalid spec (self-dependency)
+        let invalid_spec_json = serde_json::json!({
+            "name": "aios-securityd.service",
+            "description": "AIOS Security Daemon",
+            "exec_start": "/usr/bin/aios-securityd --daemon",
+            "exec_stop": null,
+            "exec_reload": null,
+            "service_type": "simple",
+            "restart_policy": "always",
+            "startup_mode": "enabled",
+            "user": "aios",
+            "group": "aios",
+            "working_dir": "/var/lib/aios",
+            "environment": {},
+            "dependencies": [{
+                "name": "aios-securityd.service",
+                "dependency_type": "requires",
+                "optional": false
+            }],
+            "timeout_start_secs": 30,
+            "timeout_stop_secs": 30
+        }).to_string();
+
+        let code_spec_invalid = cmd_service(&["validate".to_string(), "--spec".to_string(), invalid_spec_json]);
+        assert_eq!(code_spec_invalid, 2);
+
+        // list
+        let code_list_default = cmd_service(&["list".to_string()]);
+        assert_eq!(code_list_default, 0);
+
+        let code_list_json = cmd_service(&["list".to_string(), "--json".to_string()]);
+        assert_eq!(code_list_json, 0);
+
+        let code_list_state = cmd_service(&["list".to_string(), "--state".to_string(), "active".to_string(), "--json".to_string()]);
+        assert_eq!(code_list_state, 0);
+
+        let code_list_bad_state = cmd_service(&["list".to_string(), "--state".to_string(), "invalid_state".to_string()]);
+        assert_eq!(code_list_bad_state, 2);
+
+        let code_list_mode = cmd_service(&["list".to_string(), "--mode".to_string(), "enabled".to_string(), "--json".to_string()]);
+        assert_eq!(code_list_mode, 0);
+
+        let code_list_bad_mode = cmd_service(&["list".to_string(), "--mode".to_string(), "invalid_mode".to_string()]);
+        assert_eq!(code_list_bad_mode, 2);
+
+        let code_list_pattern = cmd_service(&["list".to_string(), "--pattern".to_string(), "audit".to_string()]);
+        assert_eq!(code_list_pattern, 0);
+
+        let code_list_bad_limit = cmd_service(&["list".to_string(), "--limit".to_string(), "0".to_string()]);
+        assert_eq!(code_list_bad_limit, 2);
+
+        // show
+        let code_show_valid = cmd_service(&["show".to_string(), "auditd.service".to_string()]);
+        assert_eq!(code_show_valid, 0);
+
+        let code_show_valid_json = cmd_service(&["show".to_string(), "auditd.service".to_string(), "--json".to_string()]);
+        assert_eq!(code_show_valid_json, 0);
+
+        let code_show_missing = cmd_service(&["show".to_string()]);
+        assert_eq!(code_show_missing, 2);
+
+        let code_show_not_found = cmd_service(&["show".to_string(), "nonexistent.service".to_string()]);
+        assert_eq!(code_show_not_found, 1);
+
+        let code_show_ctrl = cmd_service(&["show".to_string(), "bad\0name".to_string()]);
+        assert_eq!(code_show_ctrl, 2);
+
+        // status alias
+        let code_status_valid = cmd_service(&["status".to_string(), "auditd.service".to_string(), "--json".to_string()]);
+        assert_eq!(code_status_valid, 0);
+
+        // action
+        let temp_store_file = std::env::temp_dir().join(format!("aios_service_test_{}.json", std::process::id()));
+        let _ = std::fs::remove_file(&temp_store_file);
+        let init_store = aiosh_core::service_service::ServiceStore::new();
+        init_store.save_to_path(&temp_store_file).unwrap();
+        let store_str = temp_store_file.to_str().unwrap().to_string();
+
+        let code_action_stop = cmd_service(&["action".to_string(), "auditd.service".to_string(), "stop".to_string(), "--store".to_string(), store_str.clone(), "--json".to_string()]);
+        assert_eq!(code_action_stop, 0);
+
+        let code_action_start = cmd_service(&["action".to_string(), "auditd.service".to_string(), "start".to_string(), "--store".to_string(), store_str.clone(), "--json".to_string()]);
+        assert_eq!(code_action_start, 0);
+
+        let code_action_restart = cmd_service(&["action".to_string(), "auditd.service".to_string(), "restart".to_string(), "--store".to_string(), store_str.clone()]);
+        assert_eq!(code_action_restart, 0);
+
+        // direct action shortcuts
+        let code_shortcut_stop = cmd_service(&["stop".to_string(), "auditd.service".to_string(), "--store".to_string(), store_str.clone(), "--json".to_string()]);
+        assert_eq!(code_shortcut_stop, 0);
+
+        let code_shortcut_start = cmd_service(&["start".to_string(), "auditd.service".to_string(), "--store".to_string(), store_str.clone(), "--json".to_string()]);
+        assert_eq!(code_shortcut_start, 0);
+
+        let code_shortcut_reload = cmd_service(&["reload".to_string(), "auditd.service".to_string(), "--store".to_string(), store_str.clone()]);
+        assert_eq!(code_shortcut_reload, 0);
+
+        let code_shortcut_disable = cmd_service(&["disable".to_string(), "auditd.service".to_string(), "--store".to_string(), store_str.clone()]);
+        assert_eq!(code_shortcut_disable, 0);
+
+        let code_shortcut_enable = cmd_service(&["enable".to_string(), "auditd.service".to_string(), "--store".to_string(), store_str.clone()]);
+        assert_eq!(code_shortcut_enable, 0);
+
+        let code_shortcut_missing = cmd_service(&["start".to_string()]);
+        assert_eq!(code_shortcut_missing, 2);
+
+        let code_action_bad_action = cmd_service(&["action".to_string(), "auditd.service".to_string(), "invalid_act".to_string()]);
+        assert_eq!(code_action_bad_action, 2);
+
+        let code_action_missing_args = cmd_service(&["action".to_string(), "auditd.service".to_string()]);
+        assert_eq!(code_action_missing_args, 2);
+
+        let _ = std::fs::remove_file(&temp_store_file);
+
+        // order
+        let code_order_valid = cmd_service(&["order".to_string(), "aios-securityd.service".to_string()]);
+        assert_eq!(code_order_valid, 0);
+
+        let code_order_valid_json = cmd_service(&["order".to_string(), "aios-securityd.service".to_string(), "--json".to_string()]);
+        assert_eq!(code_order_valid_json, 0);
+
+        let code_order_missing = cmd_service(&["order".to_string()]);
+        assert_eq!(code_order_missing, 2);
+
+        let code_order_not_found = cmd_service(&["order".to_string(), "nonexistent.service".to_string()]);
+        assert_eq!(code_order_not_found, 1);
+    }
 }
+

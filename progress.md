@@ -1,5 +1,136 @@
 # Progress Log
 
+## 2026-09-06 — T-01331..T-01340 SHIPPED: Init & Service Supervision MCP API Surface CLOSED (Criteria SS1..SS4, 10/10 tasks)
+
+**What shipped:**
+- Delivered complete autonomous agent Model Context Protocol (MCP) API surface for Init & Service Supervision in `code/aiosh-rust/aiosh-mcp/src/main.rs`:
+  - `aios.service.validate`: Validates service name syntax (SS1) or full `ServiceSpec` structures against `SS1..SS5` invariants.
+  - `aios.service.list`: Discovers registered services with multi-dimensional filtering (`pattern`, `state`, `startup_mode`, `limit`, `store_path`).
+  - `aios.service.get`: Retrieves specification and dynamic runtime status (`state`, `pid`, `health`, `started_at`).
+  - `aios.service.action`: Dispatches lifecycle transitions (`start`, `stop`, `restart`, `reload`, `enable`, `disable`, `mask`, `unmask`) with atomic disk persistence.
+  - `aios.service.order`: Plans topological startup execution sequences using Kahn's algorithm with cycle detection.
+- Governance, PEP & Audit Non-Repudiation:
+  - All calls route through `dispatch::recorded_call`.
+  - Gated by Policy Enforcement Point capability checks (`grant_id`).
+  - Emits tamper-evident audit records to `AuditRing` on every invocation (successes, errors, and rejections).
+- Automated Testing:
+  - Created standalone test suite `code/aiosh-mcp/tests/test_service_mcp_smoke.py` asserting stdio JSON-RPC 2.0 communication across valid and negative scenarios.
+  - In-process Rust unit test suite `tests::test_mcp_service_tools` in `aiosh-mcp`.
+  - Updated subsystem test runner `tools/test_service_suites.py` criterion `SS3` description.
+- Hardening & Security Controls:
+  - Enforced string boundaries (name 128, pattern 256, path 1024), control character rejection, atomic tempfile cleanup, and masking lifecycle rules.
+- Documentation:
+  - Updated `code/aiosh-mcp/README.md` with full tool descriptors, copy-pasteable JSON-RPC requests, and operational constraints.
+
+**Verified:**
+- `python tools/test_service_suites.py` (SS1..SS4 PASS).
+- `python code/aiosh-mcp/tests/test_service_mcp_smoke.py` (ALL PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --bin aiosh-mcp test_mcp_service_tools` (PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- Evidence chain: `docs/tasks/evidence/T-01331-mcp-api-surface-research.md` … `T-01340-mcp-api-surface-verification-evidenc.md`.
+- Milestone: **Init & Service Supervision / MCP API surface CLOSED — 10/10 tasks** (T-01331..T-01340). Pointer $\to$ **T-01341** (`Phase 1 — Linux Base System & Bootable Target / Init & Service Supervision / configuration: Research`).
+
+## 2026-09-06 — T-01321..T-01330 SHIPPED: Init & Service Supervision CLI Surface CLOSED (Criteria SS1..SS4, 10/10 tasks)
+
+**What shipped:**
+- Delivered operator command-line interface for Init & Service Supervision in `code/aiosh-rust/aiosh-cli/src/main.rs`:
+  - `cmd_service` routing subcommands:
+    - `validate`: Deep validation of service names (SS1) and full specifications (SS1..SS5) with 1 MiB size ceiling.
+    - `list`: Multi-parameter service querying with `--pattern`, `--state`, `--mode`, `--limit`, `--store`, and `--json`.
+    - `show` & `status`: Service unit inspection rendering human-readable tables or standardized JSON envelopes.
+    - `action`: State machine transition dispatcher (`start`, `stop`, `restart`, `reload`, `enable`, `disable`, `mask`, `unmask`).
+    - Direct action shortcuts: `start`, `stop`, `restart`, `reload`, `enable`, `disable`, `mask`, `unmask` routing with option preservation.
+    - `order`: Topological startup execution planning via Kahn's algorithm with cycle detection.
+  - Root CLI help text updated with all service commands and shortcuts.
+  - Standardized JSON result envelopes (`{"code": <n>, "data": ..., "error": ...}`).
+  - Synchronous audit logging to `audit.log` / SQLite WAL ring via `classify_and_emit` on every execution path.
+- Automated Testing & Invariants:
+  - Added standalone smoke test suite `code/aiosh-cli/tests/test_service_cli_smoke.py` (7/7 tests passing).
+  - Expanded Rust unit test suite `task_cli_tests::test_cmd_service_flow` in `aiosh-cli`.
+  - Updated `tools/test_service_suites.py` criterion `SS2` description. All criteria `SS1..SS4` PASS.
+- Hardening & Security Controls:
+  - 1 MiB payload ceiling on specification files/strings, argument length limits, control character filtering, fail-open audit rows, and atomic tempfile cleanup.
+- Documentation:
+  - Updated `docs/README.md` under section 8.13 with full CLI command taxonomy, parameter options, and copy-pasteable examples.
+
+**Verified:**
+- `python tools/test_service_suites.py` (SS1..SS4 PASS).
+- `python code/aiosh-cli/tests/test_service_cli_smoke.py` (ALL PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --bin aiosh test_cmd_service_flow` (PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- Evidence chain: `docs/tasks/evidence/T-01321-cli-surface-research.md` … `T-01330-cli-surface-verification-evidenc.md`.
+- Milestone: **Init & Service Supervision / CLI surface CLOSED — 10/10 tasks** (T-01321..T-01330). Pointer $\to$ **T-01331** (`Phase 1 — Linux Base System & Bootable Target / Init & Service Supervision / MCP API surface: Research`).
+
+
+## 2026-09-06 — T-01311..T-01320 SHIPPED: Init & Service Supervision Core Service CLOSED (Criteria SS1..SS4, 10/10 tasks)
+
+**What shipped:**
+- Implemented core service supervisor registry and lifecycle engine in `code/aiosh-rust/aiosh-core/src/service_service.rs`:
+  - `ServiceStore`, `ServiceActionReport`, and invariants `CS1..CS5`:
+    - `CS1`: Registry uniqueness and schema validation.
+    - `CS2`: Finite State Machine lifecycle action engine (`start`, `stop`, `restart`, `reload`, `enable`, `disable`, `mask`, `unmask`).
+    - `CS3`: Topological dependency ordering via Kahn's algorithm with cycle detection.
+    - `CS4`: Filtered query matrix supporting name patterns, state, startup mode, and limit bounds.
+    - `CS5`: Atomic filesystem persistence using PID-isolated tempfiles and 10 MiB payload ceiling.
+- Operator CLI surface (`code/aiosh-rust/aiosh-cli/src/main.rs`):
+  - `aiosh service list [--pattern <pat>] [--state <state>] [--mode <mode>] [--limit <n>] [--store <path>] [--json]`
+  - `aiosh service show <name> [--store <path>] [--json]`
+  - `aiosh service action <name> <action> [--store <path>] [--json]`
+  - `aiosh service order <name> [--store <path>] [--json]`
+  - Emits structured audit events to `audit.log` on every command dispatch.
+- MCP tool surface (`code/aiosh-rust/aiosh-mcp/src/main.rs`):
+  - `aios.service.list`: Filtered querying over registered services.
+  - `aios.service.get`: Inspection of service specifications and runtime status.
+  - `aios.service.action`: Lifecycle state transitions and mode administration.
+  - `aios.service.order`: Topological startup execution planning.
+  - Dispatches via `dispatch::recorded_call` with PEP authorization and hash-chained audit logging.
+- Master Test Runner Matrix (`tools/test_service_suites.py`):
+  - Added criterion `SS4` (`test_service_service`). All criteria `SS1..SS4` PASS.
+- Hardening & Security Controls:
+  - 10 MiB payload ceiling and 10,000 entity ceiling on store loading.
+  - PID-isolated temporary files with automatic un-link on failure.
+  - Kahn's algorithm with in-degree tracking preventing stack overflow and infinite cycles.
+  - Fail-open honest audit logging to `audit.log` / SQLite WAL ring.
+- Documentation:
+  - Documented core service store, CLI/MCP commands, copy-pasteable examples, and constraints in `docs/README.md` under section 8.13.
+
+**Verified:**
+- `python tools/test_service_suites.py` (SS1..SS4 PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --test test_service_service` (6 unit tests PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --bin aiosh test_cmd_service_flow` (PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --bin aiosh-mcp test_mcp_service_tools` (PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- Evidence chain: `docs/tasks/evidence/T-01311-core-service-research.md` … `T-01320-core-service-verification-evidenc.md`.
+- Milestone: **Init & Service Supervision / core service CLOSED — 10/10 tasks** (T-01311..T-01320). Pointer $\to$ **T-01321** (`Phase 1 — Linux Base System & Bootable Target / Init & Service Supervision / CLI surface: Research`).
+
+
+## 2026-09-06 — T-01301..T-01310 SHIPPED: Init & Service Supervision Data Model CLOSED (Criteria SS1..SS3, 10/10 tasks)
+
+**What shipped:**
+- Implemented canonical service data model in `code/aiosh-rust/aiosh-core/src/service.rs`:
+  - `ServiceSpec`, `ServiceStatus`, `ServiceHealth`, `ServiceType`, `ServiceState`, `ServiceRestartPolicy`, `ServiceStartupMode`, `ServiceDependencyType`, `ServiceDependency`, `ServiceAction`, and `ServiceQuery`.
+  - Invariants `SS1..SS5`: Service naming syntax matching systemd/OpenRC (`SS1`), execution commands and traversal protection (`SS2`), dependency graph hygiene without self-loops (`SS3`), resource timeouts and environment sizing bounds (`SS4`), and lifecycle state consistency (`SS5`).
+- Operator CLI surface:
+  - `aiosh service validate (--name <name> | --spec <file_or_json>) [--json]` in `aiosh-cli/src/main.rs`.
+- MCP tool surface:
+  - `aios.service.validate` tool in `aiosh-mcp/src/main.rs` with PEP authorization and SQLite WAL ring audit logging.
+- Master Test Runner Matrix (`tools/test_service_suites.py`):
+  - Added criteria `SS1` (data model integrity), `SS2` (CLI surface), and `SS3` (MCP surface). All PASS.
+- Hardening & Security Controls:
+  - 1 MiB payload ceiling on specification files and inline strings, path traversal defense on working directories, POSIX user/group validation, timeout range bounding $[1 \dots 86,400]$ seconds, and fail-open honest audit logging to `audit.db` via `classify_and_emit`.
+- Documentation:
+  - Documented service data model, invariants SS1..SS5, CLI/MCP usage examples, and constraints in `docs/README.md` under section 8.13.
+
+**Verified:**
+- `python tools/test_service_suites.py` (SS1..SS3 PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --test test_service_data_model` (6 unit tests PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --bin aiosh test_cmd_service_flow` (PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --bin aiosh-mcp test_mcp_service_tools` (PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS).
+- Evidence chain: `docs/tasks/evidence/T-01301-data-model-research.md` … `T-01310-data-model-verification-evidenc.md`.
+- Milestone: **Init & Service Supervision / data model CLOSED — 10/10 tasks** (T-01301..T-01310). Pointer $\to$ **T-01311** (`Phase 1 — Linux Base System & Bootable Target / Init & Service Supervision / core service: Research`).
+
+
 ## 2026-09-05 — T-01281..T-01290 SHIPPED: Package Management Documentation CLOSED (Criteria PM1..PM9, 10/10 tasks)
 
 **What shipped:**

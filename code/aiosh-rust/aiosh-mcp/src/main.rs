@@ -737,8 +737,81 @@ impl Server {
                 "additionalProperties": false
             }
         }));
+        tools.push(json!({
+            "name": "aios.service.validate",
+            "description": "Validate service name syntax (SS1) or full ServiceSpec against SS1..SS5 invariants",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string", "description": "Service name to validate against SS1 syntax" },
+                    "spec": { "type": "object", "description": "Complete ServiceSpec object to validate against SS1..SS5 invariants" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.service.list",
+            "description": "List registered system services with optional pattern, state, or startup mode filtering",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "pattern": { "type": "string", "description": "Optional substring match on service name and description" },
+                    "state": { "type": "string", "description": "Optional service state filter (active, inactive, failed, etc.)" },
+                    "startup_mode": { "type": "string", "description": "Optional startup mode filter (enabled, disabled, static, masked)" },
+                    "limit": { "type": "integer", "description": "Optional limit on returned results count" },
+                    "store_path": { "type": "string", "description": "Optional path to custom service_store.json" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.service.get",
+            "description": "Retrieve detailed specification and runtime status of a service by name",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string", "description": "Canonical service name (e.g., auditd.service)" },
+                    "store_path": { "type": "string", "description": "Optional path to custom service_store.json" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "required": ["name"],
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.service.action",
+            "description": "Execute a lifecycle action against a registered service (start, stop, restart, reload, enable, disable, mask, unmask)",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string", "description": "Target service name" },
+                    "action": { "type": "string", "description": "Lifecycle action to perform (start, stop, restart, reload, enable, disable, mask, unmask)" },
+                    "store_path": { "type": "string", "description": "Optional path to custom service_store.json" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "required": ["name", "action"],
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.service.order",
+            "description": "Compute topological activation order for a service and its dependency graph",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "name": { "type": "string", "description": "Target service name" },
+                    "store_path": { "type": "string", "description": "Optional path to custom service_store.json" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "required": ["name"],
+                "additionalProperties": false
+            }
+        }));
         tools
     }
+
 
     fn call_tool(&mut self, tool: &str, arguments: &Value) -> Value {
         let grant_id = arguments.get("grant_id").and_then(|v| v.as_str());
@@ -1840,6 +1913,231 @@ impl Server {
                     &mut self.ring, &self.pep,
                     "aios.package.check", "Validate and check package store integrity", arguments,
                     None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.service.validate" => {
+                let name_opt = arguments.get("name").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let spec_val_opt = arguments.get("spec");
+
+                let f = move || -> Result<Value, String> {
+                    if let Some(ref name) = name_opt {
+                        if name.len() > 128 || name.chars().any(|c| c.is_control()) {
+                            return Err("Invalid service name: exceeds 128 chars or contains control characters".into());
+                        }
+                        match aiosh_core::service::validate_service_name(name) {
+                            Ok(()) => Ok(json!({
+                                "ok": true,
+                                "tool": "aios.service.validate",
+                                "valid": true,
+                                "name": name
+                            })),
+                            Err(e) => Err(format!("Invalid service name: {}", e)),
+                        }
+                    } else if let Some(spec_val) = spec_val_opt {
+                        let spec: aiosh_core::service::ServiceSpec = serde_json::from_value(spec_val.clone())
+                            .map_err(|e| format!("Failed to parse ServiceSpec JSON: {}", e))?;
+                        match aiosh_core::service::validate_service_spec(&spec) {
+                            Ok(()) => Ok(json!({
+                                "ok": true,
+                                "tool": "aios.service.validate",
+                                "valid": true,
+                                "name": spec.name,
+                                "spec": spec
+                            })),
+                            Err(errs) => Err(format!("Service specification violates invariants: {:?}", errs)),
+                        }
+                    } else {
+                        Err("Either 'name' or 'spec' parameter is required".into())
+                    }
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.service.validate", "Validate service name or specification", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.service.list" => {
+                let pattern_opt = arguments.get("pattern").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let state_opt = arguments.get("state").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let mode_opt = arguments.get("startup_mode").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let limit_opt = arguments.get("limit").and_then(|v| v.as_u64()).map(|n| n as usize);
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+                let f = move || -> Result<Value, String> {
+                    if let Some(ref p) = store_path_opt {
+                        if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+                            return Err("store_path exceeds 1024 characters or contains control characters".into());
+                        }
+                    }
+                    if let Some(ref pat) = pattern_opt {
+                        if pat.len() > 256 || pat.chars().any(|c| c.is_control()) {
+                            return Err("pattern exceeds 256 characters or contains control characters".into());
+                        }
+                    }
+                    let state = match state_opt.as_deref() {
+                        Some("active") => Some(aiosh_core::service::ServiceState::Active),
+                        Some("inactive") => Some(aiosh_core::service::ServiceState::Inactive),
+                        Some("activating") => Some(aiosh_core::service::ServiceState::Activating),
+                        Some("deactivating") => Some(aiosh_core::service::ServiceState::Deactivating),
+                        Some("failed") => Some(aiosh_core::service::ServiceState::Failed),
+                        Some("reloading") => Some(aiosh_core::service::ServiceState::Reloading),
+                        Some(other) => return Err(format!("unknown service state '{}'", other)),
+                        None => None,
+                    };
+                    let startup_mode = match mode_opt.as_deref() {
+                        Some("enabled") => Some(aiosh_core::service::ServiceStartupMode::Enabled),
+                        Some("disabled") => Some(aiosh_core::service::ServiceStartupMode::Disabled),
+                        Some("static") => Some(aiosh_core::service::ServiceStartupMode::Static),
+                        Some("masked") => Some(aiosh_core::service::ServiceStartupMode::Masked),
+                        Some(other) => return Err(format!("unknown startup_mode '{}'", other)),
+                        None => None,
+                    };
+
+                    let store = match store_path_opt {
+                        Some(ref p) => aiosh_core::service_service::ServiceStore::load_from_path(std::path::Path::new(p))?,
+                        None => aiosh_core::service_service::ServiceStore::new(),
+                    };
+
+                    let query = aiosh_core::service::ServiceQuery {
+                        name_pattern: pattern_opt.clone(),
+                        state,
+                        startup_mode,
+                        limit: limit_opt,
+                    };
+                    let services = store.query(&query);
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.service.list",
+                        "count": services.len(),
+                        "services": services
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.service.list", "List registered system services", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.service.get" => {
+                let name = arguments.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+                let name_for_closure = name.clone();
+                let f = move || -> Result<Value, String> {
+                    if name_for_closure.is_empty() {
+                        return Err("name parameter is required".into());
+                    }
+                    if name_for_closure.len() > 128 || name_for_closure.chars().any(|c| c.is_control()) {
+                        return Err("name exceeds 128 characters or contains control characters".into());
+                    }
+                    if let Some(ref p) = store_path_opt {
+                        if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+                            return Err("store_path exceeds 1024 characters or contains control characters".into());
+                        }
+                    }
+                    let store = match store_path_opt {
+                        Some(ref p) => aiosh_core::service_service::ServiceStore::load_from_path(std::path::Path::new(p))?,
+                        None => aiosh_core::service_service::ServiceStore::new(),
+                    };
+                    match (store.get_service(&name_for_closure), store.get_status(&name_for_closure)) {
+                        (Some(spec), Some(status)) => Ok(json!({
+                            "ok": true,
+                            "tool": "aios.service.get",
+                            "name": name_for_closure,
+                            "service": spec,
+                            "status": status
+                        })),
+                        _ => Err(format!("service '{}' not found in store", name_for_closure)),
+                    }
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.service.get", &format!("Get service details for {}", name), arguments,
+                    Some(&name), grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.service.action" => {
+                let name = arguments.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let action_str = arguments.get("action").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+                let name_for_closure = name.clone();
+                let f = move || -> Result<Value, String> {
+                    if name_for_closure.is_empty() {
+                        return Err("name parameter is required".into());
+                    }
+                    if name_for_closure.len() > 128 || name_for_closure.chars().any(|c| c.is_control()) {
+                        return Err("name exceeds 128 characters or contains control characters".into());
+                    }
+                    let action = match action_str.to_lowercase().as_str() {
+                        "start" => aiosh_core::service::ServiceAction::Start,
+                        "stop" => aiosh_core::service::ServiceAction::Stop,
+                        "restart" => aiosh_core::service::ServiceAction::Restart,
+                        "reload" => aiosh_core::service::ServiceAction::Reload,
+                        "enable" => aiosh_core::service::ServiceAction::Enable,
+                        "disable" => aiosh_core::service::ServiceAction::Disable,
+                        "mask" => aiosh_core::service::ServiceAction::Mask,
+                        "unmask" => aiosh_core::service::ServiceAction::Unmask,
+                        other => return Err(format!("unknown action '{}'", other)),
+                    };
+                    if let Some(ref p) = store_path_opt {
+                        if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+                            return Err("store_path exceeds 1024 characters or contains control characters".into());
+                        }
+                    }
+                    let mut store = match store_path_opt {
+                        Some(ref p) => aiosh_core::service_service::ServiceStore::load_from_path(std::path::Path::new(p))?,
+                        None => aiosh_core::service_service::ServiceStore::new(),
+                    };
+                    let report = store.execute_action(&name_for_closure, action)?;
+                    if let Some(ref p) = store_path_opt {
+                        store.save_to_path(std::path::Path::new(p))?;
+                    }
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.service.action",
+                        "report": report
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.service.action", &format!("Execute service action on {}", name), arguments,
+                    Some(&name), grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.service.order" => {
+                let name = arguments.get("name").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+                let name_for_closure = name.clone();
+                let f = move || -> Result<Value, String> {
+                    if name_for_closure.is_empty() {
+                        return Err("name parameter is required".into());
+                    }
+                    if name_for_closure.len() > 128 || name_for_closure.chars().any(|c| c.is_control()) {
+                        return Err("name exceeds 128 characters or contains control characters".into());
+                    }
+                    if let Some(ref p) = store_path_opt {
+                        if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+                            return Err("store_path exceeds 1024 characters or contains control characters".into());
+                        }
+                    }
+                    let store = match store_path_opt {
+                        Some(ref p) => aiosh_core::service_service::ServiceStore::load_from_path(std::path::Path::new(p))?,
+                        None => aiosh_core::service_service::ServiceStore::new(),
+                    };
+                    let order = store.plan_service_order(&name_for_closure)?;
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.service.order",
+                        "target": name_for_closure,
+                        "order": order
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.service.order", &format!("Plan startup sequence for {}", name), arguments,
+                    Some(&name), grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
                 )
             }
             "aios.triage.list" => {
@@ -3596,4 +3894,143 @@ mod tests {
         assert_eq!(res_check_with_fix.get("ok").and_then(|v| v.as_bool()), Some(true));
         assert_eq!(res_check_with_fix.get("recovered").and_then(|v| v.as_bool()), Some(true));
     }
+
+    #[test]
+    fn test_mcp_service_tools() {
+        let mut server = Server::open();
+
+        // 1. tool discovery in tool_manifest
+        let tools = server.tool_manifest();
+        assert!(tools.iter().any(|t| t.get("name").and_then(|v| v.as_str()) == Some("aios.service.validate")));
+
+        // 2. aios.service.validate - valid name
+        let res_name_valid = server.call_tool("aios.service.validate", &json!({ "name": "aios-securityd.service" }));
+        assert_eq!(res_name_valid.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_name_valid.get("valid").and_then(|v| v.as_bool()), Some(true));
+
+        // 3. aios.service.validate - invalid name
+        let res_name_invalid = server.call_tool("aios.service.validate", &json!({ "name": "invalid/service" }));
+        assert_eq!(res_name_invalid.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 4. aios.service.validate - control character name
+        let res_control_char = server.call_tool("aios.service.validate", &json!({ "name": "bad\x07service" }));
+        assert_eq!(res_control_char.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 5. aios.service.validate - valid spec
+        let res_spec_valid = server.call_tool("aios.service.validate", &json!({
+            "spec": {
+                "name": "aios-securityd.service",
+                "description": "AIOS Security Daemon",
+                "exec_start": "/usr/bin/aios-securityd --daemon",
+                "exec_stop": null,
+                "exec_reload": null,
+                "service_type": "simple",
+                "restart_policy": "always",
+                "startup_mode": "enabled",
+                "user": "aios",
+                "group": "aios",
+                "working_dir": "/var/lib/aios",
+                "environment": {},
+                "dependencies": [],
+                "timeout_start_secs": 30,
+                "timeout_stop_secs": 30
+            }
+        }));
+        assert_eq!(res_spec_valid.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_spec_valid.get("valid").and_then(|v| v.as_bool()), Some(true));
+
+        // 6. aios.service.validate - invalid spec (self-dependency)
+        let res_spec_invalid = server.call_tool("aios.service.validate", &json!({
+            "spec": {
+                "name": "aios-securityd.service",
+                "description": "AIOS Security Daemon",
+                "exec_start": "/usr/bin/aios-securityd --daemon",
+                "exec_stop": null,
+                "exec_reload": null,
+                "service_type": "simple",
+                "restart_policy": "always",
+                "startup_mode": "enabled",
+                "user": "aios",
+                "group": "aios",
+                "working_dir": "/var/lib/aios",
+                "environment": {},
+                "dependencies": [{
+                    "name": "aios-securityd.service",
+                    "dependency_type": "requires",
+                    "optional": false
+                }],
+                "timeout_start_secs": 30,
+                "timeout_stop_secs": 30
+            }
+        }));
+        assert_eq!(res_spec_invalid.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 7. aios.service.validate - missing arguments
+        let res_missing = server.call_tool("aios.service.validate", &json!({}));
+        assert_eq!(res_missing.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 8. Tool discovery for new service tools
+        assert!(tools.iter().any(|t| t.get("name").and_then(|v| v.as_str()) == Some("aios.service.list")));
+        assert!(tools.iter().any(|t| t.get("name").and_then(|v| v.as_str()) == Some("aios.service.get")));
+        assert!(tools.iter().any(|t| t.get("name").and_then(|v| v.as_str()) == Some("aios.service.action")));
+        assert!(tools.iter().any(|t| t.get("name").and_then(|v| v.as_str()) == Some("aios.service.order")));
+
+        // 9. aios.service.list
+        let res_list = server.call_tool("aios.service.list", &json!({}));
+        assert_eq!(res_list.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_list.get("count").and_then(|v| v.as_u64()), Some(6));
+
+        let res_list_filtered = server.call_tool("aios.service.list", &json!({ "pattern": "audit" }));
+        assert_eq!(res_list_filtered.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert!(res_list_filtered.get("count").and_then(|v| v.as_u64()).unwrap_or(0) >= 1);
+
+        // 10. aios.service.get
+        let res_get = server.call_tool("aios.service.get", &json!({ "name": "auditd.service" }));
+        assert_eq!(res_get.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_get.pointer("/service/name").and_then(|v| v.as_str()), Some("auditd.service"));
+        assert_eq!(res_get.pointer("/status/state").and_then(|v| v.as_str()), Some("active"));
+
+        let res_get_missing = server.call_tool("aios.service.get", &json!({ "name": "nonexistent.service" }));
+        assert_eq!(res_get_missing.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        let res_get_no_name = server.call_tool("aios.service.get", &json!({}));
+        assert_eq!(res_get_no_name.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        let res_get_ctrl = server.call_tool("aios.service.get", &json!({ "name": "bad\x07name" }));
+        assert_eq!(res_get_ctrl.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 11. aios.service.action
+        let temp_mcp_store = std::env::temp_dir().join(format!("aios_mcp_service_{}.json", std::process::id()));
+        let _ = std::fs::remove_file(&temp_mcp_store);
+        let mcp_init_store = aiosh_core::service_service::ServiceStore::new();
+        mcp_init_store.save_to_path(&temp_mcp_store).unwrap();
+        let store_path_str = temp_mcp_store.to_str().unwrap().to_string();
+
+        let res_action_stop = server.call_tool("aios.service.action", &json!({
+            "name": "auditd.service",
+            "action": "stop",
+            "store_path": store_path_str
+        }));
+        assert_eq!(res_action_stop.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_action_stop.pointer("/report/new_state").and_then(|v| v.as_str()), Some("inactive"));
+
+        let res_action_bad = server.call_tool("aios.service.action", &json!({
+            "name": "auditd.service",
+            "action": "invalid_action"
+        }));
+        assert_eq!(res_action_bad.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        let _ = std::fs::remove_file(&temp_mcp_store);
+
+        // 12. aios.service.order
+        let res_order = server.call_tool("aios.service.order", &json!({ "name": "aios-securityd.service" }));
+        assert_eq!(res_order.get("ok").and_then(|v| v.as_bool()), Some(true));
+        let order_arr = res_order.get("order").and_then(|v| v.as_array()).unwrap();
+        assert_eq!(order_arr.len(), 3);
+        assert_eq!(order_arr[2].as_str(), Some("aios-securityd.service"));
+
+        let res_order_missing = server.call_tool("aios.service.order", &json!({}));
+        assert_eq!(res_order_missing.get("ok").and_then(|v| v.as_bool()), Some(false));
+    }
 }
+

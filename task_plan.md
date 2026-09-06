@@ -27,7 +27,71 @@ substrate but is no longer the shipping path.
    KWin / UIA / AT-SPI.
 6. **Phase 5 — Hardening, cross-platform, release.**
 
-## Status (live — 2026-09-05)
+### 2026-09-06 — MILESTONE: Init & Service Supervision MCP API Surface CLOSED 10/10 (T-01331..T-01340)
+
+Complete implementation, governance, verification, and hardening for Phase 1 `Init & Service Supervision / MCP/API surface`:
+- **Autonomous Agent MCP Surface**: `code/aiosh-rust/aiosh-mcp/src/main.rs` exposing all 5 standard JSON-RPC 2.0 service supervision tools:
+  - `aios.service.validate`: Validation of service names (SS1) or complete `ServiceSpec` objects (SS1..SS5).
+  - `aios.service.list`: Multi-parameter service catalog discovery (`pattern`, `state`, `startup_mode`, `limit`, `store_path`).
+  - `aios.service.get`: Deep inspection returning service specification and dynamic runtime status.
+  - `aios.service.action`: State machine lifecycle execution (`start`, `stop`, `restart`, `reload`, `enable`, `disable`, `mask`, `unmask`) with atomic disk persistence.
+  - `aios.service.order`: Topological startup execution planning using Kahn's algorithm with cycle detection.
+- **Security, Gating & Audit Integration**:
+  - Gated by Policy Enforcement Point (`PEP`) capability checks with `grant_id`.
+  - Non-repudiable audit row emission for all queries and actions via `dispatch::recorded_call` and `AuditRing`.
+  - Strict input validation: length bounds on names (128), patterns (256), and store paths (1024); control character rejection across all strings.
+- **Automated Smoke & Integration Testing**:
+  - Authored standalone test suite `code/aiosh-mcp/tests/test_service_mcp_smoke.py` asserting JSON-RPC 2.0 stdio behavior across all tools, boundary values, and negative cases.
+  - Rust unit test suite `tests::test_mcp_service_tools` in `aiosh-mcp`.
+  - Updated `tools/test_service_suites.py` criterion `SS3` description (`validate, list, get, action, order`). All criteria `SS1..SS4` PASS.
+- **Documentation**:
+  - Documented tools, JSON-RPC schemas, copy-pasteable call examples, constraints, and limitations in `code/aiosh-mcp/README.md`.
+- **Ledger Pointer**: Advances to **T-01341** (`Phase 1 — Linux Base System & Bootable Target / Init & Service Supervision / configuration: Research`).
+
+### 2026-09-06 — MILESTONE: Init & Service Supervision CLI Surface CLOSED 10/10 (T-01321..T-01330)
+
+Complete implementation, governance, verification, and hardening for Phase 1 `Init & Service Supervision / CLI surface`:
+- **Operator CLI Surface**: `code/aiosh-rust/aiosh-cli/src/main.rs` delivering `cmd_service`:
+  - `validate`: Invariant validation for names (`SS1`) and specifications (`SS1..SS5`) with 1 MiB payload ceiling.
+  - `list`: Multi-parameter service querying (`--pattern`, `--state`, `--mode`, `--limit`, `--store`, `--json`).
+  - `show` & `status`: Service specification and runtime state inspection.
+  - `action`: State machine transition dispatcher (`start`, `stop`, `restart`, `reload`, `enable`, `disable`, `mask`, `unmask`).
+  - Direct Action Shortcuts: `start`, `stop`, `restart`, `reload`, `enable`, `disable`, `mask`, `unmask` with option preservation and honest audit rows.
+  - `order`: Topological startup execution calculation with cycle detection via Kahn's algorithm.
+- **Cross-Substrate Parity & Audit**: Standardized JSON envelopes across all commands; unconditional audit logging via `classify_and_emit` to `audit.log` / SQLite WAL ring (`audit.db`).
+- **Smoke & Unit Suites**:
+  - `task_cli_tests::test_cmd_service_flow`: Rust CLI unit/integration suite.
+  - `code/aiosh-cli/tests/test_service_cli_smoke.py`: Standalone CLI smoke test.
+  - `tools/test_service_suites.py`: All criteria `SS1..SS4` PASS.
+- **Ledger Pointer**: Advances to **T-01331** (`Phase 1 — Linux Base System & Bootable Target / Init & Service Supervision / MCP API surface: Research`).
+
+### 2026-09-06 — MILESTONE: Init & Service Supervision Core Service CLOSED 10/10 (T-01311..T-01320)
+
+Complete implementation, governance, verification, and hardening for Phase 1 `Init & Service Supervision / core service`:
+- **Core Service Store & Registry**: `code/aiosh-rust/aiosh-core/src/service_service.rs` delivering `ServiceStore` implementing `CS1..CS5`:
+  - `CS1`: Unique service specification registration with schema validation.
+  - `CS2`: Deterministic FSM lifecycle action engine (`start`, `stop`, `restart`, `reload`, `enable`, `disable`, `mask`, `unmask`).
+  - `CS3`: Topological startup execution planning using Kahn's algorithm with cycle detection.
+  - `CS4`: Filtered querying by name pattern, lifecycle state, startup mode, and limit bounds.
+  - `CS5`: Atomic filesystem persistence using PID-isolated tempfile rename and 10 MiB payload ceiling.
+- **Operator CLI Surface**: Integrated in `code/aiosh-rust/aiosh-cli/src/main.rs`:
+  - `aiosh service list`, `aiosh service show`, `aiosh service action`, `aiosh service order` with audit row emission.
+- **Autonomous Agent MCP Surface**: Integrated in `code/aiosh-rust/aiosh-mcp/src/main.rs`:
+  - Registered and dispatched `aios.service.list`, `aios.service.get`, `aios.service.action`, `aios.service.order` with PEP authorization and hash-chained audit logging.
+- **Master Test Runner Matrix (`tools/test_service_suites.py`)**: All criteria `SS1` (data model integrity), `SS2` (CLI surface), `SS3` (MCP surface), and `SS4` (core service lifecycle, FSM & dependency ordering) PASS.
+- **Unit & Integration Suite**: `code/aiosh-rust/aiosh-core/tests/test_service_service.rs` (6 tests covering CS1..CS5).
+- **Ledger Pointer**: Advances to **T-01321** (`Phase 1 — Linux Base System & Bootable Target / Init & Service Supervision / CLI surface: Research`).
+
+### 2026-09-06 — MILESTONE: Init & Service Supervision Data Model CLOSED 10/10 (T-01301..T-01310)
+
+Complete implementation, governance, verification, and hardening for Phase 1 `Init & Service Supervision / data model`:
+- **Unified Data Model Subsystem**: `code/aiosh-rust/aiosh-core/src/service.rs` delivering `ServiceSpec`, `ServiceStatus`, `ServiceHealth`, `ServiceType`, `ServiceState`, `ServiceRestartPolicy`, `ServiceStartupMode`, `ServiceDependencyType`, `ServiceDependency`, `ServiceAction`, and `ServiceQuery`.
+- **Validation Invariants (SS1..SS5)**: Enforcing strict service naming syntax matching systemd/OpenRC (`^[a-zA-Z0-9][a-zA-Z0-9_.-]*$`), string length boundaries [1..128], valid extensions, execution command bounds and traversal protection (`SS2`), dependency graph hygiene without self-loops (`SS3`), resource timeouts and environment sizing bounds (`SS4`), and lifecycle state consistency (`SS5`).
+- **Operator CLI Surface**: Integrated `aiosh service validate (--name <name> | --spec <file_or_json>) [--json]` in `aiosh-cli/src/main.rs` with 1 MiB payload protection and SQLite WAL audit logging.
+- **Autonomous Agent MCP Surface**: Registered and dispatched `aios.service.validate` tool in `aiosh-mcp/src/main.rs` with PEP authorization and audit trail.
+- **Master Test Runner Matrix (`tools/test_service_suites.py`)**: All criteria `SS1` (data model integrity), `SS2` (CLI surface), and `SS3` (MCP surface) PASS.
+- **Unit & Integration Suite**: `code/aiosh-rust/aiosh-core/tests/test_service_data_model.rs` (6 tests covering SS1..SS5 and serde roundtrips).
+- **Ledger Pointer**: Advances to **T-01311** (`Phase 1 — Linux Base System & Bootable Target / Init & Service Supervision / core service: Research`).
 
 ### 2026-09-05 — MILESTONE: Package Management Documentation CLOSED 10/10 (T-01281..T-01290)
 

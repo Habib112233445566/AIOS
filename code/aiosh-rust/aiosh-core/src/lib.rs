@@ -67,6 +67,8 @@ pub mod sandbox;
 pub mod secrets;
 pub mod secrets_config;
 pub mod secrets_service;
+pub mod service;
+pub mod service_service;
 pub mod task_service;
 pub mod toolchain_config;
 pub mod toolchain_service;
@@ -91,4 +93,11 @@ pub use package_recovery::{
 };
 pub use package_service::{PackageStore, TransactionReport};
 pub use pep::PepStore;
+pub use service::{
+    validate_service_name, validate_service_spec, validate_service_status, ServiceAction,
+    ServiceDependency, ServiceDependencyType, ServiceHealth, ServiceQuery, ServiceRestartPolicy,
+    ServiceSpec, ServiceStartupMode, ServiceState, ServiceStatus, ServiceType,
+};
+pub use service_service::{ServiceActionReport, ServiceStore};
 pub use types::GENESIS_HASH;
+

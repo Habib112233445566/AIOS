@@ -49,7 +49,7 @@ project:
 
   created: 2026-07-16
 
-  last_updated: 2026-08-21
+  last_updated: 2026-09-06
 
   session_day_info:
     session_date: 2026-07-24
@@ -71,9 +71,9 @@ project_status:
   current_phase: "v2 Sprint 3 — Rust rewrite of the full shipping stack SHIPPED 2026-08-21 (aiosh-rust: core+cli+mcp, 45 tests + MCP wire smoke green); next: demo snap-test CI, pentest taxonomy expansion"
   completion_percentage: 91
   health_status: HEALTHY_WITH_WARNINGS
-  last_completed_task: "Sprint 3 item 1 — audit-ring retention policy (checkpointed rotation + bloom filter; ADR-0036; retention smoke R1-R7 green, all baseline suites green)"
-  active_task: "Sprint 3 item 2 — formalize aiosh demo snap test into the CI suite"
-  next_task: "Sprint 3 item 3 — expand pentest wrappers toward full Kali / MITRE ATT&CK v19 taxonomy"
+  last_completed_task: "T-01310 — Phase 1 Init & Service Supervision / data model: Verification & Evidence (closed sub-epic 10/10)"
+  active_task: "T-01311 — Phase 1 Init & Service Supervision / core service: Research"
+  next_task: "T-01312 — Phase 1 Init & Service Supervision / core service: Specification"
   # TASK_DATABASE.json is a NON-authoritative graph-derived reconstruction
   # (metadata.authoritative: false, provenance: graph-derived-recovery);
   # its all-COMPLETED statuses are artifacts. Live source of truth is

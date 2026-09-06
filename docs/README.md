@@ -1135,6 +1135,52 @@ python tools/test_package_suites.py
 
 Evidence: `docs/tasks/evidence/T-01201-data-model-research.md` .. `docs/tasks/evidence/T-01299-recovery-validation-documentation.md`.
 
+### 8.13 Linux Init & Service Supervision Subsystem (`aiosh-core::service`, T-01301..T-01400)
+
+**Architecture & Core Data Model (`code/aiosh-rust/aiosh-core/src/service.rs`, `code/aiosh-rust/aiosh-core/src/service_service.rs`):**
+- Data model: `ServiceSpec`, `ServiceStatus`, `ServiceHealth`, `ServiceType` (`simple`, `exec`, `forking`, `oneshot`, `notify`, `idle`), `ServiceState` (`active`, `inactive`, `activating`, `deactivating`, `failed`, `reloading`, `unknown`), `ServiceRestartPolicy` (`no`, `always`, `on_success`, `on_failure`, `on_abnormal`, `on_watchdog`, `on_abort`), `ServiceStartupMode` (`enabled`, `disabled`, `masked`, `static`), `ServiceDependencyType` (`requires`, `wants`, `after`, `before`, `conflicts`), `ServiceDependency`, `ServiceAction`, and `ServiceQuery`.
+- Invariants (`SS1..SS5`):
+  - `SS1`: Service naming syntax matching systemd/OpenRC (`^[a-zA-Z0-9][a-zA-Z0-9_.-]*$`), length [1..128], valid extension if present.
+  - `SS2`: Execution commands and paths: non-empty `exec_start`, absolute `working_dir` without `..` traversal, 4,096-character string limits.
+  - `SS3`: Dependency hygiene: no self-dependencies, duplicate dependencies, max 128 dependencies, valid target names.
+  - `SS4`: Resource and field limits: timeout in $[1 \dots 86,400]$ seconds, description $\le 4,096$ bytes, environment $\le 256$ entries (no `=` or null in keys), POSIX user/group names.
+  - `SS5`: Lifecycle consistency: `failed` state incompatible with `healthy == true`, `masked` mode incompatible with `active` or `activating`.
+- Core Service Store (`ServiceStore`, `CS1..CS5`):
+  - `CS1`: Unique service name registration with schema validation.
+  - `CS2`: Finite State Machine lifecycle management (`start`, `stop`, `restart`, `reload`, `enable`, `disable`, `mask`, `unmask`).
+  - `CS3`: Topological dependency ordering via Kahn's algorithm with cycle detection.
+  - `CS4`: Filtered query engine supporting name patterns, state, startup mode, and result limits.
+  - `CS5`: Atomic filesystem persistence with PID isolation and 10 MiB payload ceiling.
+
+**Operator CLI Surface (`aiosh service`, T-01306, T-01316, T-01321..T-01329):**
+- `aiosh service validate --name <name> [--json]`: Validate service name syntax (SS1).
+- `aiosh service validate --spec <file_or_inline_json> [--json]`: Deep-audit full service specification against invariants SS1..SS5 with 1 MiB payload ceiling.
+- `aiosh service list [--pattern <pat>] [--state <state>] [--mode <mode>] [--limit <n>] [--store <path>] [--json]`: List registered services matching query filters.
+- `aiosh service show <name> [--store <path>] [--json]`: Inspect service specification and runtime state (alias: `status`).
+- `aiosh service status <name> [--store <path>] [--json]`: Display runtime service status and specification.
+- `aiosh service action <name> <action> [--store <path>] [--json]`: Execute lifecycle action (`start`, `stop`, `restart`, `reload`, `enable`, `disable`, `mask`, `unmask`).
+- `aiosh service <start|stop|restart|reload|enable|disable|mask|unmask> <name> [--store <path>] [--json]`: Direct action shortcuts for operator efficiency.
+- `aiosh service order <name> [--store <path>] [--json]`: Compute topological startup sequence.
+
+**Autonomous Agent MCP Tool Surface (`aiosh-mcp`, T-01306, T-01316):**
+- `aios.service.validate`: Validates service name syntax (SS1) or full `ServiceSpec` against SS1..SS5 invariants.
+- `aios.service.list`: Dispatches filtered query over registered services.
+- `aios.service.get`: Retrieves service spec and runtime status.
+- `aios.service.action`: Executes lifecycle state transition with PEP token verification and SQLite WAL audit logging.
+- `aios.service.order`: Resolves topological dependency startup graph.
+
+**Standalone Test Runner (`tools/test_service_suites.py`):**
+```bash
+python tools/test_service_suites.py
+# [+] SS1 service data model integrity & invariants (SS1..SS5)
+# [+] SS2 service CLI surface commands & options (validate, list, show/status, action, order)
+# [+] SS3 service MCP tool surface (validate)
+# [+] SS4 service core service lifecycle, FSM & dependency ordering (CS1..CS5)
+# PASS: service_suites criteria (SS1..SS4)
+```
+
+Evidence: `docs/tasks/evidence/T-01301-data-model-research.md` .. `docs/tasks/evidence/T-01329-cli-surface-documentation.md`.
+
 
 
 ## Documentation invariants (Task Ledger Control, T-00091..T-00100)
