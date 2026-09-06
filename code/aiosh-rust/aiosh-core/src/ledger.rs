@@ -143,10 +143,10 @@ pub fn read_events(events_path: &Path) -> Result<Vec<Value>, String> {
 }
 
 fn open_options_644() -> OpenOptions {
-    let opts = OpenOptions::new();
+    #[allow(unused_mut)]
+    let mut opts = OpenOptions::new();
     #[cfg(unix)]
     {
-        use std::os::unix::fs::OpenOptionsExt;
         opts.mode(0o644);
     }
     opts
