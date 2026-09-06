@@ -173,12 +173,14 @@ def execute_turn(user_text: str):
     # Loop to allow multi-step tool execution
     while True:
         try:
+            print("[*] Thinking...", end="", flush=True)
             response = client.chat.completions.create(
                 model=MODEL_ID,
                 messages=conversation_history,
                 tools=tools if tools else None,
                 tool_choice="auto" if tools else None,
             )
+            print("\r" + " " * 20 + "\r", end="", flush=True)
         except Exception as e:
             print(f"\n[-] API Error: {e}")
             return
@@ -237,6 +239,9 @@ def main():
     print(f"[*] Active model     : {MODEL_ID}")
     filter_note = f" (filter: '{args.tool_filter}')" if args.tool_filter else ""
     print(f"[*] OS Tools loaded  : {len(tools)} management tools{filter_note}")
+    if args.provider == "ollama" and not args.tool_filter and len(tools) > 20:
+        print("💡 [Tip] Evaluating 68 tools on CPU can take time.")
+        print("   For instant 2-second responses, use: --tool-filter service (or package, process)")
     print("[*] Type your prompt or command below.")
     print("[*] Type 'exit', 'quit', or press Ctrl+C to terminate.\n")
 
