@@ -50,7 +50,7 @@ args, _ = parser.parse_known_args()
 
 # Configure Provider
 if args.provider == "ollama":
-    base_url = args.base_url or os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+    base_url = args.base_url or os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434/v1")
     model_id = args.model or os.getenv("OLLAMA_MODEL", "qwen2.5:3b")
     api_key = args.api_key or os.getenv("OLLAMA_API_KEY", "ollama")
 elif args.provider == "dahl":
@@ -69,7 +69,7 @@ elif args.provider == "openrouter":
         print("[-] Error: OPENROUTER_API_KEY environment variable is not set!")
         sys.exit(1)
 else:  # custom
-    base_url = args.base_url or os.getenv("OPENAI_BASE_URL", "http://localhost:11434/v1")
+    base_url = args.base_url or os.getenv("OPENAI_BASE_URL", "http://127.0.0.1:11434/v1")
     model_id = args.model or os.getenv("MODEL_ID", "qwen2.5:3b")
     api_key = args.api_key or os.getenv("OPENAI_API_KEY", "dummy-key")
 
