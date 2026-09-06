@@ -1176,12 +1176,14 @@ Evidence: `docs/tasks/evidence/T-01201-data-model-research.md` .. `docs/tasks/ev
 python tools/test_service_suites.py
 # [+] SS1 service data model integrity & invariants (SS1..SS5)
 # [+] SS2 service CLI surface commands & options (validate, list, show/status, action, order)
-# [+] SS3 service MCP tool surface (validate)
+# [+] SS3 service MCP tool surface (validate, list, get, action, order, config)
 # [+] SS4 service core service lifecycle, FSM & dependency ordering (CS1..CS5)
-# PASS: service_suites criteria (SS1..SS4)
+# [+] SS5 service configuration subsystem invariants, precedence & sizing (SC1..SC7)
+# [+] SS6 service automated integration tests (ST1..ST5)
+# PASS: service_suites criteria (SS1..SS6)
 ```
 
-Evidence: `docs/tasks/evidence/T-01301-data-model-research.md` .. `docs/tasks/evidence/T-01329-cli-surface-documentation.md`.
+Evidence: `docs/tasks/evidence/T-01301-data-model-research.md` .. `docs/tasks/evidence/T-01359-automated-tests-documentation.md`.
 
 
 
