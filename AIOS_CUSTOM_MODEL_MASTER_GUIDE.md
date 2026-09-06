@@ -11,13 +11,23 @@
 > [!IMPORTANT]
 > **Directive to Incoming Model:**  
 > You are designated as the **Lead AI Systems Architect and Small Language Model (SLM) Engineer** for AIOS.  
-> Your task is to design, generate datasets for, fine-tune, evaluate, and integrate the proprietary **`AIOS-Kernel-SLM`** (a 0.5B–1.5B parameter native operating system intelligence).  
-> You have full authority to inspect the entire codebase, cross-examine architectural patterns, conduct independent research on anything missed, and implement the model training and deployment pipeline end-to-end.
+> Your task is to design, generate datasets for, fine-tune, evaluate, and package the proprietary **`AIOS-Kernel-SLM`** (a 0.5B–1.5B parameter native operating system intelligence).  
+> You have full authority to read and inspect the entire codebase, cross-examine architectural patterns, and conduct independent research.
+
+> [!CAUTION]
+> ### 🛑 STRICT REPOSITORY BOUNDARY: WORK ONLY IN `AIOS-model/`
+> **YOU MUST ONLY TRAIN/BUILD THE MODEL. DO NOT TOUCH, EDIT, OR DELETE ANY EXISTING FILES IN THE PROJECT!**
+> 1. **Zero Modifications to Existing Code**: You are strictly **forbidden** from editing, modifying, moving, or deleting any existing project files—including `code/aiosh-rust/`, `ai_agent.py`, `docs/`, `tools/`, `config/`, `task_plan.md`, `progress.md`, or `PROJECT_MANIFEST.yaml`. All existing code is **STRICTLY READ-ONLY** for you.
+> 2. **Dedicated Workspace**: **ALL OF YOUR WORK MUST BE CONTAINED IN A SINGLE FOLDER: `AIOS-model/`**.
+>    - Create `AIOS-model/` at the root if it doesn't already exist.
+>    - All dataset scripts (`AIOS-model/dataset_generator.py`), training pipelines (`AIOS-model/train.py`), notebooks, exported checkpoints, GGUF files, and Modelfiles **MUST LIVE EXCLUSIVELY INSIDE `AIOS-model/`**.
+> 3. **Non-Invasive Verification**: When evaluating your trained model, test it against `ai_agent.py` as an external client without modifying `ai_agent.py` or MCP binaries.
 
 ### Your Working Context & Ground Rules
-1. **Explore & Verify:** Do not assume anything without checking the active repository. Read the primary files cited in this document before writing code.
+1. **Read-Only Codebase Inspection:** Study the repository extensively to understand tool formats and invariants, but do not touch existing files.
 2. **Zero-Fluff / High Technical Rigor:** AIOS is written in high-performance Rust (`code/aiosh-rust/`), with strict policy enforcement, an SQLite WAL audit ring, and JSON-RPC 2.0 Model Context Protocol (MCP) tool surfaces. Maintain this standard.
 3. **Consumer Hardware Priority:** The model **must run at high speed (50–90+ tokens/sec) on ordinary consumer laptops and desktop PCs using CPU alone**. Datacenter GPUs (A100/H100) are not acceptable prerequisites for personal computer users.
+4. **All Outputs in `AIOS-model/`**: Keep your entire pipeline self-contained inside `AIOS-model/`.
 
 ---
 
@@ -97,8 +107,10 @@ Instead of relying on bloated generalist models, AIOS requires a **custom, dedic
    - `aios.pentest.*` (nmap, nikto, sqlmap, tshark, aircrack-ng)
 3. Review `ai_agent.py` to understand the JSON-RPC message framing, tool call format, and multi-turn execution loop.
 
-### Phase B: Synthetic Dataset Generation (`tools/generate_model_dataset.py`)
-Build a Python dataset generation engine that programmatically creates realistic, diverse, multi-turn system administration conversations:
+### Phase B: Synthetic Dataset Generation (`AIOS-model/generate_dataset.py`)
+Build a Python dataset generation engine inside `AIOS-model/` that programmatically creates realistic, diverse, multi-turn system administration conversations:
+- **Location:** `AIOS-model/generate_dataset.py`
+- **Output File:** `AIOS-model/data/aios_train.jsonl`
 - **Format:** OpenAI / ChatML function calling format (`{"messages": [{"role": "system", ...}, {"role": "user", ...}, {"role": "assistant", "tool_calls": [...]}, {"role": "tool", ...}, {"role": "assistant", ...}]}`).
 - **Dataset Targets:**
   1. *Single-turn actions:* "Check status of dbus.service", "List packages matching python", "Show running processes".
@@ -107,8 +119,9 @@ Build a Python dataset generation engine that programmatically creates realistic
   4. *Safety & Error Handling:* Refusing invalid inputs, handling service errors, and respecting security invariants.
 - **Dataset Size:** 5,000 to 20,000 high-quality, verified dialogues.
 
-### Phase C: Fine-Tuning Execution (Colab T4 / Unsloth)
-- Write an automated training script (e.g. `training/train_slm.py` or a clean Colab notebook).
+### Phase C: Fine-Tuning Execution (`AIOS-model/train_slm.py`)
+- Write an automated training script: `AIOS-model/train_slm.py` (or a dedicated Colab notebook inside `AIOS-model/`).
+- Outputs: Save checkpoints and LoRA adapters strictly to `AIOS-model/checkpoints/`.
 - Use **Unsloth** or **Hugging Face TRL (SFTTrainer)** with **QLoRA (4-bit)**:
   - Base Model: `Qwen/Qwen2.5-1.5B-Instruct` or `Qwen/Qwen2.5-0.5B-Instruct`.
   - Target modules: `q_proj`, `k_proj`, `v_proj`, `o_proj`, `gate_proj`, `up_proj`, `down_proj`.
@@ -116,10 +129,10 @@ Build a Python dataset generation engine that programmatically creates realistic
   - Epochs: 2 to 3.
   - Training time: Under 30 minutes on a free Colab T4 GPU!
 
-### Phase D: Export, Quantization & GGUF Modelfile
-1. Merge LoRA weights into 16-bit base model.
-2. Convert and quantize to GGUF (`q4_k_m`) using `llama.cpp`.
-3. Create an Ollama `Modelfile`:
+### Phase D: Export, Quantization & GGUF Modelfile (`AIOS-model/`)
+1. Merge LoRA weights into 16-bit base model inside `AIOS-model/merged/`.
+2. Convert and quantize to GGUF (`q4_k_m`) using `llama.cpp` to `AIOS-model/aios-kernel-1.5b-q4_k_m.gguf`.
+3. Create `AIOS-model/Modelfile`:
    ```dockerfile
    FROM ./aios-kernel-1.5b-q4_k_m.gguf
    TEMPLATE """..."""
@@ -127,7 +140,7 @@ Build a Python dataset generation engine that programmatically creates realistic
    PARAMETER temperature 0.1
    PARAMETER stop "<|im_end|>"
    ```
-4. Register the model: `ollama create aios-kernel -f Modelfile`.
+4. Register the model: `cd AIOS-model && ollama create aios-kernel -f Modelfile`.
 
 ### Phase E: Verification Against Test Suites
 - Test `python ai_agent.py --provider ollama --model aios-kernel`.
