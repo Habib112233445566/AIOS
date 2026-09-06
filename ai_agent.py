@@ -1,31 +1,91 @@
 #!/usr/bin/env python3
 """AIOS Interactive Live AI Shell (Pillar C Kernel Assistant).
 
-Connects MiniMax M2.7 (via Dahl Inference) to real Linux subsystems
-over Model Context Protocol (aiosh-mcp JSON-RPC 2.0).
+Connects LLMs (MiniMax M2.7, Qwen 2.5 3B, Llama 3, DeepSeek, etc.)
+to real Linux subsystems over Model Context Protocol (aiosh-mcp JSON-RPC 2.0).
+Supports local execution (Ollama / vLLM) and cloud APIs (Dahl, OpenRouter, OpenAI).
 """
 
+import argparse
 import atexit
 import json
 import os
-import readline  # enables command history and arrow keys in Linux terminal
 import subprocess
 import sys
-from openai import OpenAI
+try:
+    import readline  # enables command history and arrow keys in Linux terminal
+except ImportError:
+    pass
 
-# 1. API Verification
-api_key = os.getenv("DAHL_API_KEY")
-if not api_key:
-    print("[-] Error: DAHL_API_KEY environment variable is not set!")
-    print("    Run: export DAHL_API_KEY=\"your_key_here\"")
-    sys.exit(1)
+# 1. Argument Parsing & Provider Configuration
+parser = argparse.ArgumentParser(description="AIOS Interactive Live AI Shell")
+parser.add_argument(
+    "--provider",
+    choices=["dahl", "ollama", "openrouter", "custom"],
+    default=os.getenv("AI_PROVIDER", "dahl"),
+    help="Inference provider: 'dahl', 'ollama' (local), 'openrouter', or 'custom' (default: dahl)",
+)
+parser.add_argument(
+    "--model",
+    default=None,
+    help="Model ID (e.g. 'qwen2.5:3b', 'MiniMaxAI/MiniMax-M2.7', 'qwen/qwen-2.5-3b-instruct')",
+)
+parser.add_argument(
+    "--base-url",
+    default=None,
+    help="API base URL (overrides provider default)",
+)
+parser.add_argument(
+    "--api-key",
+    default=None,
+    help="API key (overrides environment variables)",
+)
+parser.add_argument(
+    "--tool-filter",
+    default=None,
+    help="Filter tools by subsystem substring (e.g. 'service', 'package', 'audit', 'fs')",
+)
+
+args, _ = parser.parse_known_args()
+
+# Configure Provider
+if args.provider == "ollama":
+    base_url = args.base_url or os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+    model_id = args.model or os.getenv("OLLAMA_MODEL", "qwen2.5:3b")
+    api_key = args.api_key or os.getenv("OLLAMA_API_KEY", "ollama")
+elif args.provider == "dahl":
+    base_url = args.base_url or os.getenv("DAHL_BASE_URL", "https://inference.dahl.global/v1")
+    model_id = args.model or os.getenv("DAHL_MODEL_ID", "MiniMaxAI/MiniMax-M2.7")
+    api_key = args.api_key or os.getenv("DAHL_API_KEY")
+    if not api_key:
+        print("[-] Error: DAHL_API_KEY environment variable is not set!")
+        print("    Run: export DAHL_API_KEY=\"your_key_here\" or use --api-key")
+        sys.exit(1)
+elif args.provider == "openrouter":
+    base_url = args.base_url or "https://openrouter.ai/api/v1"
+    model_id = args.model or "qwen/qwen-2.5-3b-instruct"
+    api_key = args.api_key or os.getenv("OPENROUTER_API_KEY")
+    if not api_key:
+        print("[-] Error: OPENROUTER_API_KEY environment variable is not set!")
+        sys.exit(1)
+else:  # custom
+    base_url = args.base_url or os.getenv("OPENAI_BASE_URL", "http://localhost:11434/v1")
+    model_id = args.model or os.getenv("MODEL_ID", "qwen2.5:3b")
+    api_key = args.api_key or os.getenv("OPENAI_API_KEY", "dummy-key")
 
 # 2. Client Initialization
+try:
+    from openai import OpenAI
+except ImportError:
+    print("[-] Error: 'openai' Python package is not installed.")
+    print("    Install it via: pip install openai")
+    sys.exit(1)
+
 client = OpenAI(
-    base_url="https://inference.dahl.global/v1",
+    base_url=base_url,
     api_key=api_key,
 )
-MODEL_ID = os.getenv("DAHL_MODEL_ID", "MiniMaxAI/MiniMax-M2.7")
+MODEL_ID = model_id
 
 # 3. Locate and Spawn the aiosh-mcp Server
 possible_paths = [
@@ -77,6 +137,10 @@ def mcp_request(method, params={}):
 manifest = mcp_request("tools/list")
 raw_tools = manifest.get("result", {}).get("tools", [])
 
+if args.tool_filter:
+    filter_term = args.tool_filter.lower()
+    raw_tools = [t for t in raw_tools if filter_term in t.get("name", "").lower()]
+
 tools = [
     {
         "type": "function",
@@ -112,8 +176,8 @@ def execute_turn(user_text: str):
             response = client.chat.completions.create(
                 model=MODEL_ID,
                 messages=conversation_history,
-                tools=tools,
-                tool_choice="auto",
+                tools=tools if tools else None,
+                tool_choice="auto" if tools else None,
             )
         except Exception as e:
             print(f"\n[-] API Error: {e}")
@@ -166,11 +230,13 @@ def execute_turn(user_text: str):
 
 def main():
     print("=" * 65)
-    print("   AIOS Interactive Live AI Shell (MiniMax M2.7 on Linux)")
+    print("          AIOS Interactive Live AI Shell (Linux)")
     print("=" * 65)
-    print(f"[*] Connected backend: https://inference.dahl.global/v1")
+    print(f"[*] Provider         : {args.provider}")
+    print(f"[*] Backend URL      : {base_url}")
     print(f"[*] Active model     : {MODEL_ID}")
-    print(f"[*] OS Tools loaded  : {len(tools)} management tools")
+    filter_note = f" (filter: '{args.tool_filter}')" if args.tool_filter else ""
+    print(f"[*] OS Tools loaded  : {len(tools)} management tools{filter_note}")
     print("[*] Type your prompt or command below.")
     print("[*] Type 'exit', 'quit', or press Ctrl+C to terminate.\n")
 
