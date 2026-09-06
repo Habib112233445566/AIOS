@@ -19,12 +19,25 @@
 > **YOU MUST ONLY TRAIN/BUILD THE MODEL. DO NOT TOUCH, EDIT, OR DELETE ANY EXISTING FILES IN THE PROJECT!**
 > 1. **Zero Modifications to Existing Code**: You are strictly **forbidden** from editing, modifying, moving, or deleting any existing project files—including `code/aiosh-rust/`, `ai_agent.py`, `docs/`, `tools/`, `config/`, `task_plan.md`, `progress.md`, or `PROJECT_MANIFEST.yaml`. All existing code is **STRICTLY READ-ONLY** for you.
 > 2. **Dedicated Workspace**: **ALL OF YOUR WORK MUST BE CONTAINED IN A SINGLE FOLDER: `AIOS-model/`**.
->    - Create `AIOS-model/` at the root if it doesn't already exist.
->    - All dataset scripts (`AIOS-model/dataset_generator.py`), training pipelines (`AIOS-model/train.py`), notebooks, exported checkpoints, GGUF files, and Modelfiles **MUST LIVE EXCLUSIVELY INSIDE `AIOS-model/`**.
+>    - All dataset scripts (`AIOS-model/dataset_generator.py`), training pipelines (`AIOS-model/train_slm.py`), notebooks, exported checkpoints, GGUF files, and Modelfiles **MUST LIVE EXCLUSIVELY INSIDE `AIOS-model/`**.
 > 3. **Non-Invasive Verification**: When evaluating your trained model, test it against `ai_agent.py` as an external client without modifying `ai_agent.py` or MCP binaries.
 
+> [!WARNING]
+> ### 📖 MANDATORY PREREQUISITE: READ EVERY SINGLE FILE IN THE REPOSITORY FIRST
+> Before writing a single line of training code, generating datasets, or building the model, **YOU MUST READ AND EXAMINE EVERY SINGLE FILE AND DIRECTORY IN THE AIOS REPOSITORY**. Gaining a deep, 360-degree comprehension of the entire project is **MANDATORY**:
+> - **Architecture & System Vision**: Read `AIOS-humanity.md`, `PROJECT_MANIFEST.yaml`, `START_HERE.md`, `README.md`, `SECURITY.md`, `WORKSPACE.md`, `FREEBUFF_PROTOCOL.md`, `findings.md`, and `research-findings.md`.
+> - **Master Progress & Task Ledger**: Read `task_plan.md` and `progress.md` (all 1,340 completed tasks and Phase 1 specifications).
+> - **The Entire Rust Core & MCP Engine**: Read every source file in `code/aiosh-rust/`:
+>   - `aiosh-mcp/src/main.rs`: Read all 68 tools, schemas, and handlers line-by-line.
+>   - `aiosh-core/src/`: Read `service_service.rs`, `service.rs`, `package_service.rs`, `package.rs`, `ledger.rs`, `audit.rs`, `pep.rs`, `dispatch.rs`, `process.rs`, `distro.rs`.
+>   - `aiosh-cli/src/`: Read CLI command parsers and commands.
+> - **Live Agent Layer**: Read `ai_agent.py` to master JSON-RPC stdio framing, dynamic tool routing, and multi-turn loops.
+> - **Verification Suites & Task Evidence**: Read `tools/test_service_suites.py`, `tools/test_package_suites.py`, and inspect evidence documents in `docs/tasks/evidence/`.
+>
+> **Do not skip any file.** The AIOS model must know the operating system at the byte level before it can be trained to manage it.
+
 ### Your Working Context & Ground Rules
-1. **Read-Only Codebase Inspection:** Study the repository extensively to understand tool formats and invariants, but do not touch existing files.
+1. **Full-Repository Reading (Read-Only):** Ingest every single file in the repository to build deep domain expertise, but preserve all files strictly unchanged.
 2. **Zero-Fluff / High Technical Rigor:** AIOS is written in high-performance Rust (`code/aiosh-rust/`), with strict policy enforcement, an SQLite WAL audit ring, and JSON-RPC 2.0 Model Context Protocol (MCP) tool surfaces. Maintain this standard.
 3. **Consumer Hardware Priority:** The model **must run at high speed (50–90+ tokens/sec) on ordinary consumer laptops and desktop PCs using CPU alone**. Datacenter GPUs (A100/H100) are not acceptable prerequisites for personal computer users.
 4. **All Outputs in `AIOS-model/`**: Keep your entire pipeline self-contained inside `AIOS-model/`.
@@ -95,17 +108,26 @@ Instead of relying on bloated generalist models, AIOS requires a **custom, dedic
 
 ## 5. Phase-by-Phase Roadmap for the Incoming AI
 
-### Phase A: Deep Codebase & Schema Discovery
-1. Inspect the 68 MCP tools in `code/aiosh-rust/aiosh-mcp/src/main.rs`. Notice how `tool_manifest()` declares each tool and how the match statement dispatches them.
-2. Note the primary subsystem domains:
+### Phase A: Deep Repository Reading & Full Codebase Ingestion (MANDATORY)
+**Before taking any training actions, you MUST read every file in the AIOS folder:**
+1. **Core Architectural Philosophy**: Read `AIOS-humanity.md`, `PROJECT_MANIFEST.yaml`, `START_HERE.md`, `README.md`, `SECURITY.md`, `WORKSPACE.md`, `FREEBUFF_PROTOCOL.md`, `findings.md`, and `research-findings.md`.
+2. **Ledger & Roadmap**: Read `task_plan.md` and `progress.md` (to understand how 1,340 tasks were implemented and structured).
+3. **The 68 MCP Tools**: Inspect every single tool declaration and match arm in `code/aiosh-rust/aiosh-mcp/src/main.rs`. Notice how `tool_manifest()` declares tool parameters, required fields, and types:
    - `aios.service.*` (validate, list, get, action, order)
    - `aios.package.*` (validate, list, get, plan, apply, search, config, policy, stats, check)
    - `aios.process.*` (list)
    - `aios.fs.*` (read)
    - `aios.audit.*` (tail, verify, rotate, segments, seen)
-   - `aios.distro.*` / `aios.image.*`
+   - `aios.distro.*` / `aios.image.*` (evaluate, recommend, policy, stats, check)
    - `aios.pentest.*` (nmap, nikto, sqlmap, tshark, aircrack-ng)
-3. Review `ai_agent.py` to understand the JSON-RPC message framing, tool call format, and multi-turn execution loop.
+4. **The Subsystem Engines**: Read all engine files in `code/aiosh-rust/aiosh-core/src/`:
+   - `service_service.rs` & `service.rs`: State machines, transitions (active, inactive, activating, masked), topological dependency ordering.
+   - `package_service.rs` & `package.rs`: Search, dependencies, formats (`apk`, `deb`), plans, invariants.
+   - `ledger.rs` & `audit.rs`: Audit ring, cryptographic SHA-256 hash chains, segment rotation.
+   - `pep.rs`: Policy Enforcement Point evaluation and grant tokens.
+   - `process.rs`, `distro.rs`, `base_image.rs`.
+5. **Agent & CLI Layer**: Review `ai_agent.py` to understand stdio JSON-RPC 2.0 communication, dynamic tool routing, and multi-turn loops. Review `code/aiosh-cli/`.
+6. **Test Suites & Evidence**: Review `tools/test_service_suites.py`, `tools/test_package_suites.py`, and `docs/tasks/evidence/` to internalize the exact test cases and assertions used to validate AIOS.
 
 ### Phase B: Synthetic Dataset Generation (`AIOS-model/generate_dataset.py`)
 Build a Python dataset generation engine inside `AIOS-model/` that programmatically creates realistic, diverse, multi-turn system administration conversations:
