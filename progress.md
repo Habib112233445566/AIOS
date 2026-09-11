@@ -1,5 +1,23 @@
 # Progress Log
 
+## 2026-09-11 — T-01441..T-01450 SHIPPED: User Session Bootstrap Configuration CLOSED (Criterion SB5, 10/10 tasks)
+
+**What shipped:**
+- Delivered configuration subsystem for User Session Bootstrap in `code/aiosh-rust/aiosh-core/src/session_config.rs`:
+  - `SessionConfig` struct enforcing invariants `SC1..SC7` (store paths, capacity quotas, idle timeouts, size caps, precedence, bounded reads).
+  - Precedence engine: explicit `--config` file > environment variables (`AIOS_SESSION_*`) > built-in defaults.
+- Operator CLI surface (`aiosh session config [--config <path>] [--json]`) in `code/aiosh-rust/aiosh-cli/src/main.rs`.
+- Autonomous agent MCP surface (`aios.session.config`) in `code/aiosh-rust/aiosh-mcp/src/main.rs` with PEP gating and SQLite WAL audit logging.
+- Unit test suite `code/aiosh-rust/aiosh-core/tests/test_session_config.rs` (9 tests passing across SC1..SC7).
+- Updated master session runner `tools/test_session_suites.py` with criterion `SB5` (all 5 criteria SB1..SB5 PASS).
+- Updated documentation in `code/aiosh-cli/README.md` and `code/aiosh-mcp/README.md`.
+
+**Verified:**
+- `python tools/test_session_suites.py` (SB1..SB5 PASS).
+- `cargo test --manifest-path code/aiosh-rust/Cargo.toml --test test_session_config` (9/9 PASS).
+- `cargo check --manifest-path code/aiosh-rust/Cargo.toml --bin aiosh --bin aiosh-mcp` (PASS).
+- Milestone: **User Session Bootstrap / configuration CLOSED — 10/10 tasks** (T-01441..T-01450). Pointer $\to$ **T-01451** (`Phase 1 — Linux Base System & Bootable Target / User Session Bootstrap / automated tests: Research`).
+
 ## 2026-09-06 — T-01331..T-01340 SHIPPED: Init & Service Supervision MCP API Surface CLOSED (Criteria SS1..SS4, 10/10 tasks)
 
 **What shipped:**

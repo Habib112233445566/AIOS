@@ -35,6 +35,30 @@ Strategic decision to adopt **Kali Linux** as the primary underlying distributio
 - **Desktop Interface (Pillar B)**: Deliver a Windows 10/11 desktop experience via XFCE `kali-undercover` or KDE Plasma Fluent themes, eliminating Linux terminal friction for operators.
 - **Autonomous AI Kernel (Pillar C)**: Integrate the AIOS AI shell (`ai_agent.py` + local SLM) as the desktop co-pilot with smart routing across all native Kali security tools.
 
+### 2026-09-11 — MILESTONE: User Session Bootstrap Configuration CLOSED 10/10 (T-01441..T-01450)
+
+Complete implementation, governance, verification, and hardening for Phase 1 `User Session Bootstrap / configuration` (10/10 tasks, `T-01441..T-01450`):
+- **Configuration Subsystem (`aiosh_core::session_config`)**: `code/aiosh-rust/aiosh-core/src/session_config.rs`:
+  - `SessionConfig` struct, default constants, and validation enforcing invariants `SC1..SC7`:
+    - `SC1`: Store path validity & boundaries ($\le 1024$ bytes, rejection of control characters and null bytes).
+    - `SC2`: User capacity bounds strictly enforced to $[1 \dots 128]$ active sessions per user account.
+    - `SC3`: Total store capacity bounds strictly enforced to $[10 \dots 10,000]$ total sessions.
+    - `SC4`: Inactivity auto-lock idle timeout bounds $[10 \dots 86,400]$ seconds.
+    - `SC5`: Max store size bytes bounded to $[64\text{ KiB} \dots 100\text{ MiB}]$.
+    - `SC6`: Resolution precedence: Explicit File > Environment Variables (`AIOS_SESSION_*`) > Defaults.
+    - `SC7`: Config file size cap $\le 64\text{ KiB}$ with stream bounding and fail-loud parsing.
+- **Operator CLI Surface (`aiosh session config`)**: `code/aiosh-rust/aiosh-cli/src/main.rs`:
+  - `aiosh session config [--config <path>] [--json]` providing human-readable formatted output or structured JSON envelope with SQLite WAL audit row emission.
+- **Autonomous Agent MCP Surface (`aios.session.config`)**: `code/aiosh-rust/aiosh-mcp/src/main.rs`:
+  - JSON-RPC 2.0 tool `aios.session.config` registered and dispatched under PEP capability gating with SQLite WAL audit logging.
+- **Dedicated Automated Unit & Integration Suite**:
+  - `code/aiosh-rust/aiosh-core/tests/test_session_config.rs`: 9/9 tests passing across SC1..SC7 invariants.
+- **Master Test Runner Matrix (`tools/test_session_suites.py`)**:
+  - Integrated criterion `SB5` (`test_sb5_configuration`). All 5 criteria `SB1..SB5` PASS cleanly.
+- **Documentation**:
+  - `code/aiosh-cli/README.md` and `code/aiosh-mcp/README.md` updated with configuration options and examples.
+- **Ledger Pointer**: Advances to **T-01451** (`Phase 1 — Linux Base System & Bootable Target / User Session Bootstrap / automated tests: Research`).
+
 ### 2026-09-09 — MILESTONE: User Session Bootstrap MCP/API Surface CLOSED 10/10 (T-01431..T-01440)
 
 Complete implementation, governance, verification, and hardening for Phase 1 `User Session Bootstrap / MCP API surface` (10/10 tasks, `T-01431..T-01440`):

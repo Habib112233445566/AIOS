@@ -32,6 +32,7 @@ Implements **ADR-0035 §D-2** (MCP as the only tool-call protocol).
 | `aios.session.get`    | ✓     |        | Retrieves runtime status and specification of a session by ID |
 | `aios.session.action` |       | ✓     | Executes lifecycle action (`authenticate`, `activate`, `lock`, `unlock`, `terminate`) with seat arbitration |
 | `aios.session.create` |       | ✓     | Atomically provisions a new user or agent session with validation and capacity enforcement |
+| `aios.session.config` | ✓     |        | Inspects User Session Bootstrap configuration parameters and limits (SC1..SC7) |
 
 ¹ The pentest and service action tools write an audit row through the same recorded dispatch helper; in Sprint 0 the row is written synchronously.
 

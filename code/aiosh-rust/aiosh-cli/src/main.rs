@@ -200,7 +200,7 @@ fn main() {
         Some("service") => cmd_service(&args[1..]),
         Some("session") => cmd_session(&args[1..]),
         Some("--help") | Some("-h") | None => {
-            println!("aiosh — AIOS shell CLI (Rust)\n\nUsage: aiosh <status|run|agent|audit|grant|pentest|classify|task|ci|release|backup|toolchain|doc|evidence|repo|secrets|triage|handoff|distro|image|package|service|session> ...\n\n  aiosh task <status|done|block|unblock|skip|rebuild|check>  Task ledger control\n  aiosh ci <show|failures|check|config|metrics> [--file PATH]  CI smoke reports\n  aiosh release generate  Create bootable ISO\n  aiosh backup create  Create system snapshot zip\n  aiosh toolchain check [--config <path>]  Verify host environment against ToolchainManifest\n  aiosh toolchain show [--config <path>]   Display the resolved ToolchainManifest\n  aiosh doc <show|check|search>  Documentation Index Control\n  aiosh evidence <verify|hash|scan>   Evidence & Audit Trail Control\n  aiosh repo <health|check>  Repository Health Diagnostics\n  aiosh secrets <scan|check> [--config <path>]  Secrets & Access Hygiene Scanner\n  aiosh triage <list|show|record|resolve|ingest|check>  Regression Triage Manager\n  aiosh handoff <list|show|initiate|accept|reject|complete|cancel>  Agent Handoff Protocol Manager\n  aiosh distro <list|show|evaluate|recommend|policy|stats|check>  Linux Distro Selection & Justification Manager\n  aiosh image <list|show|plan|filter>  Linux Base Image Build & Packaging Manager\n  aiosh package <list|show|search|plan|apply|validate>  Linux Package Management & Store Control\n  aiosh service <validate|list|show|status|action|start|stop|restart|reload|order>  Init & Service Supervision Control\n  aiosh session <validate|list|show|status|create|action|activate|lock|unlock|terminate>  User Session Bootstrap Control");
+            println!("aiosh — AIOS shell CLI (Rust)\n\nUsage: aiosh <status|run|agent|audit|grant|pentest|classify|task|ci|release|backup|toolchain|doc|evidence|repo|secrets|triage|handoff|distro|image|package|service|session> ...\n\n  aiosh task <status|done|block|unblock|skip|rebuild|check>  Task ledger control\n  aiosh ci <show|failures|check|config|metrics> [--file PATH]  CI smoke reports\n  aiosh release generate  Create bootable ISO\n  aiosh backup create  Create system snapshot zip\n  aiosh toolchain check [--config <path>]  Verify host environment against ToolchainManifest\n  aiosh toolchain show [--config <path>]   Display the resolved ToolchainManifest\n  aiosh doc <show|check|search>  Documentation Index Control\n  aiosh evidence <verify|hash|scan>   Evidence & Audit Trail Control\n  aiosh repo <health|check>  Repository Health Diagnostics\n  aiosh secrets <scan|check> [--config <path>]  Secrets & Access Hygiene Scanner\n  aiosh triage <list|show|record|resolve|ingest|check>  Regression Triage Manager\n  aiosh handoff <list|show|initiate|accept|reject|complete|cancel>  Agent Handoff Protocol Manager\n  aiosh distro <list|show|evaluate|recommend|policy|stats|check>  Linux Distro Selection & Justification Manager\n  aiosh image <list|show|plan|filter>  Linux Base Image Build & Packaging Manager\n  aiosh package <list|show|search|plan|apply|validate>  Linux Package Management & Store Control\n  aiosh service <validate|list|show|status|action|start|stop|restart|reload|order>  Init & Service Supervision Control\n  aiosh session <validate|list|show|status|create|action|activate|lock|unlock|terminate|config>  User Session Bootstrap Control");
             0
         }
         Some(other) => {
@@ -3012,8 +3012,78 @@ fn cmd_session(args: &[String]) -> i32 {
             }
             cmd_session(&forwarded)
         }
+        Some("config") => {
+            let config_path_opt = parse_flag(rest, "--config");
+            if let Some(ref p) = config_path_opt {
+                if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+                    let msg = "config path cannot exceed 1024 characters and cannot contain control characters";
+                    classify_and_emit(
+                        &mut ctx,
+                        "session",
+                        "config",
+                        json!({ "error": msg }),
+                        "failure",
+                        None,
+                        Some("Invalid config path"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENT", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+            }
+            let resolved = match aiosh_core::session_config::SessionConfig::resolve(config_path_opt.as_deref().map(std::path::Path::new)) {
+                Ok(c) => c,
+                Err(e) => {
+                    classify_and_emit(
+                        &mut ctx,
+                        "session",
+                        "config",
+                        json!({ "error": e }),
+                        "failure",
+                        None,
+                        Some("Failed to resolve session config"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "CONFIG_RESOLUTION_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("Failed to resolve session config: {}", e);
+                    }
+                    return 1;
+                }
+            };
+            classify_and_emit(
+                &mut ctx,
+                "session",
+                "config",
+                json!({ "store_path": resolved.store_path, "auto_persist": resolved.auto_persist }),
+                "success",
+                None,
+                Some("Resolved session configuration"),
+                "operator",
+                None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 0, "data": resolved, "error": serde_json::Value::Null }));
+            } else {
+                println!("AIOS User Session Bootstrap Configuration:");
+                println!("  Store Path:                 {}", resolved.store_path.display());
+                println!("  Max Sessions Per User:      {}", resolved.max_sessions_per_user);
+                println!("  Max Total Sessions:         {}", resolved.max_total_sessions);
+                println!("  Default Idle Timeout:       {}s", resolved.default_idle_timeout_seconds);
+                println!("  Max Store Size:             {} bytes", resolved.max_store_size_bytes);
+                println!("  Auto Persist:               {}", resolved.auto_persist);
+            }
+            0
+        }
         Some("--help") | Some("-h") | None => {
-            println!("aiosh session — User Session Bootstrap Manager\n\nUsage:\n  aiosh session validate (--id <id> | --user <username> | --spec <file_or_json>) [--json]\n  aiosh session list [--user <username>] [--state <state>] [--type <type>] [--seat <seat>] [--limit <n>] [--json] [--store <path>]\n  aiosh session show <session_id> [--json] [--store <path>]\n  aiosh session status <session_id> [--json] [--store <path>]\n  aiosh session create <spec_file_or_json> [--json] [--store <path>]\n  aiosh session action <session_id> <authenticate|activate|lock|unlock|terminate> [--json] [--store <path>]\n  aiosh session activate <session_id> [--json] [--store <path>]\n  aiosh session lock <session_id> [--json] [--store <path>]\n  aiosh session unlock <session_id> [--json] [--store <path>]\n  aiosh session terminate <session_id> [--json] [--store <path>]");
+            println!("aiosh session — User Session Bootstrap Manager\n\nUsage:\n  aiosh session validate (--id <id> | --user <username> | --spec <file_or_json>) [--json]\n  aiosh session list [--user <username>] [--state <state>] [--type <type>] [--seat <seat>] [--limit <n>] [--json] [--store <path>]\n  aiosh session show <session_id> [--json] [--store <path>]\n  aiosh session status <session_id> [--json] [--store <path>]\n  aiosh session create <spec_file_or_json> [--json] [--store <path>]\n  aiosh session action <session_id> <authenticate|activate|lock|unlock|terminate> [--json] [--store <path>]\n  aiosh session activate <session_id> [--json] [--store <path>]\n  aiosh session lock <session_id> [--json] [--store <path>]\n  aiosh session unlock <session_id> [--json] [--store <path>]\n  aiosh session terminate <session_id> [--json] [--store <path>]\n  aiosh session config [--config <path>] [--json]");
             0
         }
         Some(other) => {

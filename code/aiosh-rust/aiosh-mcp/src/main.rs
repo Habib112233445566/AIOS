@@ -940,6 +940,18 @@ impl Server {
                 "additionalProperties": false
             }
         }));
+        tools.push(json!({
+            "name": "aios.session.config",
+            "description": "Inspect User Session Bootstrap configuration parameters and capacity limits",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "config_path": { "type": "string", "description": "Optional explicit path to session config JSON file" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
         tools
     }
 
@@ -2691,6 +2703,27 @@ impl Server {
                 dispatch::recorded_call(
                     &mut self.ring, &self.pep,
                     "aios.session.create", "Bootstrap and register a new user or agent session", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.session.config" => {
+                let config_path_opt = arguments.get("config_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                if let Some(ref p) = config_path_opt {
+                    if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+                        return json!({ "ok": false, "error": "config_path exceeds maximum length of 1024 characters or contains control characters" });
+                    }
+                }
+                let f = move || -> Result<Value, String> {
+                    let config = aiosh_core::session_config::SessionConfig::resolve(config_path_opt.as_deref().map(std::path::Path::new))?;
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.session.config",
+                        "config": config
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.session.config", "Get User Session Bootstrap configuration", arguments,
                     None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
                 )
             }
@@ -4846,6 +4879,14 @@ mod tests {
         // 18. Create missing spec parameter fails
         let res_create_missing = server.call_tool("aios.session.create", &json!({}));
         assert_eq!(res_create_missing.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 19. aios.session.config discovery and execution
+        assert!(tools.iter().any(|t| t.get("name").and_then(|v| v.as_str()) == Some("aios.session.config")));
+        let res_config = server.call_tool("aios.session.config", &json!({}));
+        assert_eq!(res_config.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_config.pointer("/config/max_sessions_per_user").and_then(|v| v.as_u64()), Some(32));
+        assert_eq!(res_config.pointer("/config/default_idle_timeout_seconds").and_then(|v| v.as_u64()), Some(900));
+        assert_eq!(res_config.pointer("/config/auto_persist").and_then(|v| v.as_bool()), Some(true));
     }
 }
 

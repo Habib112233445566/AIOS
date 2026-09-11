@@ -58,6 +58,7 @@ The `aiosh session` surface provides operator and AI agent management over graph
 | `aiosh session terminate` | Shortcut to terminate session | `aiosh session terminate <session_id> [--reason <reason>] [--store <path>] [--json]` |
 | `aiosh session auth` | Shortcut to mark session authenticated | `aiosh session auth <session_id> [--store <path>] [--json]` |
 | `aiosh session create` | Ingest specification and bootstrap new session | `aiosh session create <spec_file_or_json> [--store <path>] [--json]` |
+| `aiosh session config` | Inspect resolved session configuration and limits | `aiosh session config [--config <path>] [--json]` |
 
 ### Copy-Pasteable Invocations
 

@@ -104,12 +104,21 @@ def test_sb4_core_service_lifecycle():
     )
 
 
+def test_sb5_configuration():
+    return _run_cargo_test(
+        ["--test", "test_session_config"],
+        "SB5",
+        "session configuration resolution, invariants & precedence (SC1..SC7)",
+    )
+
+
 def main() -> int:
     suites = [
         ("SB1", test_sb1_data_model_integrity),
         ("SB2", test_sb2_cli_surface_commands),
         ("SB3", test_sb3_mcp_surface_tools),
         ("SB4", test_sb4_core_service_lifecycle),
+        ("SB5", test_sb5_configuration),
     ]
 
     failed = []
@@ -122,7 +131,7 @@ def main() -> int:
         print(f"FAIL: session_suites failed criteria: {', '.join(failed)}", file=sys.stderr)
         return 1
 
-    print("PASS: session_suites criteria (SB1..SB4)")
+    print("PASS: session_suites criteria (SB1..SB5)")
     return 0
 
 
