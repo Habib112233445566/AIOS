@@ -112,6 +112,14 @@ def test_sb5_configuration():
     )
 
 
+def test_sb6_automated_integration():
+    return _run_cargo_test(
+        ["--test", "test_session_automated"],
+        "SB6",
+        "session automated integration test suite (SBT1..SBT5)",
+    )
+
+
 def main() -> int:
     suites = [
         ("SB1", test_sb1_data_model_integrity),
@@ -119,6 +127,7 @@ def main() -> int:
         ("SB3", test_sb3_mcp_surface_tools),
         ("SB4", test_sb4_core_service_lifecycle),
         ("SB5", test_sb5_configuration),
+        ("SB6", test_sb6_automated_integration),
     ]
 
     failed = []
@@ -131,7 +140,7 @@ def main() -> int:
         print(f"FAIL: session_suites failed criteria: {', '.join(failed)}", file=sys.stderr)
         return 1
 
-    print("PASS: session_suites criteria (SB1..SB5)")
+    print("PASS: session_suites criteria (SB1..SB6)")
     return 0
 
 
