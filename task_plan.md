@@ -19,13 +19,181 @@ substrate but is no longer the shipping path.
    **This is the NEW critical path.**
 2. **Phase 1 — Pillar A wrappers.** Top Kali/Parrot/BlackArch tools
    exposed as MCP tools, MITRE ATT&CK category-aligned.
-3. **Phase 2 — Pillar B installer.** Debian/Ubuntu LTS + KDE Plasma 6 with
-   Windows-look theme + Wine 11 + Proton 11.
+3. **Phase 2 — Pillar B installer.** Kali/Debian LTS + XFCE/KDE with
+   Windows-look theme (Kali Undercover) + Wine 11 + Proton 11.
 4. **Phase 3 — AI ↔ Pillar A integration.** Goal-driven recon-to-report
    pipeline orchestrated by the S-rank agent.
 5. **Phase 4 — AI ↔ Pillar B integration.** GUI automation over Wayland /
-   KWin / UIA / AT-SPI.
+   X11 / KWin / UIA / AT-SPI.
 6. **Phase 5 — Hardening, cross-platform, release.**
+
+### 2026-09-07 — ARCHITECTURAL PIVOT: Kali Linux Base, Windows GUI & Pre-installed Tool Wrapper Strategy
+
+Strategic decision to adopt **Kali Linux** as the primary underlying distribution:
+- **Base Substrate**: Rebased OS target onto **Kali Linux Rolling (Debian-derived)**. Leverages Kali's 600+ pre-packaged penetration testing binaries, out-of-the-box kernel wireless injection drivers, and package ecosystem (`apt`).
+- **Tool Architecture (Pillar A)**: Zero from-scratch tool development. Wrap Kali's native binaries (`airmon-ng`, `airodump-ng`, `aircrack-ng`, `nmap`, `gobuster`, `arp-scan`, `hashcat`, `tshark`, `sqlmap`) with AIOS Policy Enforcement Point (PEP) gating, runtime bounds, and SQLite WAL audit logging.
+- **Desktop Interface (Pillar B)**: Deliver a Windows 10/11 desktop experience via XFCE `kali-undercover` or KDE Plasma Fluent themes, eliminating Linux terminal friction for operators.
+- **Autonomous AI Kernel (Pillar C)**: Integrate the AIOS AI shell (`ai_agent.py` + local SLM) as the desktop co-pilot with smart routing across all native Kali security tools.
+
+### 2026-09-09 — MILESTONE: User Session Bootstrap MCP/API Surface CLOSED 10/10 (T-01431..T-01440)
+
+Complete implementation, governance, verification, and hardening for Phase 1 `User Session Bootstrap / MCP API surface` (10/10 tasks, `T-01431..T-01440`):
+- **Full MCP Tool Surface (`aios.session.*`)**: `code/aiosh-rust/aiosh-mcp/src/main.rs`:
+  - `aios.session.validate`: Schema syntax & invariant checking for session ID, username, and `UserSessionSpec` against rules `SB1..SB5`.
+  - `aios.session.list`: In-memory & on-disk session discovery with multi-field filtering (`username`, `state`, `session_type`, `seat`, `limit`).
+  - `aios.session.get`: Precision inspection of session status and specification by `session_id`.
+  - `aios.session.action`: High-assurance state machine transition dispatcher (`authenticate`, `activate`, `lock`, `unlock`, `terminate`) with seat arbitration.
+  - `aios.session.create`: Atomic session provisioning with validation, capacity enforcement, and persistent store sync.
+- **Cross-Substrate Parity (CLI <-> MCP)**:
+  - Verified bidirectional lifecycle interoperability: session created via CLI, queried/authenticated via MCP, activated via CLI, locked via MCP, verified locked via CLI, unlocked via CLI, two-stage terminated via MCP, and confirmed terminated via CLI.
+- **Defense-in-Depth Hardening**:
+  - Request line ceiling: 1 MiB transport-level cap (`-32700: request line exceeds 1048576 bytes`).
+  - Ingestion payload ceiling: 1 MiB limit on inline JSON objects/strings in `validate` and `create`.
+  - Query bounds: `limit` parameter in `aios.session.list` strictly enforced to $[1 \dots 10,000]$.
+  - Path sanitization: `store_path` parameter strictly bounded to $\le 1024$ characters with zero control characters across all tools.
+  - Identifier validation: early `validate_session_id` checks on `get` and `action` prior to store lookups.
+  - Clean resource safety: Atomic writes via isolated `.tmp.<pid>.<nanos>` files with guaranteed cleanup on error.
+- **Audit Non-Repudiation**:
+  - Every MCP execution path writes append-only, SHA-256 hash-chained audit rows to SQLite WAL (`$AIOSH_HOME/audit.db`) with monotonic `audit_id`.
+- **Test Suite Matrices**:
+  - `code/aiosh-mcp/tests/test_session_mcp_smoke.py`: 7/7 suites passing (manifest, validate, list/get, action, create/persist, cross-surface parity, hardening).
+  - `cargo test -p aiosh-mcp`: 11/11 unit tests passing cleanly.
+  - `tools/test_session_suites.py`: All 4 criteria `SB1..SB4` PASS.
+  - Baseline service suites `tools/test_service_suites.py`: All 10 criteria `SS1..SS10` PASS.
+- **Documentation**:
+  - `code/aiosh-mcp/README.md` updated with full tool table, copy-pasteable JSON-RPC 2.0 requests, honest constraints disclosure, and evidence links.
+- **Ledger Pointer**: Advances to **T-01441** (`Phase 1 — Linux Base System & Bootable Target / User Session Bootstrap / Automated Integration Tests: Research`).
+
+### 2026-09-09 — MILESTONE: User Session Bootstrap CLI Surface CLOSED 10/10 (T-01421..T-01430)
+
+Complete implementation, governance, verification, and hardening for Phase 1 `User Session Bootstrap / CLI surface` (10/10 tasks, `T-01421..T-01430`):
+- **CLI Subcommand Surface (`aiosh session`)**: `code/aiosh-rust/aiosh-cli/src/main.rs`:
+  - Full subcommand suite implemented: `validate`, `list`, `show`, `status` (alias), `action`, `create`, plus ergonomics shortcuts (`activate`, `lock`, `unlock`, `terminate`, `auth`).
+  - Strict bounded option validation: `--limit <n>` constrained to $1 \le n \le 10,000$, `--store <path>` bounded to $\le 1024$ bytes and ASCII control character rejection.
+  - Sizing limits enforced: 1 MiB payload cap on input specs / inline JSON with explicit `PAYLOAD_TOO_LARGE` exit code 2 error envelope.
+  - Zero silent failure: Deterministic JSON error envelopes conforming to ADR-0035 §D-2 across all failure modes (syntax errors, validation failures, illegal state transitions, store read/write errors).
+  - Clean resource safety: Process-isolated atomic persistence via PID+nanosecond tempfiles with bounded retries and guaranteed tempfile cleanup on error paths.
+- **In-Tree & Standalone Test Suites**:
+  - `test_cmd_session_flow` in `code/aiosh-rust/aiosh-cli/src/main.rs` verifying end-to-end routing, validation, list/show/action, shortcuts, error envelopes, and limits.
+  - `code/aiosh-cli/tests/test_session_cli_smoke.py` passing 6/6 test suites across help, validation, commands, shortcuts, and hardening.
+  - `tools/test_session_suites.py` passing 4/4 criteria (`SB1..SB4`).
+- **Audit Non-Repudiation**:
+  - Every invocation branch (including invalid arguments, payload breaches, unknown subcommands, and illegal state transitions) emits an append-only, SHA-256 hash-chained audit row to `$AIOSH_HOME/audit.db`.
+- **Documentation**:
+  - `code/aiosh-cli/README.md` updated with subcommands table, copy-pasteable examples, parameter references, and honest constraints disclosure.
+- **Ledger Pointer**: Advances to **T-01431** (`Phase 1 — Linux Base System & Bootable Target / User Session Bootstrap / MCP API surface: Research`).
+
+### 2026-09-09 — MILESTONE: User Session Bootstrap Core Service CLOSED 10/10 (T-01411..T-01420)
+
+Complete implementation, governance, verification, and hardening for Phase 1 `User Session Bootstrap / core service` (10/10 tasks, `T-01411..T-01420`):
+- **Core Service Subsystem**: `code/aiosh-rust/aiosh-core/src/session_service.rs` providing `UserSessionService` coordinator, action execution, seat arbitration, and idle tracking enforcing invariants `CS1..CS5`:
+  - `CS1`: State Monotonicity & Lifecycle: Deterministic forward transitions (`Initializing` $\to$ `Authenticating` $\to$ `Active` $\rightleftharpoons$ `Locked` $\to$ `Terminating` $\to$ `Terminated`); invalid transitions rejected with structured error envelopes; terminated immutable.
+  - `CS2`: Seat Arbitration: At most one session per physical/virtual seat (e.g. `seat0`) can hold `SessionScope::Foreground`. Activating any session demotes prior foreground sessions on that seat to `SessionScope::Background`.
+  - `CS3`: Capacity Bounds: Hard limit of $\le 32$ active sessions per user account, and $\le 1,024$ total sessions in store.
+  - `CS4`: Action Reporting: Structured `UserSessionActionReport` envelope on all actions detailing `session_id`, `action`, `previous_state`, `new_state`, `success`, `error`, and `timestamp`.
+  - `CS5`: Idle & Lock Consistency: Continuous tracking of `idle_seconds`; `touch_activity` resets idle duration to 0; `state == Locked` strictly matches `locked == true`; activity updates never unlock locked sessions.
+- **Operator CLI Surface**: `code/aiosh-rust/aiosh-cli/src/main.rs`:
+  - `aiosh session list [--user <username>] [--state <state>] [--type <type>] [--seat <seat>] [--limit <n>] [--json] [--store <path>]`
+  - `aiosh session show <session_id> [--json] [--store <path>]`
+  - `aiosh session action <session_id> <authenticate|activate|lock|unlock|terminate> [--json] [--store <path>]`
+- **Autonomous Agent MCP Surface**: `code/aiosh-rust/aiosh-mcp/src/main.rs`:
+  - JSON-RPC 2.0 tools `aios.session.list`, `aios.session.get`, and `aios.session.action` registered and dispatched under PEP capability gating with SQLite WAL audit logging.
+- **Master Test Runner Matrix (`tools/test_session_suites.py`)**:
+  - Integrated criterion `SB4` (`test_sb4_core_service_lifecycle`). All 4 criteria `SB1..SB4` PASS cleanly.
+- **Unit & Smoke Suites**:
+  - `code/aiosh-rust/aiosh-core/tests/test_session_service.rs` (10 unit & hardening tests passing across CS1..CS5).
+  - `code/aiosh-cli/tests/test_session_cli_smoke.py` (5 test suites passing with full error envelope coverage).
+- **Ledger Pointer**: Advances to **T-01421** (`Phase 1 — Linux Base System & Bootable Target / User Session Bootstrap / CLI surface: Research`).
+
+### 2026-09-09 — MILESTONE: User Session Bootstrap Data Model CLOSED 10/10 (T-01401..T-01410)
+
+Complete implementation, governance, verification, and hardening for Phase 1 `User Session Bootstrap / data model` (10/10 tasks, `T-01401..T-01410`):
+- **Data Model Architecture**: `code/aiosh-rust/aiosh-core/src/session.rs` delivering core session structures and validation engine enforcing criteria `SB1..SB5`:
+  - `SB1`: Session ID syntax & bounds: $[1 \dots 64]$ chars, alphanumeric start, `[a-zA-Z0-9_.-]`, strict rejection of path traversal (`..`), slashes, control chars, whitespace, and shell metacharacters.
+  - `SB2`: User identity & UID/GID: POSIX username $[1 \dots 32]$ chars (lowercase/underscore start, `[a-z0-9_-]`), valid UID/GID $\le 2,147,483,647$.
+  - `SB3`: Lifecycle state machine: Deterministic forward transitions (`Initializing` $\to$ `Authenticating` $\to$ `Active` $\rightleftharpoons$ `Locked` $\to$ `Terminating` $\to$ `Terminated`); invalid state transitions rejected; terminal states are immutable.
+  - `SB4`: Environment isolation: $\le 256$ keys, uppercase alphanumeric syntax, values $\le 4,096$ chars, null byte rejection, `XDG_RUNTIME_DIR` absolute Unix path without `..` traversal.
+  - `SB5`: Capacity limits: Max 32 concurrent active sessions per user, max 1,024 total sessions in store, 10 MiB serialized store file cap, 1 MiB spec payload cap.
+- **Session Types & Classes**: First-class support for `AiAgent` session environment architecture alongside interactive `Tty`, `X11`, and `Wayland` sessions, with `Agent` session class for autonomous agent co-pilots.
+- **Operator CLI Surface**: `code/aiosh-rust/aiosh-cli/src/main.rs`:
+  - `aiosh session validate [--id <id>] [--user <user>] [--spec <file_or_json>] [--json]` providing exit code 0 on valid and 2 on invalid.
+- **Autonomous Agent MCP Surface**: `code/aiosh-rust/aiosh-mcp/src/main.rs`:
+  - JSON-RPC 2.0 tool `aios.session.validate` (`session_id`, `username`, `spec`) registered and dispatched under PEP capability gating with SQLite WAL audit logging.
+- **Master Test Runner Matrix (`tools/test_session_suites.py`)**:
+  - Validates criteria `SB1..SB3`: `SB1` (unit test suite), `SB2` (CLI smoke suite), `SB3` (MCP test suite). All criteria PASS.
+- **Unit & Smoke Suites**:
+  - `code/aiosh-rust/aiosh-core/tests/test_session_data_model.rs` (8 unit tests passing across SB1..SB5).
+  - `code/aiosh-cli/tests/test_session_cli_smoke.py` (4 test groups passing with Windows payload limit hardening).
+- **Ledger Pointer**: Advances to **T-01411** (`Phase 1 — Linux Base System & Bootable Target / User Session Bootstrap / core service: Research`).
+
+### 2026-09-09 — MILESTONE: Init & Service Supervision Recovery & Validation CLOSED 10/10 (T-01391..T-01400) — EPIC CLOSED (100/100)
+
+Complete implementation, governance, verification, and hardening for Phase 1 `Init & Service Supervision / recovery & validation`, marking the complete closure of the entire **Init & Service Supervision** epic (`T-01301..T-01400`):
+- **Recovery & Validation Subsystem**: `code/aiosh-rust/aiosh-core/src/service_recovery.rs` enforcing formal criteria `SR1..SR5`:
+  - `SR1`: Mathematical conservation: $\text{valid\_services} + \text{invalid\_services} = \text{total\_services}$.
+  - `SR2`: Health equivalence: $\text{healthy} \iff (\text{errors.is\_empty}() \land \text{invalid\_services} == 0)$.
+  - `SR3`: Error attribution: $\text{invalid\_services} > 0 \implies \text{errors.len}() \ge \text{invalid\_services}$.
+  - `SR4`: Non-destructive forensic preservation: Corrupted or unreadable files are quarantined to `<path>.corrupt.<ts>.bak` with collision counter bounding ($\le 10,000$). Damaged data is never silently discarded.
+  - `SR5`: Self-healing canonical fallback: Reconstitutes valid reference services (`aios-securityd.service`, `auditd.service`, `dbus.service`, `systemd-journald.service`, `network-manager.service`, `ssh.service`) achieving $\text{healthy} == \text{true}$ and verified topological acyclicity.
+- **Operator CLI Surface**: `code/aiosh-rust/aiosh-cli/src/main.rs`:
+  - `aiosh service check [--fix] [--store <path>] [--json]` providing read-only audit mode (exit code 1 on failure) and automated repair mode (exit code 0 with quarantine backup and fresh store generation).
+- **Autonomous Agent MCP Surface**: `code/aiosh-rust/aiosh-mcp/src/main.rs`:
+  - JSON-RPC 2.0 tool `aios.service.check` (`store_path`, `auto_recover`) with PEP capability gating and SQLite WAL audit logging.
+- **Master Test Runner Matrix (`tools/test_service_suites.py`)**:
+  - Integrated criterion `SS10` (`test_ss10_recovery`). All 10 criteria `SS1..SS10` PASS cleanly.
+- **Unit & Smoke Suites**:
+  - `code/aiosh-rust/aiosh-core/tests/test_service_recovery.rs` (7 tests passing across SR1..SR5, cyclic dependency detection, and hardening).
+  - `code/aiosh-cli/tests/test_service_cli_smoke.py` (9 tests passing).
+  - `code/aiosh-mcp/tests/test_service_mcp_smoke.py` (8 suites / 9 tools passing).
+- **Ledger Pointer**: Advances to **T-01401** (`Phase 1 — Linux Base System & Bootable Target / User Session Bootstrap / data model: Research`).
+
+### 2026-09-09 — MILESTONE: Init & Service Supervision Documentation CLOSED 10/10 (T-01381..T-01390)
+
+Complete implementation, governance, verification, and hardening for Phase 1 `Init & Service Supervision / documentation`:
+- **Architectural Reference Guide**: `docs/service_supervision.md` (17,708 bytes) delivering complete operator & agent guidance across 9 structural sections:
+  1. Executive Summary & Architecture Overview (Mermaid FSM diagram, pipeline architecture)
+  2. Data Model & Validation Invariants (`SS1..SS5`)
+  3. Core Lifecycle Engine & FSM Transitions (`CS1..CS5`)
+  4. Operator CLI Reference (`aiosh service` subcommands)
+  5. Autonomous Agent MCP API Reference (`aios.service.*` tools)
+  6. Configuration Subsystem & Precedence Engine (`SC1..SC7`)
+  7. Automated Test Suites & Master Matrix (`ST1..ST5`, `SS1..SS9`)
+  8. Security Policy, PEP Gating & Audit Logging (`SP1..SP6`)
+  9. Observability, Telemetry & Diagnostics (`SO1..SO6`)
+- **Documentation Invariant Test Suite**: `tools/test_service_doc.py` verifying criteria `D1..D6`:
+  - `D1`: Document existence and sizing bounds [1000..500000 bytes].
+  - `D2`: Mandatory presence of all 9 required top-level architectural sections.
+  - `D3`: Zero forbidden placeholders (`TODO`, `TBD`, `FIXME`, dummy text).
+  - `D4`: Exhaustive coverage of security policy invariants, CLI commands, and MCP tools.
+  - `D5`: Negative rejection testing ensuring assertion failure when sections or invariants are stripped.
+  - `D6`: Zero volatile snapshot counts (C6 compliant, immune to future test additions).
+- **Master Test Runner Matrix (`tools/test_service_suites.py`)**:
+  - Integrated criterion `SS9` (`test_ss9_documentation`). All criteria `SS1..SS9` PASS.
+- **Lint & Compliance**:
+  - `tools/check_task_docs.py docs/service_supervision.md` verified clean PASS across `C1..C6`.
+- **Ledger Pointer**: Advances to **T-01391** (`Phase 1 — Linux Base System & Bootable Target / Init & Service Supervision / recovery & validation: Research`).
+
+### 2026-09-09 — MILESTONE: Init & Service Supervision Observability CLOSED 10/10 (T-01371..T-01380)
+
+Complete implementation, governance, verification, and hardening for Phase 1 `Init & Service Supervision / observability`:
+- **Subsystem Architecture**: `code/aiosh-rust/aiosh-core/src/service_observability.rs` delivering `ServiceObservabilityReport` enforcing criteria `SO1..SO6`:
+  - `SO1`: Inventory completeness with strict mathematical conservation: $\sum \text{state} = \sum \text{mode} = \sum \text{type} = \sum \text{policy} = \text{total\_services}$.
+  - `SO2`: Categorical distributions across service states, startup modes, service types, and restart policies.
+  - `SO3`: Health metrics (`healthy_count`, `unhealthy_count`), tracking of failed service names, and process restart counters aggregated with saturation arithmetic.
+  - `SO4`: Bounded $O(1)$ memory dependency distribution histogram buckets (`"0"`, `"1-2"`, `"3-5"`, `"6+"`).
+  - `SO5`: Cross-evaluation with `ServiceSecurityPolicy` reporting compliance, violations, and prohibited services (`telnet.service`).
+  - `SO6`: Deterministic ISO timestamping, standardized JSON result envelope, and SQLite WAL audit logging.
+- **Operator CLI Surface**: `code/aiosh-rust/aiosh-cli/src/main.rs`:
+  - `aiosh service stats` and alias `aiosh service observability` with `--store`, `--policy`, `--config`, and `--json` flags.
+- **Autonomous Agent MCP Surface**: `code/aiosh-rust/aiosh-mcp/src/main.rs`:
+  - Tool `aios.service.stats` registered and dispatched under PEP gating and SQLite WAL audit trail.
+- **Master Test Runner Matrix (`tools/test_service_suites.py`)**:
+  - Integrated criterion `SS8` (`test_ss8_observability`). All criteria `SS1..SS8` PASS.
+- **Unit & Smoke Suites**:
+  - `code/aiosh-rust/aiosh-core/tests/test_service_observability.rs` (7 tests covering SO1..SO7).
+  - `code/aiosh-cli/tests/test_service_cli_smoke.py` (8 tests passing).
+  - `code/aiosh-mcp/tests/test_service_mcp_smoke.py` (7 tests passing).
+- **Ledger Pointer**: Advances to **T-01381** (`Phase 1 — Linux Base System & Bootable Target / Init & Service Supervision / documentation: Research`).
 
 ### 2026-09-06 — MILESTONE: Init & Service Supervision MCP API Surface CLOSED 10/10 (T-01331..T-01340)
 

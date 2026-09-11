@@ -198,8 +198,9 @@ fn main() {
         Some("image") => cmd_image(&args[1..]),
         Some("package") => cmd_package(&args[1..]),
         Some("service") => cmd_service(&args[1..]),
+        Some("session") => cmd_session(&args[1..]),
         Some("--help") | Some("-h") | None => {
-            println!("aiosh — AIOS shell CLI (Rust)\n\nUsage: aiosh <status|run|agent|audit|grant|pentest|classify|task|ci|release|backup|toolchain|doc|evidence|repo|secrets|triage|handoff|distro|image|package|service> ...\n\n  aiosh task <status|done|block|unblock|skip|rebuild|check>  Task ledger control\n  aiosh ci <show|failures|check|config|metrics> [--file PATH]  CI smoke reports\n  aiosh release generate  Create bootable ISO\n  aiosh backup create  Create system snapshot zip\n  aiosh toolchain check [--config <path>]  Verify host environment against ToolchainManifest\n  aiosh toolchain show [--config <path>]   Display the resolved ToolchainManifest\n  aiosh doc <show|check|search>  Documentation Index Control\n  aiosh evidence <verify|hash|scan>   Evidence & Audit Trail Control\n  aiosh repo <health|check>  Repository Health Diagnostics\n  aiosh secrets <scan|check> [--config <path>]  Secrets & Access Hygiene Scanner\n  aiosh triage <list|show|record|resolve|ingest|check>  Regression Triage Manager\n  aiosh handoff <list|show|initiate|accept|reject|complete|cancel>  Agent Handoff Protocol Manager\n  aiosh distro <list|show|evaluate|recommend|policy|stats|check>  Linux Distro Selection & Justification Manager\n  aiosh image <list|show|plan|filter>  Linux Base Image Build & Packaging Manager\n  aiosh package <list|show|search|plan|apply|validate>  Linux Package Management & Store Control\n  aiosh service <validate|list|show|status|action|start|stop|restart|reload|order>  Init & Service Supervision Control");
+            println!("aiosh — AIOS shell CLI (Rust)\n\nUsage: aiosh <status|run|agent|audit|grant|pentest|classify|task|ci|release|backup|toolchain|doc|evidence|repo|secrets|triage|handoff|distro|image|package|service|session> ...\n\n  aiosh task <status|done|block|unblock|skip|rebuild|check>  Task ledger control\n  aiosh ci <show|failures|check|config|metrics> [--file PATH]  CI smoke reports\n  aiosh release generate  Create bootable ISO\n  aiosh backup create  Create system snapshot zip\n  aiosh toolchain check [--config <path>]  Verify host environment against ToolchainManifest\n  aiosh toolchain show [--config <path>]   Display the resolved ToolchainManifest\n  aiosh doc <show|check|search>  Documentation Index Control\n  aiosh evidence <verify|hash|scan>   Evidence & Audit Trail Control\n  aiosh repo <health|check>  Repository Health Diagnostics\n  aiosh secrets <scan|check> [--config <path>]  Secrets & Access Hygiene Scanner\n  aiosh triage <list|show|record|resolve|ingest|check>  Regression Triage Manager\n  aiosh handoff <list|show|initiate|accept|reject|complete|cancel>  Agent Handoff Protocol Manager\n  aiosh distro <list|show|evaluate|recommend|policy|stats|check>  Linux Distro Selection & Justification Manager\n  aiosh image <list|show|plan|filter>  Linux Base Image Build & Packaging Manager\n  aiosh package <list|show|search|plan|apply|validate>  Linux Package Management & Store Control\n  aiosh service <validate|list|show|status|action|start|stop|restart|reload|order>  Init & Service Supervision Control\n  aiosh session <validate|list|show|status|create|action|activate|lock|unlock|terminate>  User Session Bootstrap Control");
             0
         }
         Some(other) => {
@@ -1958,12 +1959,1065 @@ fn cmd_service(args: &[String]) -> i32 {
                 0
             }
         }
+        Some("stats") | Some("observability") => {
+            let store_path_opt = parse_flag(rest, "--store");
+            if let Some(ref p) = store_path_opt {
+                if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+                    let msg = "store path cannot exceed 1024 characters and cannot contain control characters";
+                    classify_and_emit(
+                        &mut ctx,
+                        "service",
+                        "stats",
+                        json!({ "error": msg }),
+                        "failure",
+                        Some("INVALID_ARGUMENT"),
+                        Some("Invalid store path"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENT", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+            }
+            let policy_path_opt = parse_flag(rest, "--policy").or_else(|| parse_flag(rest, "--config"));
+            if let Some(ref p) = policy_path_opt {
+                if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+                    let msg = "policy path cannot exceed 1024 characters and cannot contain control characters";
+                    classify_and_emit(
+                        &mut ctx,
+                        "service",
+                        "stats",
+                        json!({ "error": msg }),
+                        "failure",
+                        Some("INVALID_ARGUMENT"),
+                        Some("Invalid policy path"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENT", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+            }
+            let store = match load_store() {
+                Ok(s) => s,
+                Err(e) => {
+                    classify_and_emit(
+                        &mut ctx,
+                        "service",
+                        "stats",
+                        json!({ "error": e }),
+                        "failure",
+                        Some("LOAD_STORE_FAILED"),
+                        Some("Failed to load store"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "LOAD_STORE_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("failed to load store: {}", e);
+                    }
+                    return 1;
+                }
+            };
+            let policy = if let Some(ref p) = policy_path_opt {
+                match aiosh_core::service_policy::ServiceSecurityPolicy::from_file(std::path::Path::new(p)) {
+                    Ok(pol) => Some(pol),
+                    Err(e) => {
+                        classify_and_emit(
+                            &mut ctx,
+                            "service",
+                            "stats",
+                            json!({ "error": e }),
+                            "failure",
+                            Some("LOAD_POLICY_FAILED"),
+                            Some("Failed to load policy"),
+                            "operator",
+                            None,
+                        );
+                        if is_json {
+                            println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "LOAD_POLICY_FAILED", "message": e } }));
+                        } else {
+                            eprintln!("failed to load policy: {}", e);
+                        }
+                        return 1;
+                    }
+                }
+            } else {
+                aiosh_core::service_policy::ServiceSecurityPolicy::resolve(None).ok()
+            };
+
+            let report = aiosh_core::service_observability::ServiceObservabilityReport::generate(&store, policy.as_ref());
+            classify_and_emit(
+                &mut ctx,
+                "service",
+                "stats",
+                json!({
+                    "total_services": report.total_services,
+                    "healthy_count": report.healthy_count,
+                    "unhealthy_count": report.unhealthy_count,
+                    "total_restarts": report.total_restarts,
+                    "policy_compliant": report.policy_compliant_count,
+                }),
+                "success",
+                None,
+                Some("Generated service observability telemetry report"),
+                "operator",
+                None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 0, "data": report, "error": serde_json::Value::Null }));
+            } else {
+                println!("AIOS Init & Service Supervision Observability Report:");
+                println!("  Total Services:         {}", report.total_services);
+                println!("  Healthy Services:       {}", report.healthy_count);
+                println!("  Unhealthy Services:     {}", report.unhealthy_count);
+                println!("  Total Process Restarts: {}", report.total_restarts);
+                println!("  Policy Compliant:       {}", report.policy_compliant_count);
+                println!("  Policy Violations:      {}", report.policy_violations_count);
+                if !report.prohibited_services_found.is_empty() {
+                    println!("  Prohibited Services:    {}", report.prohibited_services_found.join(", "));
+                }
+                println!("  State Breakdown:");
+                for (k, v) in &report.state_breakdown {
+                    println!("    {:<14} {}", k, v);
+                }
+                println!("  Startup Mode Breakdown:");
+                for (k, v) in &report.startup_mode_breakdown {
+                    println!("    {:<14} {}", k, v);
+                }
+                println!("  Service Type Breakdown:");
+                for (k, v) in &report.service_type_breakdown {
+                    println!("    {:<14} {}", k, v);
+                }
+                println!("  Restart Policy Breakdown:");
+                for (k, v) in &report.restart_policy_breakdown {
+                    println!("    {:<14} {}", k, v);
+                }
+                println!("  Dependency Distribution:");
+                for (k, v) in &report.dependency_distribution {
+                    println!("    {:<14} {}", k, v);
+                }
+            }
+            0
+        }
+        Some("check") => {
+            let is_fix = has_flag(rest, "--fix");
+            let target_path = if let Some(ref p) = store_path_opt {
+                std::path::PathBuf::from(p)
+            } else {
+                std::path::PathBuf::from("/var/lib/aios/services.json")
+            };
+
+            let (_store, report, recovered, backup_opt) = if is_fix {
+                match aiosh_core::service_recovery::load_or_recover(&target_path) {
+                    Ok(res) => res,
+                    Err(e) => {
+                        let msg = format!("recovery failed: {}", e);
+                        classify_and_emit(
+                            &mut ctx,
+                            "service",
+                            "check",
+                            json!({ "error": msg }),
+                            "failure",
+                            Some("RECOVERY_FAILED"),
+                            Some("Failed to recover service store"),
+                            "operator",
+                            None,
+                        );
+                        if is_json {
+                            println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "RECOVERY_FAILED", "message": msg } }));
+                        } else {
+                            eprintln!("{}", msg);
+                        }
+                        return 1;
+                    }
+                }
+            } else if target_path.exists() {
+                match aiosh_core::service_service::ServiceStore::load_from_path(&target_path) {
+                    Ok(s) => {
+                        let rep = aiosh_core::service_recovery::validate_service_store(&s, &target_path);
+                        (s, rep, false, None)
+                    }
+                    Err(e) => {
+                        let rep = aiosh_core::service_recovery::ServiceValidationReport {
+                            store_path: target_path.to_string_lossy().to_string(),
+                            total_services: 0,
+                            valid_services: 0,
+                            invalid_services: 0,
+                            errors: vec![format!("failed to load service store: {}", e)],
+                            warnings: vec![],
+                            healthy: false,
+                            evaluated_at: chrono::Utc::now().to_rfc3339(),
+                        };
+                        classify_and_emit(
+                            &mut ctx,
+                            "service",
+                            "check",
+                            json!({ "healthy": false, "errors": rep.errors }),
+                            "failure",
+                            Some("LOAD_STORE_FAILED"),
+                            Some("Service store check failed"),
+                            "operator",
+                            None,
+                        );
+                        if is_json {
+                            println!("{}", json!({
+                                "code": 1,
+                                "data": serde_json::Value::Null,
+                                "error": {
+                                    "code": "LOAD_STORE_FAILED",
+                                    "message": format!("Service store at {} is corrupted or unreadable. Run with --fix to recover.", target_path.display()),
+                                    "report": rep
+                                }
+                            }));
+                        } else {
+                            eprintln!("Service Store Validation: UNHEALTHY");
+                            for err in &rep.errors {
+                                eprintln!("  [-] {}", err);
+                            }
+                            eprintln!("Hint: Run with --fix to automatically recover.");
+                        }
+                        return 1;
+                    }
+                }
+            } else {
+                let s = aiosh_core::service_service::ServiceStore::new();
+                let rep = aiosh_core::service_recovery::validate_service_store(&s, &target_path);
+                (s, rep, false, None)
+            };
+
+            let action_name = if is_fix && recovered { "service.repair" } else { "service.check" };
+            classify_and_emit(
+                &mut ctx,
+                "service",
+                action_name,
+                json!({
+                    "healthy": report.healthy,
+                    "total_services": report.total_services,
+                    "valid_services": report.valid_services,
+                    "invalid_services": report.invalid_services,
+                    "recovered": recovered,
+                    "backup_path": backup_opt.as_ref().map(|p| p.to_string_lossy().to_string()),
+                }),
+                if report.healthy { "success" } else { "failure" },
+                None,
+                Some("Validated service store integrity and recovery state"),
+                "operator",
+                None,
+            );
+
+            if is_json {
+                let out = json!({
+                    "report": report,
+                    "recovered": recovered,
+                    "backup_path": backup_opt.map(|p| p.to_string_lossy().to_string()),
+                });
+                if report.healthy {
+                    println!("{}", json!({ "code": 0, "data": out, "error": serde_json::Value::Null }));
+                } else {
+                    println!("{}", json!({ "code": 1, "data": out, "error": { "code": "VALIDATION_FAILED", "message": "Service store validation failed" } }));
+                }
+            } else if report.healthy {
+                if recovered {
+                    println!("Service store at '{}' was recovered successfully from backup.", target_path.display());
+                    if let Some(ref bp) = backup_opt {
+                        println!("Quarantine backup preserved at: {}", bp.display());
+                    }
+                }
+                println!("Service Store Validation: HEALTHY ({} services verified)", report.valid_services);
+            } else {
+                eprintln!("Service Store Validation: UNHEALTHY");
+                for err in &report.errors {
+                    eprintln!("  [-] {}", err);
+                }
+                if !is_fix {
+                    eprintln!("Hint: Run with --fix to automatically recover.");
+                }
+            }
+
+            if report.healthy { 0 } else { 1 }
+        }
         Some("--help") | Some("-h") | None => {
-            println!("aiosh service — Init & Service Supervision Manager\n\nUsage: aiosh service <command> [options]\n\nCommands:\n  validate  Validate service name (SS1) or specification file/json (SS1..SS5)\n  list      List services in store with optional state, mode, and pattern filters\n  show      Display detailed service specification and runtime status (alias: status)\n  action    Execute a lifecycle action (start, stop, restart, reload, enable, disable, mask, unmask)\n  start     Start a service unit (shortcut for action <name> start)\n  stop      Stop a service unit (shortcut for action <name> stop)\n  restart   Restart a service unit (shortcut for action <name> restart)\n  reload    Reload a service unit configuration (shortcut for action <name> reload)\n  enable    Enable a service for automatic startup (shortcut for action <name> enable)\n  disable   Disable a service from automatic startup (shortcut for action <name> disable)\n  mask      Mask a service to prevent activation (shortcut for action <name> mask)\n  unmask    Unmask a service to allow activation (shortcut for action <name> unmask)\n  order     Calculate deterministic dependency startup sequence for a service\n  config    Inspect Init & Service Supervision configuration parameters\n  policy    Inspect or evaluate service security policy (SP1..SP6)");
+            println!("aiosh service — Init & Service Supervision Manager\n\nUsage: aiosh service <command> [options]\n\nCommands:\n  validate  Validate service name (SS1) or specification file/json (SS1..SS5)\n  list      List services in store with optional state, mode, and pattern filters\n  show      Display detailed service specification and runtime status (alias: status)\n  action    Execute a lifecycle action (start, stop, restart, reload, enable, disable, mask, unmask)\n  start     Start a service unit (shortcut for action <name> start)\n  stop      Stop a service unit (shortcut for action <name> stop)\n  restart   Restart a service unit (shortcut for action <name> restart)\n  reload    Reload a service unit configuration (shortcut for action <name> reload)\n  enable    Enable a service for automatic startup (shortcut for action <name> enable)\n  disable   Disable a service from automatic startup (shortcut for action <name> disable)\n  mask      Mask a service to prevent activation (shortcut for action <name> mask)\n  unmask    Unmask a service to allow activation (shortcut for action <name> unmask)\n  order     Calculate deterministic dependency startup sequence for a service\n  config    Inspect Init & Service Supervision configuration parameters\n  policy    Inspect or evaluate service security policy (SP1..SP6)\n  stats     Display comprehensive supervision observability report (alias: observability)\n  check     Validate service store integrity (with --fix to auto-recover)");
             0
         }
         Some(other) => {
             let msg = format!("unknown service subcommand: {}", other);
+            if is_json {
+                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "UNKNOWN_SUBCOMMAND", "message": msg } }));
+            } else {
+                eprintln!("{}", msg);
+            }
+            2
+        }
+    }
+}
+
+fn cmd_session(args: &[String]) -> i32 {
+    let mut ctx = open_context();
+    let sub = args.first().map(|s| s.as_str());
+    let rest = if args.len() > 1 { &args[1..] } else { &[] };
+    let is_json = has_flag(rest, "--json");
+
+    let store_path_opt = parse_flag(rest, "--store");
+    if let Some(ref p) = store_path_opt {
+        if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+            let msg = "store path cannot exceed 1024 characters and cannot contain control characters";
+            classify_and_emit(
+                &mut ctx,
+                "session",
+                sub.unwrap_or("unknown"),
+                json!({ "error": msg }),
+                "failure",
+                None,
+                Some("Invalid store path"),
+                "operator",
+                None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENT", "message": msg } }));
+            } else {
+                eprintln!("{}", msg);
+            }
+            return 2;
+        }
+    }
+
+    let load_service = || -> Result<aiosh_core::session_service::UserSessionService, String> {
+        match store_path_opt {
+            Some(ref p) => aiosh_core::session_service::UserSessionService::load_from_path(std::path::Path::new(p)).map_err(|e| e.to_string()),
+            None => Ok(aiosh_core::session_service::UserSessionService::new()),
+        }
+    };
+
+    match sub {
+        Some("validate") => {
+            if let Some(id) = parse_flag(rest, "--id") {
+                let res = aiosh_core::session::validate_session_id(&id);
+                let (code, msg, errors) = match res {
+                    Ok(()) => (0, format!("Session ID '{}' is valid", id), vec![]),
+                    Err(e) => (2, format!("Session ID '{}' is invalid: {}", id, e), vec![e]),
+                };
+                classify_and_emit(
+                    &mut ctx,
+                    "session",
+                    "validate",
+                    json!({ "session_id": id, "valid": code == 0 }),
+                    if code == 0 { "success" } else { "failure" },
+                    Some(&id),
+                    Some(&msg),
+                    "operator",
+                    None,
+                );
+                if is_json {
+                    println!("{}", json!({
+                        "code": code,
+                        "data": { "valid": code == 0, "session_id": id },
+                        "error": if code == 0 { serde_json::Value::Null } else { json!({ "code": "VALIDATION_FAILED", "message": msg, "errors": errors }) }
+                    }));
+                } else if code == 0 {
+                    println!("VALID: Session ID '{}' conforms to SB1 naming syntax", id);
+                } else {
+                    eprintln!("INVALID: {}", msg);
+                }
+                code
+            } else if let Some(user) = parse_flag(rest, "--user") {
+                let res = aiosh_core::session::validate_username(&user);
+                let (code, msg, errors) = match res {
+                    Ok(()) => (0, format!("Username '{}' is valid", user), vec![]),
+                    Err(e) => (2, format!("Username '{}' is invalid: {}", user, e), vec![e]),
+                };
+                classify_and_emit(
+                    &mut ctx,
+                    "session",
+                    "validate",
+                    json!({ "username": user, "valid": code == 0 }),
+                    if code == 0 { "success" } else { "failure" },
+                    Some(&user),
+                    Some(&msg),
+                    "operator",
+                    None,
+                );
+                if is_json {
+                    println!("{}", json!({
+                        "code": code,
+                        "data": { "valid": code == 0, "username": user },
+                        "error": if code == 0 { serde_json::Value::Null } else { json!({ "code": "VALIDATION_FAILED", "message": msg, "errors": errors }) }
+                    }));
+                } else if code == 0 {
+                    println!("VALID: Username '{}' conforms to SB2 user identity syntax", user);
+                } else {
+                    eprintln!("INVALID: {}", msg);
+                }
+                code
+            } else if let Some(spec_str) = parse_flag(rest, "--spec") {
+                let content = if std::path::Path::new(&spec_str).exists() {
+                    let path = std::path::Path::new(&spec_str);
+                    if let Ok(meta) = std::fs::metadata(path) {
+                        if meta.len() > 1024 * 1024 {
+                            let err_msg = format!("spec file '{}' exceeds 1 MiB size limit (was {} bytes)", spec_str, meta.len());
+                            classify_and_emit(
+                                &mut ctx,
+                                "session",
+                                "validate",
+                                json!({ "error": err_msg }),
+                                "failure",
+                                None,
+                                Some("Spec file exceeds size limit"),
+                                "operator",
+                                None,
+                            );
+                            if is_json {
+                                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "PAYLOAD_TOO_LARGE", "message": err_msg } }));
+                            } else {
+                                eprintln!("{}", err_msg);
+                            }
+                            return 2;
+                        }
+                    }
+                    match std::fs::read_to_string(path) {
+                        Ok(c) => c,
+                        Err(e) => {
+                            let err_msg = format!("failed to read spec file '{}': {}", spec_str, e);
+                            classify_and_emit(
+                                &mut ctx,
+                                "session",
+                                "validate",
+                                json!({ "error": err_msg }),
+                                "failure",
+                                None,
+                                Some("Failed to read spec file"),
+                                "operator",
+                                None,
+                            );
+                            if is_json {
+                                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "FILE_READ_ERROR", "message": err_msg } }));
+                            } else {
+                                eprintln!("{}", err_msg);
+                            }
+                            return 2;
+                        }
+                    }
+                } else {
+                    if spec_str.len() > 1024 * 1024 {
+                        let err_msg = "inline JSON payload exceeds 1 MiB size limit".to_string();
+                        classify_and_emit(
+                            &mut ctx,
+                            "session",
+                            "validate",
+                            json!({ "error": err_msg }),
+                            "failure",
+                            None,
+                            Some("Inline JSON exceeds size limit"),
+                            "operator",
+                            None,
+                        );
+                        if is_json {
+                            println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "PAYLOAD_TOO_LARGE", "message": err_msg } }));
+                        } else {
+                            eprintln!("{}", err_msg);
+                        }
+                        return 2;
+                    }
+                    spec_str
+                };
+
+                let spec: aiosh_core::session::UserSessionSpec = match serde_json::from_str(&content) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        let err_msg = format!("failed to parse user session specification JSON: {}", e);
+                        classify_and_emit(
+                            &mut ctx,
+                            "session",
+                            "validate",
+                            json!({ "error": err_msg }),
+                            "failure",
+                            None,
+                            Some("Failed to parse spec JSON"),
+                            "operator",
+                            None,
+                        );
+                        if is_json {
+                            println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "JSON_PARSE_ERROR", "message": err_msg } }));
+                        } else {
+                            eprintln!("{}", err_msg);
+                        }
+                        return 2;
+                    }
+                };
+
+                let res = aiosh_core::session::validate_user_session_spec(&spec);
+                let (code, msg, errors) = match res {
+                    Ok(()) => (0, format!("User session specification '{}' is valid", spec.session_id), vec![]),
+                    Err(errs) => (2, format!("User session specification '{}' violates SB1..SB5 invariants", spec.session_id), errs),
+                };
+
+                classify_and_emit(
+                    &mut ctx,
+                    "session",
+                    "validate",
+                    json!({ "session_id": spec.session_id, "valid": code == 0, "errors_count": errors.len() }),
+                    if code == 0 { "success" } else { "failure" },
+                    Some(&spec.session_id),
+                    Some(&msg),
+                    "operator",
+                    None,
+                );
+
+                if is_json {
+                    println!("{}", json!({
+                        "code": code,
+                        "data": { "valid": code == 0, "session_id": spec.session_id, "spec": spec },
+                        "error": if code == 0 { serde_json::Value::Null } else { json!({ "code": "VALIDATION_FAILED", "message": msg, "errors": errors }) }
+                    }));
+                } else if code == 0 {
+                    println!("VALID: User session specification '{}' conforms to SB1..SB5 invariants", spec.session_id);
+                } else {
+                    eprintln!("INVALID: {}", msg);
+                    for err in errors {
+                        eprintln!("  - {}", err);
+                    }
+                }
+                code
+            } else {
+                let msg = "Usage: aiosh session validate (--id <id> | --user <username> | --spec <file_or_json>) [--json]";
+                if is_json {
+                    println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_ARGUMENTS", "message": msg } }));
+                } else {
+                    eprintln!("{}", msg);
+                }
+                2
+            }
+        }
+        Some("list") => {
+            let service = match load_service() {
+                Ok(s) => s,
+                Err(e) => {
+                    classify_and_emit(
+                        &mut ctx,
+                        "session",
+                        "list",
+                        json!({ "error": e }),
+                        "failure",
+                        None,
+                        Some("Failed to load session store"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "LOAD_STORE_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("failed to load session store: {}", e);
+                    }
+                    return 1;
+                }
+            };
+
+            let username = parse_flag(rest, "--user");
+            let state = parse_flag(rest, "--state").and_then(|st| match st.to_lowercase().as_str() {
+                "initializing" => Some(aiosh_core::session::SessionState::Initializing),
+                "authenticating" => Some(aiosh_core::session::SessionState::Authenticating),
+                "active" => Some(aiosh_core::session::SessionState::Active),
+                "locked" => Some(aiosh_core::session::SessionState::Locked),
+                "terminating" => Some(aiosh_core::session::SessionState::Terminating),
+                "terminated" => Some(aiosh_core::session::SessionState::Terminated),
+                _ => None,
+            });
+            let session_type = parse_flag(rest, "--type").and_then(|t| match t.to_lowercase().as_str() {
+                "tty" => Some(aiosh_core::session::SessionType::Tty),
+                "x11" => Some(aiosh_core::session::SessionType::X11),
+                "wayland" => Some(aiosh_core::session::SessionType::Wayland),
+                "ai_agent" | "aiagent" | "agent" => Some(aiosh_core::session::SessionType::AiAgent),
+                _ => None,
+            });
+            let seat = parse_flag(rest, "--seat");
+            let limit = if let Some(s) = parse_flag(rest, "--limit") {
+                match s.parse::<usize>() {
+                    Ok(n) if n > 0 && n <= 10_000 => Some(n),
+                    _ => {
+                        let msg = "limit must be a positive integer between 1 and 10,000";
+                        classify_and_emit(
+                            &mut ctx,
+                            "session",
+                            "list",
+                            json!({ "error": msg }),
+                            "failure",
+                            None,
+                            Some("Invalid limit argument"),
+                            "operator",
+                            None,
+                        );
+                        if is_json {
+                            println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENT", "message": msg } }));
+                        } else {
+                            eprintln!("{}", msg);
+                        }
+                        return 2;
+                    }
+                }
+            } else {
+                None
+            };
+
+            let query = aiosh_core::session::UserSessionQuery {
+                username,
+                state,
+                session_type,
+                seat,
+                limit,
+            };
+
+            let sessions = service.query_sessions(&query);
+            classify_and_emit(
+                &mut ctx,
+                "session",
+                "list",
+                json!({ "count": sessions.len() }),
+                "success",
+                None,
+                Some("Queried user sessions"),
+                "operator",
+                None,
+            );
+
+            if is_json {
+                println!("{}", json!({ "code": 0, "data": { "sessions": sessions, "count": sessions.len() }, "error": serde_json::Value::Null }));
+            } else {
+                println!("{:<16} {:<12} {:<14} {:<12} {:<8} {:<8}", "SESSION_ID", "USER", "STATE", "SCOPE", "LOCKED", "IDLE(s)");
+                for s in &sessions {
+                    println!("{:<16} {:<12} {:<14} {:<12} {:<8} {:<8}", s.session_id, s.username, format!("{:?}", s.state), format!("{:?}", s.scope), s.locked, s.idle_seconds);
+                }
+            }
+            0
+        }
+        Some("show") | Some("get") => {
+            let session_id = rest.first().filter(|s| !s.starts_with('-'));
+            let session_id = match session_id {
+                Some(id) => id.as_str(),
+                None => {
+                    let msg = "Usage: aiosh session show <session_id> [--json] [--store <path>]";
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_ARGUMENTS", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+            };
+
+            let service = match load_service() {
+                Ok(s) => s,
+                Err(e) => {
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "LOAD_STORE_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("failed to load session store: {}", e);
+                    }
+                    return 1;
+                }
+            };
+
+            let status = service.get_session(session_id);
+            let spec = service.get_spec(session_id);
+
+            match (status, spec) {
+                (Some(st), Some(sp)) => {
+                    classify_and_emit(
+                        &mut ctx,
+                        "session",
+                        "show",
+                        json!({ "session_id": session_id, "state": format!("{:?}", st.state) }),
+                        "success",
+                        Some(session_id),
+                        Some("Retrieved session details"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 0, "data": { "status": st, "spec": sp }, "error": serde_json::Value::Null }));
+                    } else {
+                        println!("Session ID:      {}", st.session_id);
+                        println!("Username:        {} (UID: {})", st.username, st.uid);
+                        println!("State:           {:?}", st.state);
+                        println!("Scope:           {:?}", st.scope);
+                        println!("Type:            {:?}", sp.session_type);
+                        println!("Class:           {:?}", sp.session_class);
+                        println!("Seat:            {}", sp.seat);
+                        if let Some(vtnr) = sp.vtnr { println!("VTNR:            {}", vtnr); }
+                        if let Some(ref disp) = sp.display { println!("Display:         {}", disp); }
+                        println!("Leader PID:      {:?}", st.leader_pid);
+                        println!("Locked:          {}", st.locked);
+                        println!("Idle Seconds:    {}", st.idle_seconds);
+                        println!("Created At:      {}", st.created_at);
+                        println!("Last Active At:  {}", st.last_active_at);
+                    }
+                    0
+                }
+                _ => {
+                    let msg = format!("session '{}' not found", session_id);
+                    classify_and_emit(
+                        &mut ctx,
+                        "session",
+                        "show",
+                        json!({ "session_id": session_id, "error": msg }),
+                        "failure",
+                        Some(session_id),
+                        Some("Session not found"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "NOT_FOUND", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    1
+                }
+            }
+        }
+        Some("action") => {
+            let session_id = rest.first().filter(|s| !s.starts_with('-'));
+            let action_str = rest.get(1).filter(|s| !s.starts_with('-'));
+            let (session_id, action_str) = match (session_id, action_str) {
+                (Some(id), Some(act)) => (id.as_str(), act.as_str()),
+                _ => {
+                    let msg = "Usage: aiosh session action <session_id> <authenticate|activate|lock|unlock|terminate> [--json] [--store <path>]";
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_ARGUMENTS", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+            };
+
+            let action = match action_str.to_lowercase().as_str() {
+                "authenticate" => aiosh_core::session::UserSessionAction::Authenticate,
+                "activate" => aiosh_core::session::UserSessionAction::Activate,
+                "lock" => aiosh_core::session::UserSessionAction::Lock,
+                "unlock" => aiosh_core::session::UserSessionAction::Unlock,
+                "terminate" => aiosh_core::session::UserSessionAction::Terminate,
+                other => {
+                    let msg = format!("unknown session action: '{}'", other);
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ACTION", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+            };
+
+            let mut service = match load_service() {
+                Ok(s) => s,
+                Err(e) => {
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "LOAD_STORE_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("failed to load session store: {}", e);
+                    }
+                    return 1;
+                }
+            };
+
+            let report = match service.apply_action(session_id, action) {
+                Ok(rep) => rep,
+                Err(e) => {
+                    classify_and_emit(
+                        &mut ctx,
+                        "session",
+                        "action",
+                        json!({ "session_id": session_id, "action": action_str, "error": e }),
+                        "failure",
+                        Some(session_id),
+                        Some("Session action execution failed"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "ACTION_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("Action failed: {}", e);
+                    }
+                    return 1;
+                }
+            };
+
+            if let Some(ref p) = store_path_opt {
+                if let Err(e) = service.save_to_path(p) {
+                    eprintln!("Warning: failed to persist session store to '{}': {}", p, e);
+                }
+            }
+
+            classify_and_emit(
+                &mut ctx,
+                "session",
+                "action",
+                json!({
+                    "session_id": session_id,
+                    "action": action_str,
+                    "previous_state": format!("{:?}", report.previous_state),
+                    "new_state": format!("{:?}", report.new_state),
+                }),
+                "success",
+                Some(session_id),
+                Some("Session action applied successfully"),
+                "operator",
+                None,
+            );
+
+            if is_json {
+                println!("{}", json!({ "code": 0, "data": report, "error": serde_json::Value::Null }));
+            } else {
+                println!("Action '{}' applied to session '{}': {:?} -> {:?}", action_str, session_id, report.previous_state, report.new_state);
+            }
+            0
+        }
+        Some("create") => {
+            let input_arg = rest.first().filter(|s| !s.starts_with('-'));
+            let input = match input_arg {
+                Some(s) => s.as_str(),
+                None => {
+                    let msg = "Usage: aiosh session create <spec_file_or_json> [--json] [--store <path>]";
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_ARGUMENTS", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+            };
+
+            let path = std::path::Path::new(input);
+            let content = if path.exists() && path.is_file() {
+                if let Ok(meta) = path.metadata() {
+                    if meta.len() > 1024 * 1024 {
+                        let err_msg = format!("spec file '{}' exceeds 1 MiB size limit", input);
+                        classify_and_emit(
+                            &mut ctx,
+                            "session",
+                            "create",
+                            json!({ "error": err_msg }),
+                            "failure",
+                            None,
+                            Some("Spec file exceeds size limit"),
+                            "operator",
+                            None,
+                        );
+                        if is_json {
+                            println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "PAYLOAD_TOO_LARGE", "message": err_msg } }));
+                        } else {
+                            eprintln!("{}", err_msg);
+                        }
+                        return 2;
+                    }
+                }
+                match std::fs::read_to_string(path) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        let err_msg = format!("failed to read spec file '{}': {}", input, e);
+                        classify_and_emit(
+                            &mut ctx,
+                            "session",
+                            "create",
+                            json!({ "error": err_msg }),
+                            "failure",
+                            None,
+                            Some("Failed to read spec file"),
+                            "operator",
+                            None,
+                        );
+                        if is_json {
+                            println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "FILE_READ_ERROR", "message": err_msg } }));
+                        } else {
+                            eprintln!("{}", err_msg);
+                        }
+                        return 2;
+                    }
+                }
+            } else {
+                if input.len() > 1024 * 1024 {
+                    let err_msg = "inline JSON payload exceeds 1 MiB size limit".to_string();
+                    classify_and_emit(
+                        &mut ctx,
+                        "session",
+                        "create",
+                        json!({ "error": err_msg }),
+                        "failure",
+                        None,
+                        Some("Inline JSON exceeds size limit"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "PAYLOAD_TOO_LARGE", "message": err_msg } }));
+                    } else {
+                        eprintln!("{}", err_msg);
+                    }
+                    return 2;
+                }
+                input.to_string()
+            };
+
+            let spec: aiosh_core::session::UserSessionSpec = match serde_json::from_str(&content) {
+                Ok(s) => s,
+                Err(e) => {
+                    let err_msg = format!("failed to parse user session specification JSON: {}", e);
+                    classify_and_emit(
+                        &mut ctx,
+                        "session",
+                        "create",
+                        json!({ "error": err_msg }),
+                        "failure",
+                        None,
+                        Some("Failed to parse spec JSON"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "JSON_PARSE_ERROR", "message": err_msg } }));
+                    } else {
+                        eprintln!("{}", err_msg);
+                    }
+                    return 2;
+                }
+            };
+
+            if let Err(errs) = aiosh_core::session::validate_user_session_spec(&spec) {
+                let err_msg = format!("User session specification '{}' violates SB1..SB5 invariants: {}", spec.session_id, errs.join("; "));
+                classify_and_emit(
+                    &mut ctx,
+                    "session",
+                    "create",
+                    json!({ "session_id": spec.session_id, "errors": errs }),
+                    "failure",
+                    Some(&spec.session_id),
+                    Some("Spec violates invariants"),
+                    "operator",
+                    None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "VALIDATION_FAILED", "message": err_msg, "errors": errs } }));
+                } else {
+                    eprintln!("{}", err_msg);
+                }
+                return 2;
+            }
+
+            let mut service = match load_service() {
+                Ok(s) => s,
+                Err(e) => {
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "LOAD_STORE_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("failed to load session store: {}", e);
+                    }
+                    return 1;
+                }
+            };
+
+            let session_id = spec.session_id.clone();
+            let username = spec.username.clone();
+            let seat = spec.seat.clone();
+
+            let report = match service.create_session(spec) {
+                Ok(rep) => rep,
+                Err(e) => {
+                    classify_and_emit(
+                        &mut ctx,
+                        "session",
+                        "create",
+                        json!({ "session_id": session_id, "error": e }),
+                        "failure",
+                        Some(&session_id),
+                        Some("Session creation failed"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "CREATE_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("Error creating session: {}", e);
+                    }
+                    return 1;
+                }
+            };
+
+            if let Some(ref p) = store_path_opt {
+                if let Err(e) = service.save_to_path(p) {
+                    eprintln!("Warning: failed to persist session store to '{}': {}", p, e);
+                }
+            }
+
+            classify_and_emit(
+                &mut ctx,
+                "session",
+                "create",
+                json!({ "session_id": session_id, "username": username, "seat": seat }),
+                "success",
+                Some(&session_id),
+                Some("Session created successfully"),
+                "operator",
+                None,
+            );
+
+            if is_json {
+                println!("{}", json!({ "code": 0, "data": report, "error": serde_json::Value::Null }));
+            } else {
+                println!("Created session '{}' for user '{}' on seat '{}' (state: {:?})", session_id, username, seat, report.new_state);
+            }
+            0
+        }
+        Some("status") => {
+            let mut forwarded = vec!["show".to_string()];
+            forwarded.extend_from_slice(rest);
+            cmd_session(&forwarded)
+        }
+        Some("activate") | Some("lock") | Some("unlock") | Some("terminate") | Some("auth") | Some("authenticate") => {
+            let act_name = match sub {
+                Some("auth") => "authenticate",
+                Some(other) => other,
+                None => "activate",
+            };
+            let session_id = rest.first().filter(|s| !s.starts_with('-'));
+            let session_id = match session_id {
+                Some(id) => id.as_str(),
+                None => {
+                    let msg = format!("Usage: aiosh session {} <session_id> [--json] [--store <path>]", act_name);
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_ARGUMENTS", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+            };
+            let mut forwarded = vec!["action".to_string(), session_id.to_string(), act_name.to_string()];
+            let mut skipped_id = false;
+            for arg in rest {
+                if !skipped_id && arg == session_id {
+                    skipped_id = true;
+                    continue;
+                }
+                forwarded.push(arg.clone());
+            }
+            cmd_session(&forwarded)
+        }
+        Some("--help") | Some("-h") | None => {
+            println!("aiosh session — User Session Bootstrap Manager\n\nUsage:\n  aiosh session validate (--id <id> | --user <username> | --spec <file_or_json>) [--json]\n  aiosh session list [--user <username>] [--state <state>] [--type <type>] [--seat <seat>] [--limit <n>] [--json] [--store <path>]\n  aiosh session show <session_id> [--json] [--store <path>]\n  aiosh session status <session_id> [--json] [--store <path>]\n  aiosh session create <spec_file_or_json> [--json] [--store <path>]\n  aiosh session action <session_id> <authenticate|activate|lock|unlock|terminate> [--json] [--store <path>]\n  aiosh session activate <session_id> [--json] [--store <path>]\n  aiosh session lock <session_id> [--json] [--store <path>]\n  aiosh session unlock <session_id> [--json] [--store <path>]\n  aiosh session terminate <session_id> [--json] [--store <path>]");
+            0
+        }
+        Some(other) => {
+            let msg = format!("unknown session subcommand: {}", other);
             if is_json {
                 println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "UNKNOWN_SUBCOMMAND", "message": msg } }));
             } else {
@@ -7035,6 +8089,151 @@ mod task_cli_tests {
 
         let code_order_not_found = cmd_service(&["order".to_string(), "nonexistent.service".to_string()]);
         assert_eq!(code_order_not_found, 1);
+
+        // config
+        let code_config = cmd_service(&["config".to_string()]);
+        assert_eq!(code_config, 0);
+
+        let code_config_json = cmd_service(&["config".to_string(), "--json".to_string()]);
+        assert_eq!(code_config_json, 0);
+
+        let code_config_bad = cmd_service(&["config".to_string(), "--config".to_string(), "bad\0path".to_string()]);
+        assert_eq!(code_config_bad, 2);
+
+        // policy
+        let code_policy = cmd_service(&["policy".to_string()]);
+        assert_eq!(code_policy, 0);
+
+        let code_policy_json = cmd_service(&["policy".to_string(), "--json".to_string()]);
+        assert_eq!(code_policy_json, 0);
+
+        let code_policy_eval = cmd_service(&["policy".to_string(), "--service".to_string(), "aios-securityd.service".to_string()]);
+        assert_eq!(code_policy_eval, 0);
+
+        let code_policy_bad = cmd_service(&["policy".to_string(), "--config".to_string(), "bad\0path".to_string()]);
+        assert_eq!(code_policy_bad, 2);
+
+        // stats / observability
+        let code_stats = cmd_service(&["stats".to_string()]);
+        assert_eq!(code_stats, 0);
+
+        let code_stats_json = cmd_service(&["stats".to_string(), "--json".to_string()]);
+        assert_eq!(code_stats_json, 0);
+
+        let code_obs_alias = cmd_service(&["observability".to_string()]);
+        assert_eq!(code_obs_alias, 0);
+
+        let code_stats_bad_store = cmd_service(&["stats".to_string(), "--store".to_string(), "bad\0store".to_string()]);
+        assert_eq!(code_stats_bad_store, 2);
+
+        let code_stats_bad_policy = cmd_service(&["stats".to_string(), "--policy".to_string(), "bad\0policy".to_string()]);
+        assert_eq!(code_stats_bad_policy, 2);
+
+        let code_stats_missing_store = cmd_service(&["stats".to_string(), "--store".to_string(), "nonexistent_store_9999.json".to_string()]);
+        assert_eq!(code_stats_missing_store, 1);
+    }
+
+    #[test]
+    fn test_cmd_session_flow() {
+        let code_help = cmd_session(&["--help".to_string()]);
+        assert_eq!(code_help, 0);
+
+        let code_unknown = cmd_session(&["unknown_cmd".to_string()]);
+        assert_eq!(code_unknown, 2);
+
+        // validate id
+        let code_id_valid = cmd_session(&["validate".to_string(), "--id".to_string(), "sess-01".to_string()]);
+        assert_eq!(code_id_valid, 0);
+
+        let code_id_invalid = cmd_session(&["validate".to_string(), "--id".to_string(), "../evil".to_string()]);
+        assert_eq!(code_id_invalid, 2);
+
+        // validate user
+        let code_user_valid = cmd_session(&["validate".to_string(), "--user".to_string(), "kali".to_string()]);
+        assert_eq!(code_user_valid, 0);
+
+        let code_user_invalid = cmd_session(&["validate".to_string(), "--user".to_string(), "Kali".to_string()]);
+        assert_eq!(code_user_invalid, 2);
+
+        // validate spec
+        let valid_spec = r#"{
+            "session_id": "sess-unit-01",
+            "username": "kali",
+            "uid": 1000,
+            "gid": 1000,
+            "session_type": "x11",
+            "session_class": "user",
+            "seat": "seat0",
+            "vtnr": 7,
+            "display": ":0",
+            "remote_host": null,
+            "environment": {}
+        }"#;
+        let code_spec_valid = cmd_session(&["validate".to_string(), "--spec".to_string(), valid_spec.to_string(), "--json".to_string()]);
+        assert_eq!(code_spec_valid, 0);
+
+        let bad_spec = r#"{
+            "session_id": "sess-unit-01",
+            "username": "kali",
+            "uid": 1000,
+            "gid": 1000,
+            "session_type": "x11",
+            "session_class": "user",
+            "seat": "seat0",
+            "vtnr": 7,
+            "display": null,
+            "remote_host": null,
+            "environment": {}
+        }"#;
+        let code_spec_invalid = cmd_session(&["validate".to_string(), "--spec".to_string(), bad_spec.to_string(), "--json".to_string()]);
+        assert_eq!(code_spec_invalid, 2);
+
+        // list
+        let code_list = cmd_session(&["list".to_string()]);
+        assert_eq!(code_list, 0);
+
+        let code_list_json = cmd_session(&["list".to_string(), "--json".to_string()]);
+        assert_eq!(code_list_json, 0);
+
+        let code_list_bad_limit = cmd_session(&["list".to_string(), "--limit".to_string(), "0".to_string()]);
+        assert_eq!(code_list_bad_limit, 2);
+
+        // show & status alias
+        let code_show = cmd_session(&["show".to_string(), "greeter-seat0".to_string()]);
+        assert_eq!(code_show, 0);
+
+        let code_status = cmd_session(&["status".to_string(), "greeter-seat0".to_string(), "--json".to_string()]);
+        assert_eq!(code_status, 0);
+
+        let code_show_missing = cmd_session(&["show".to_string()]);
+        assert_eq!(code_show_missing, 2);
+
+        let code_show_not_found = cmd_session(&["show".to_string(), "nonexistent-sess".to_string()]);
+        assert_eq!(code_show_not_found, 1);
+
+        // action
+        let code_action_lock = cmd_session(&["action".to_string(), "greeter-seat0".to_string(), "lock".to_string()]);
+        assert_eq!(code_action_lock, 0);
+
+        let code_action_bad = cmd_session(&["action".to_string(), "greeter-seat0".to_string(), "bad_action".to_string()]);
+        assert_eq!(code_action_bad, 2);
+
+        // shortcuts
+        let code_lock = cmd_session(&["lock".to_string(), "greeter-seat0".to_string()]);
+        assert_eq!(code_lock, 0);
+
+        let code_activate = cmd_session(&["activate".to_string(), "greeter-seat0".to_string()]);
+        assert_eq!(code_activate, 0);
+
+        // create
+        let code_create = cmd_session(&["create".to_string(), valid_spec.to_string(), "--json".to_string()]);
+        assert_eq!(code_create, 0);
+
+        let code_create_bad = cmd_session(&["create".to_string(), bad_spec.to_string(), "--json".to_string()]);
+        assert_eq!(code_create_bad, 2);
+
+        let code_create_missing = cmd_session(&["create".to_string()]);
+        assert_eq!(code_create_missing, 2);
     }
 }
 

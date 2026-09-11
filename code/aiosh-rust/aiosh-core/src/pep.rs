@@ -113,6 +113,19 @@ pub fn network_allowed(target: Option<&str>, networks: &[String]) -> bool {
 }
 
 pub fn is_irreversible(tool: &str) -> bool {
+    // Read-only reconnaissance and discovery tools are reversible / non-destructive
+    if tool == "pentest.network.interfaces"
+        || tool == "pentest.wifi.scan"
+        || tool == "pentest.arp.scan"
+        || tool == "pentest.tshark"
+        || tool.starts_with("network.")
+        || tool.starts_with("wifi.scan")
+        || tool.starts_with("aios.network.")
+        || tool.starts_with("aios.wifi.scan")
+    {
+        return false;
+    }
+
     tool.starts_with("fs.write")
         || tool.starts_with("pentest.")
         || tool.starts_with("aios.backup.")

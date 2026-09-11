@@ -69,8 +69,12 @@ pub mod secrets_config;
 pub mod secrets_service;
 pub mod service;
 pub mod service_config;
+pub mod service_observability;
 pub mod service_policy;
+pub mod service_recovery;
 pub mod service_service;
+pub mod session;
+pub mod session_service;
 pub mod task_service;
 pub mod toolchain_config;
 pub mod toolchain_service;
@@ -101,9 +105,19 @@ pub use service::{
     ServiceSpec, ServiceStartupMode, ServiceState, ServiceStatus, ServiceType,
 };
 pub use service_config::ServiceConfig;
+pub use service_observability::ServiceObservabilityReport;
 pub use service_policy::{
     ServicePolicyMode, ServicePolicyVerdict, ServicePolicyViolation, ServiceSecurityPolicy,
 };
+pub use service_recovery::{ServiceRecoveryAction, ServiceValidationReport};
 pub use service_service::{ServiceActionReport, ServiceStore};
+pub use session::{
+    transition_session_state, validate_session_id, validate_user_session_spec,
+    validate_user_session_status, validate_username, SessionClass, SessionScope, SessionState,
+    SessionType, UserSessionAction, UserSessionQuery, UserSessionSpec, UserSessionStatus,
+    UserSessionStore,
+};
+pub use session_service::{UserSessionActionReport, UserSessionService};
 pub use types::GENESIS_HASH;
+
 

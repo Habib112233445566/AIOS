@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DistroFamily {
     Debian,
+    Kali,
     Alpine,
     Arch,
     CustomMinimal,
@@ -102,6 +103,38 @@ impl DistroProfile {
             justification: "Ultra-compact image (<10MB) for lightweight ephemeral agent worker sandboxes.".into(),
         }
     }
+
+    /// Creates a standard Kali Linux Rolling base profile for ethical hacking and AIOS integration.
+    pub fn kali_rolling_x86_64() -> Self {
+        Self {
+            id: "kali-rolling-x86_64".into(),
+            name: "Kali Linux Rolling (Debian-based) Ethical Hacking Platform".into(),
+            family: DistroFamily::Kali,
+            release_version: "2026.1".into(),
+            init_system: InitSystem::Systemd,
+            arch: ArchTarget::X86_64,
+            c_lib: CLibrary::Glibc,
+            min_kernel_version: "6.1.0".into(),
+            default_packages: vec![
+                "systemd".into(),
+                "systemd-sysv".into(),
+                "udev".into(),
+                "dbus".into(),
+                "ca-certificates".into(),
+                "curl".into(),
+                "sqlite3".into(),
+                "python3".into(),
+                "kali-tools-top10".into(),
+                "kali-undercover".into(),
+                "nmap".into(),
+                "aircrack-ng".into(),
+                "tshark".into(),
+                "gobuster".into(),
+            ],
+            recommended: true,
+            justification: "Pre-installed 600+ ethical hacking toolchain, wireless injection driver support, Debian binary compatibility, and Windows-styled desktop undercover mode.".into(),
+        }
+    }
 }
 
 /// Evaluation score and production readiness assessment for a distro profile.
@@ -128,10 +161,12 @@ impl DistroEvaluation {
             DistroFamily::Alpine => 1.0,
             DistroFamily::CustomMinimal => 0.9,
             DistroFamily::Debian => 0.75,
+            DistroFamily::Kali => 0.70,
             DistroFamily::Arch => 0.6,
         };
 
         let security_score = match profile.family {
+            DistroFamily::Kali => 0.98,
             DistroFamily::Debian => 0.95,
             DistroFamily::Alpine => 0.85,
             DistroFamily::Arch => 0.7,

@@ -142,6 +142,48 @@ impl BaseImageManifest {
             artifact_size_bytes: None,
         }
     }
+
+    /// Creates the reference Kali Linux Rolling ethical hacking base image manifest.
+    pub fn kali_rolling_security(format: ImageFormat) -> Self {
+        Self {
+            id: format!("kali-rolling-security-{}", format),
+            version: "1.0.0".into(),
+            format,
+            rootfs: RootfsSpec {
+                distro_id: "kali-rolling-x86_64".into(),
+                architecture: "x86_64".into(),
+                filesystem_type: "ext4".into(),
+                packages: vec![
+                    "base-files".into(),
+                    "bash".into(),
+                    "coreutils".into(),
+                    "dpkg".into(),
+                    "iproute2".into(),
+                    "net-tools".into(),
+                    "systemd".into(),
+                    "udev".into(),
+                    "kali-tools-top10".into(),
+                    "kali-undercover".into(),
+                    "nmap".into(),
+                    "aircrack-ng".into(),
+                    "tshark".into(),
+                    "gobuster".into(),
+                    "arp-scan".into(),
+                ],
+                size_budget_bytes: 4 * 1024 * 1024 * 1024, // 4 GiB ceiling
+                hostname: "aios-kali".into(),
+            },
+            kernel: KernelSpec {
+                version: "6.6.0-kali1-amd64".into(),
+                cmdline: "console=tty0 console=ttyS0,115200 quiet rw rootfstype=ext4".into(),
+                initramfs_generator: "dracut".into(),
+            },
+            created_at: chrono::Utc::now().to_rfc3339(),
+            artifact_path: None,
+            artifact_sha256: None,
+            artifact_size_bytes: None,
+        }
+    }
 }
 
 /// Validates internal consistency invariants I1..I6 of a BaseImageManifest.

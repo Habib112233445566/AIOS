@@ -57,6 +57,11 @@ impl Server {
             ("aios.pentest.sqlmap", "SQL injection (level=1 risk=1) [C-1]"),
             ("aios.pentest.tshark", "pcap read (no live capture) [C-1]"),
             ("aios.pentest.aircrack-ng", "offline dictionary crack [C-1]"),
+            ("aios.network.interfaces", "Network interface and WiFi hardware discovery [C-1]"),
+            ("aios.wifi.scan", "Scan for nearby WiFi networks, SSIDs, signal levels, and security [C-1]"),
+            ("aios.network.arp_scan", "ARP local network sweep to discover live hosts and MACs [C-1]"),
+            ("aios.wifi.monitor", "Toggle wireless adapter monitor mode via airmon-ng [C-1]"),
+            ("aios.web.gobuster", "Web directory and endpoint discovery brute-force [C-1]"),
         ] {
             tools.push(json!({
                 "name": name,
@@ -832,6 +837,106 @@ impl Server {
                     "store_path": { "type": "string", "description": "Optional path to custom service_store.json" },
                     "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
                 },
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.service.stats",
+            "description": "Inspect Init & Service Supervision observability metrics and health telemetry report (SO1..SO6)",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "store_path": { "type": "string", "description": "Optional path to custom service_store.json" },
+                    "policy_path": { "type": "string", "description": "Optional path to custom service policy JSON file" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.service.check",
+            "description": "Validate on-disk service store integrity and optionally perform non-destructive recovery",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "store_path": { "type": "string", "description": "Optional custom path to the service store JSON file" },
+                    "auto_recover": { "type": "boolean", "description": "Automatically repair corrupted or invalid store with timestamped backup" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.session.validate",
+            "description": "Validate session ID syntax (SB1), username (SB2), or full UserSessionSpec against SB1..SB5 invariants",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "session_id": { "type": "string", "description": "Session identifier to validate against SB1 syntax" },
+                    "username": { "type": "string", "description": "Username to validate against SB2 syntax" },
+                    "spec": { "type": "object", "description": "Complete UserSessionSpec object to validate against SB1..SB5 invariants" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.session.list",
+            "description": "List tracked user and agent sessions filtered by user, state, type, seat, and limit",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "username": { "type": "string", "description": "Filter by username" },
+                    "state": { "type": "string", "description": "Filter by session state" },
+                    "session_type": { "type": "string", "description": "Filter by session type (tty, x11, wayland, ai_agent)" },
+                    "seat": { "type": "string", "description": "Filter by seat" },
+                    "limit": { "type": "integer", "description": "Maximum number of sessions to return" },
+                    "store_path": { "type": "string", "description": "Optional custom session store path" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.session.get",
+            "description": "Retrieve status and specification for a specific session",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "session_id": { "type": "string", "description": "Session identifier" },
+                    "store_path": { "type": "string", "description": "Optional custom session store path" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "required": ["session_id"],
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.session.action",
+            "description": "Execute lifecycle action on a session (authenticate, activate, lock, unlock, terminate)",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "session_id": { "type": "string", "description": "Target session identifier" },
+                    "action": { "type": "string", "description": "Lifecycle action to apply (authenticate, activate, lock, unlock, terminate)" },
+                    "store_path": { "type": "string", "description": "Optional custom session store path" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "required": ["session_id", "action"],
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.session.create",
+            "description": "Bootstrap and register a new user or autonomous AI agent session into the store",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "spec": { "type": "object", "description": "Complete UserSessionSpec payload defining session configuration" },
+                    "store_path": { "type": "string", "description": "Optional path to custom session store JSON file" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "required": ["spec"],
                 "additionalProperties": false
             }
         }));
@@ -2228,6 +2333,367 @@ impl Server {
                     None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
                 )
             }
+            "aios.service.stats" => {
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                if let Some(ref p) = store_path_opt {
+                    if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+                        return json!({ "ok": false, "error": "store_path exceeds maximum length of 1024 characters or contains control characters" });
+                    }
+                }
+                let policy_path_opt = arguments.get("policy_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                if let Some(ref p) = policy_path_opt {
+                    if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+                        return json!({ "ok": false, "error": "policy_path exceeds maximum length of 1024 characters or contains control characters" });
+                    }
+                }
+
+                let f = move || -> Result<Value, String> {
+                    let report = aiosh_core::service_observability::ServiceObservabilityReport::generate_from_paths(
+                        store_path_opt.as_deref().map(std::path::Path::new),
+                        policy_path_opt.as_deref().map(std::path::Path::new),
+                    )?;
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.service.stats",
+                        "report": report
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.service.stats", "Generate Init & Service Supervision observability report", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.service.check" => {
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                if let Some(ref p) = store_path_opt {
+                    if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+                        return json!({ "ok": false, "error": "store_path exceeds maximum length of 1024 characters or contains control characters" });
+                    }
+                }
+                let auto_recover = arguments.get("auto_recover").and_then(|v| v.as_bool()).unwrap_or(false);
+
+                let f = move || -> Result<Value, String> {
+                    let target_path = if let Some(ref p) = store_path_opt {
+                        std::path::PathBuf::from(p)
+                    } else {
+                        std::path::PathBuf::from("/var/lib/aios/services.json")
+                    };
+
+                    let (store, report, recovered, backup_opt) = if auto_recover {
+                        aiosh_core::service_recovery::load_or_recover(&target_path)?
+                    } else if target_path.exists() {
+                        let s = aiosh_core::service_service::ServiceStore::load_from_path(&target_path)?;
+                        let rep = aiosh_core::service_recovery::validate_service_store(&s, &target_path);
+                        (s, rep, false, None)
+                    } else {
+                        let s = aiosh_core::service_service::ServiceStore::new();
+                        let rep = aiosh_core::service_recovery::validate_service_store(&s, &target_path);
+                        (s, rep, false, None)
+                    };
+
+                    Ok(json!({
+                        "ok": report.healthy,
+                        "tool": "aios.service.check",
+                        "report": report,
+                        "recovered": recovered,
+                        "backup_path": backup_opt.map(|p| p.to_string_lossy().to_string()),
+                        "total_services": store.services.len()
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.service.check", "Validate or recover Init & Service Supervision store", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.session.validate" => {
+                let id_opt = arguments.get("session_id").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let user_opt = arguments.get("username").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let spec_val_opt = arguments.get("spec");
+
+                let f = move || -> Result<Value, String> {
+                    if let Some(ref id) = id_opt {
+                        if id.len() > 64 || id.chars().any(|c| c.is_control()) {
+                            return Err("Invalid session ID: exceeds 64 chars or contains control characters".into());
+                        }
+                        match aiosh_core::session::validate_session_id(id) {
+                            Ok(()) => Ok(json!({
+                                "ok": true,
+                                "tool": "aios.session.validate",
+                                "valid": true,
+                                "session_id": id
+                            })),
+                            Err(e) => Err(format!("Invalid session ID: {}", e)),
+                        }
+                    } else if let Some(ref user) = user_opt {
+                        if user.len() > 32 || user.chars().any(|c| c.is_control()) {
+                            return Err("Invalid username: exceeds 32 chars or contains control characters".into());
+                        }
+                        match aiosh_core::session::validate_username(user) {
+                            Ok(()) => Ok(json!({
+                                "ok": true,
+                                "tool": "aios.session.validate",
+                                "valid": true,
+                                "username": user
+                            })),
+                            Err(e) => Err(format!("Invalid username: {}", e)),
+                        }
+                    } else if let Some(spec_val) = spec_val_opt {
+                        let payload_len = if spec_val.is_string() {
+                            spec_val.as_str().unwrap().len()
+                        } else {
+                            serde_json::to_string(spec_val).map(|s| s.len()).unwrap_or(0)
+                        };
+                        if payload_len > 1024 * 1024 {
+                            return Err("Spec payload exceeds 1 MiB limit".into());
+                        }
+                        let spec: aiosh_core::session::UserSessionSpec = if spec_val.is_string() {
+                            serde_json::from_str(spec_val.as_str().unwrap())
+                                .map_err(|e| format!("Failed to parse UserSessionSpec JSON: {}", e))?
+                        } else {
+                            serde_json::from_value(spec_val.clone())
+                                .map_err(|e| format!("Failed to parse UserSessionSpec JSON: {}", e))?
+                        };
+                        match aiosh_core::session::validate_user_session_spec(&spec) {
+                            Ok(()) => Ok(json!({
+                                "ok": true,
+                                "tool": "aios.session.validate",
+                                "valid": true,
+                                "session_id": spec.session_id,
+                                "spec": spec
+                            })),
+                            Err(errs) => Err(format!("User session specification violates invariants: {:?}", errs)),
+                        }
+                    } else {
+                        Err("Either 'session_id', 'username', or 'spec' parameter is required".into())
+                    }
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.session.validate", "Validate user session identifier, username, or specification", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.session.list" => {
+                let username_opt = arguments.get("username").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let state_opt = arguments.get("state").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let type_opt = arguments.get("session_type").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let seat_opt = arguments.get("seat").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let limit_opt = arguments.get("limit").and_then(|v| v.as_u64()).map(|n| n as usize);
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+                let f = move || -> Result<Value, String> {
+                    if let Some(ref p) = store_path_opt {
+                        if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+                            return Err("store_path exceeds 1024 characters or contains control characters".into());
+                        }
+                    }
+                    if let Some(limit) = limit_opt {
+                        if limit == 0 || limit > 10_000 {
+                            return Err("Limit must be between 1 and 10,000".into());
+                        }
+                    }
+                    let service = match store_path_opt {
+                        Some(ref p) => aiosh_core::session_service::UserSessionService::load_from_path(std::path::Path::new(p)).map_err(|e| e.to_string())?,
+                        None => aiosh_core::session_service::UserSessionService::new(),
+                    };
+
+                    let state = state_opt.as_deref().and_then(|st| match st.to_lowercase().as_str() {
+                        "initializing" => Some(aiosh_core::session::SessionState::Initializing),
+                        "authenticating" => Some(aiosh_core::session::SessionState::Authenticating),
+                        "active" => Some(aiosh_core::session::SessionState::Active),
+                        "locked" => Some(aiosh_core::session::SessionState::Locked),
+                        "terminating" => Some(aiosh_core::session::SessionState::Terminating),
+                        "terminated" => Some(aiosh_core::session::SessionState::Terminated),
+                        _ => None,
+                    });
+                    let session_type = type_opt.as_deref().and_then(|t| match t.to_lowercase().as_str() {
+                        "tty" => Some(aiosh_core::session::SessionType::Tty),
+                        "x11" => Some(aiosh_core::session::SessionType::X11),
+                        "wayland" => Some(aiosh_core::session::SessionType::Wayland),
+                        "ai_agent" | "aiagent" | "agent" => Some(aiosh_core::session::SessionType::AiAgent),
+                        _ => None,
+                    });
+
+                    let query = aiosh_core::session::UserSessionQuery {
+                        username: username_opt.clone(),
+                        state,
+                        session_type,
+                        seat: seat_opt.clone(),
+                        limit: limit_opt,
+                    };
+
+                    let sessions = service.query_sessions(&query);
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.session.list",
+                        "count": sessions.len(),
+                        "sessions": sessions
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.session.list", "List tracked user and agent sessions", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.session.get" => {
+                let id_opt = arguments.get("session_id").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+                let f = move || -> Result<Value, String> {
+                    let id = match id_opt {
+                        Some(ref s) => {
+                            if let Err(e) = aiosh_core::session::validate_session_id(s) {
+                                return Err(format!("Invalid session_id: {}", e));
+                            }
+                            s.as_str()
+                        },
+                        None => return Err("Missing required 'session_id'".to_string()),
+                    };
+                    if let Some(ref p) = store_path_opt {
+                        if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+                            return Err("store_path exceeds 1024 characters or contains control characters".into());
+                        }
+                    }
+                    let service = match store_path_opt {
+                        Some(ref p) => aiosh_core::session_service::UserSessionService::load_from_path(std::path::Path::new(p)).map_err(|e| e.to_string())?,
+                        None => aiosh_core::session_service::UserSessionService::new(),
+                    };
+
+                    let status = service.get_session(id).ok_or_else(|| format!("Session '{}' not found", id))?;
+                    let spec = service.get_spec(id);
+
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.session.get",
+                        "session_id": id,
+                        "status": status,
+                        "spec": spec
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.session.get", "Retrieve session status and specification", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.session.action" => {
+                let id_opt = arguments.get("session_id").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let action_opt = arguments.get("action").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+                let f = move || -> Result<Value, String> {
+                    let id = match id_opt {
+                        Some(ref s) => {
+                            if let Err(e) = aiosh_core::session::validate_session_id(s) {
+                                return Err(format!("Invalid session_id: {}", e));
+                            }
+                            s.as_str()
+                        },
+                        None => return Err("Missing required 'session_id'".to_string()),
+                    };
+                    let action_str = match action_opt {
+                        Some(ref s) => s.as_str(),
+                        None => return Err("Missing required 'action'".to_string()),
+                    };
+
+                    let action = match action_str.to_lowercase().as_str() {
+                        "authenticate" => aiosh_core::session::UserSessionAction::Authenticate,
+                        "activate" => aiosh_core::session::UserSessionAction::Activate,
+                        "lock" => aiosh_core::session::UserSessionAction::Lock,
+                        "unlock" => aiosh_core::session::UserSessionAction::Unlock,
+                        "terminate" => aiosh_core::session::UserSessionAction::Terminate,
+                        other => return Err(format!("Unknown session action: '{}'", other)),
+                    };
+
+                    if let Some(ref p) = store_path_opt {
+                        if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+                            return Err("store_path exceeds 1024 characters or contains control characters".into());
+                        }
+                    }
+
+                    let mut service = match store_path_opt {
+                        Some(ref p) => aiosh_core::session_service::UserSessionService::load_from_path(std::path::Path::new(p)).map_err(|e| e.to_string())?,
+                        None => aiosh_core::session_service::UserSessionService::new(),
+                    };
+
+                    let report = service.apply_action(id, action)?;
+
+                    if let Some(ref p) = store_path_opt {
+                        service.save_to_path(p).map_err(|e| format!("Failed to persist session store to '{}': {}", p, e))?;
+                    }
+
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.session.action",
+                        "report": report
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.session.action", "Execute lifecycle action on session", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.session.create" => {
+                let spec_opt = arguments.get("spec").cloned();
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+                let f = move || -> Result<Value, String> {
+                    let spec_val = spec_opt.as_ref().ok_or_else(|| "Missing required 'spec' parameter".to_string())?;
+
+                    let spec: aiosh_core::session::UserSessionSpec = if spec_val.is_string() {
+                        let s = spec_val.as_str().unwrap();
+                        if s.len() > 1024 * 1024 {
+                            return Err("Spec payload exceeds 1 MiB limit".into());
+                        }
+                        serde_json::from_str(s).map_err(|e| format!("Failed to parse spec JSON string: {}", e))?
+                    } else {
+                        let serialized = serde_json::to_string(spec_val).map_err(|e| format!("Serialization error: {}", e))?;
+                        if serialized.len() > 1024 * 1024 {
+                            return Err("Spec payload exceeds 1 MiB limit".into());
+                        }
+                        serde_json::from_value(spec_val.clone()).map_err(|e| format!("Failed to parse spec JSON object: {}", e))?
+                    };
+
+                    aiosh_core::session::validate_user_session_spec(&spec)
+                        .map_err(|errs| format!("User session specification violates invariants: {:?}", errs))?;
+
+                    let mut service = match store_path_opt {
+                        Some(ref p) => {
+                            if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+                                return Err("store_path exceeds 1024 characters or contains control characters".into());
+                            }
+                            aiosh_core::session_service::UserSessionService::load_from_path(std::path::Path::new(p)).map_err(|e| e.to_string())?
+                        },
+                        None => aiosh_core::session_service::UserSessionService::new(),
+                    };
+
+                    let report = service.create_session(spec.clone()).map_err(|e| e.to_string())?;
+
+                    if let Some(ref p) = store_path_opt {
+                        service.save_to_path(p).map_err(|e| format!("Failed to persist session store to '{}': {}", p, e))?;
+                    }
+
+                    let status = service.get_session(&report.session_id);
+
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.session.create",
+                        "session_id": report.session_id,
+                        "report": report,
+                        "spec": spec,
+                        "status": status
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.session.create", "Bootstrap and register a new user or agent session", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
             "aios.triage.list" => {
                 let status_opt = arguments.get("status").and_then(|v| v.as_str()).map(|s| s.to_string());
                 let severity_opt = arguments.get("severity").and_then(|v| v.as_str()).map(|s| s.to_string());
@@ -3034,6 +3500,31 @@ impl Server {
                 let wordlist = arguments.get("wordlist_path").and_then(|v| v.as_str()).unwrap_or("");
                 let timeout = arguments.get("timeout_s").and_then(|v| v.as_u64()).unwrap_or(120);
                 pentest::pentest_aircrack_ng(&mut self.pentest_ctx(), capture, wordlist, grant_id, timeout)
+            }
+            "aios.network.interfaces" => {
+                let timeout = arguments.get("timeout_s").and_then(|v| v.as_u64()).unwrap_or(30);
+                pentest::pentest_network_interfaces(&mut self.pentest_ctx(), grant_id, timeout)
+            }
+            "aios.wifi.scan" => {
+                let timeout = arguments.get("timeout_s").and_then(|v| v.as_u64()).unwrap_or(30);
+                pentest::pentest_wifi_scan(&mut self.pentest_ctx(), grant_id, timeout)
+            }
+            "aios.network.arp_scan" => {
+                let target = arguments.get("target").and_then(|v| v.as_str());
+                let timeout = arguments.get("timeout_s").and_then(|v| v.as_u64()).unwrap_or(30);
+                pentest::pentest_arp_scan(&mut self.pentest_ctx(), target, grant_id, timeout)
+            }
+            "aios.wifi.monitor" => {
+                let action = arguments.get("action").and_then(|v| v.as_str()).unwrap_or("start");
+                let interface = arguments.get("interface").and_then(|v| v.as_str()).unwrap_or("wlan0");
+                let timeout = arguments.get("timeout_s").and_then(|v| v.as_u64()).unwrap_or(30);
+                pentest::pentest_airmon(&mut self.pentest_ctx(), action, interface, grant_id, timeout)
+            }
+            "aios.web.gobuster" => {
+                let url = arguments.get("url").and_then(|v| v.as_str()).unwrap_or("");
+                let wordlist = arguments.get("wordlist").and_then(|v| v.as_str()).unwrap_or("/usr/share/wordlists/dirb/common.txt");
+                let timeout = arguments.get("timeout_s").and_then(|v| v.as_u64()).unwrap_or(120);
+                pentest::pentest_gobuster(&mut self.pentest_ctx(), url, wordlist, grant_id, timeout)
             }
             _ => json!({"ok": false, "error": format!("unknown tool: {}", tool)}),
         }
@@ -4187,6 +4678,174 @@ mod tests {
         let res_policy_telnet = server.call_tool("aios.service.policy", &json!({ "service_name": "telnet.service" }));
         assert_eq!(res_policy_telnet.get("ok").and_then(|v| v.as_bool()), Some(false));
         assert_eq!(res_policy_telnet.pointer("/verdict/allowed").and_then(|v| v.as_bool()), Some(false));
+
+        // 16. aios.service.stats
+        assert!(tools.iter().any(|t| t.get("name").and_then(|v| v.as_str()) == Some("aios.service.stats")));
+        let res_stats = server.call_tool("aios.service.stats", &json!({}));
+        assert_eq!(res_stats.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert!(res_stats.pointer("/report/total_services").and_then(|v| v.as_u64()).unwrap() > 0);
+        assert!(res_stats.pointer("/report/healthy_count").is_some());
+
+        let res_stats_ctrl = server.call_tool("aios.service.stats", &json!({ "store_path": "bad\0store" }));
+        assert_eq!(res_stats_ctrl.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        let res_stats_ctrl_pol = server.call_tool("aios.service.stats", &json!({ "policy_path": "bad\0policy" }));
+        assert_eq!(res_stats_ctrl_pol.get("ok").and_then(|v| v.as_bool()), Some(false));
+    }
+
+    #[test]
+    fn test_mcp_session_validate_tools() {
+        let mut server = Server::open();
+
+        // 1. Discovery in tool_manifest
+        let tools = server.tool_manifest();
+        assert!(tools.iter().any(|t| t.get("name").and_then(|v| v.as_str()) == Some("aios.session.validate")));
+
+        // 2. Validate valid session ID
+        let res_id_valid = server.call_tool("aios.session.validate", &json!({ "session_id": "sess-01" }));
+        assert_eq!(res_id_valid.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_id_valid.get("valid").and_then(|v| v.as_bool()), Some(true));
+
+        // 3. Validate invalid session ID
+        let res_id_invalid = server.call_tool("aios.session.validate", &json!({ "session_id": "../evil" }));
+        assert_eq!(res_id_invalid.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 4. Validate valid username
+        let res_user_valid = server.call_tool("aios.session.validate", &json!({ "username": "kali" }));
+        assert_eq!(res_user_valid.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_user_valid.get("valid").and_then(|v| v.as_bool()), Some(true));
+
+        // 5. Validate invalid username
+        let res_user_invalid = server.call_tool("aios.session.validate", &json!({ "username": "Kali" }));
+        assert_eq!(res_user_invalid.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 6. Validate valid spec
+        let res_spec_valid = server.call_tool("aios.session.validate", &json!({
+            "spec": {
+                "session_id": "sess-01",
+                "username": "kali",
+                "uid": 1000,
+                "gid": 1000,
+                "session_type": "x11",
+                "session_class": "user",
+                "seat": "seat0",
+                "vtnr": 7,
+                "display": ":0",
+                "remote_host": null,
+                "environment": {}
+            }
+        }));
+        assert_eq!(res_spec_valid.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_spec_valid.get("valid").and_then(|v| v.as_bool()), Some(true));
+
+        // 7. Validate invalid spec (missing display for X11)
+        let res_spec_invalid = server.call_tool("aios.session.validate", &json!({
+            "spec": {
+                "session_id": "sess-01",
+                "username": "kali",
+                "uid": 1000,
+                "gid": 1000,
+                "session_type": "x11",
+                "session_class": "user",
+                "seat": "seat0",
+                "vtnr": 7,
+                "display": null,
+                "remote_host": null,
+                "environment": {}
+            }
+        }));
+        assert_eq!(res_spec_invalid.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 8. Missing parameters
+        let res_missing = server.call_tool("aios.session.validate", &json!({}));
+        assert_eq!(res_missing.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 9. Discovery of session tools
+        assert!(tools.iter().any(|t| t.get("name").and_then(|v| v.as_str()) == Some("aios.session.list")));
+        assert!(tools.iter().any(|t| t.get("name").and_then(|v| v.as_str()) == Some("aios.session.get")));
+        assert!(tools.iter().any(|t| t.get("name").and_then(|v| v.as_str()) == Some("aios.session.action")));
+
+        // 10. List default sessions (should have canonical greeter-seat0)
+        let res_list = server.call_tool("aios.session.list", &json!({}));
+        assert_eq!(res_list.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert!(res_list.get("count").and_then(|v| v.as_u64()).unwrap() >= 1);
+
+        // 11. Get greeter-seat0
+        let res_get = server.call_tool("aios.session.get", &json!({ "session_id": "greeter-seat0" }));
+        assert_eq!(res_get.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_get.pointer("/status/username").and_then(|v| v.as_str()), Some("lightdm"));
+
+        // 12. Non-existent session lookup
+        let res_get_missing = server.call_tool("aios.session.get", &json!({ "session_id": "non-existent" }));
+        assert_eq!(res_get_missing.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 13. Apply action: Lock greeter session
+        let res_lock = server.call_tool("aios.session.action", &json!({
+            "session_id": "greeter-seat0",
+            "action": "lock"
+        }));
+        assert_eq!(res_lock.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_lock.pointer("/report/new_state").and_then(|v| v.as_str()), Some("locked"));
+
+        // 14. Discovery of aios.session.create
+        assert!(tools.iter().any(|t| t.get("name").and_then(|v| v.as_str()) == Some("aios.session.create")));
+
+        // 15. Create valid agent session
+        let res_create_valid = server.call_tool("aios.session.create", &json!({
+            "spec": {
+                "session_id": "agent-copilot-01",
+                "username": "kali",
+                "uid": 1000,
+                "gid": 1000,
+                "session_type": "ai_agent",
+                "session_class": "agent",
+                "seat": "seat0",
+                "vtnr": 1,
+                "display": null,
+                "remote_host": null,
+                "environment": {}
+            }
+        }));
+        assert_eq!(res_create_valid.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_create_valid.get("session_id").and_then(|v| v.as_str()), Some("agent-copilot-01"));
+        assert_eq!(res_create_valid.pointer("/status/state").and_then(|v| v.as_str()), Some("initializing"));
+
+        // 16. Create duplicate session fails (greeter-seat0 already exists in default store)
+        let res_create_dup = server.call_tool("aios.session.create", &json!({
+            "spec": {
+                "session_id": "greeter-seat0",
+                "username": "kali",
+                "uid": 1000,
+                "gid": 1000,
+                "session_type": "tty",
+                "session_class": "user",
+                "seat": "seat0",
+                "vtnr": 1,
+                "display": null,
+                "remote_host": null,
+                "environment": {}
+            }
+        }));
+        assert_eq!(res_create_dup.get("ok").and_then(|v| v.as_bool()), Some(false));
+        assert!(res_create_dup.get("error").and_then(|v| v.as_str()).unwrap().contains("already exists"));
+
+        // 17. Create invalid spec fails
+        let res_create_invalid = server.call_tool("aios.session.create", &json!({
+            "spec": {
+                "session_id": "../evil",
+                "username": "kali",
+                "uid": 1000,
+                "gid": 1000,
+                "session_type": "ai_agent",
+                "session_class": "agent",
+                "seat": "seat0"
+            }
+        }));
+        assert_eq!(res_create_invalid.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 18. Create missing spec parameter fails
+        let res_create_missing = server.call_tool("aios.session.create", &json!({}));
+        assert_eq!(res_create_missing.get("ok").and_then(|v| v.as_bool()), Some(false));
     }
 }
 
