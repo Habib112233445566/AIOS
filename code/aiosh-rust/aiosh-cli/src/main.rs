@@ -3082,8 +3082,147 @@ fn cmd_session(args: &[String]) -> i32 {
             }
             0
         }
+        Some("policy") => {
+            let policy_path_opt = parse_flag(rest, "--policy");
+            let spec_path_or_json = parse_flag(rest, "--spec");
+            let policy = match policy_path_opt {
+                Some(ref p) => match aiosh_core::session_policy::UserSessionSecurityPolicy::from_file(std::path::Path::new(p)) {
+                    Ok(pol) => pol,
+                    Err(e) => {
+                        classify_and_emit(
+                            &mut ctx,
+                            "session",
+                            "policy",
+                            json!({ "error": e }),
+                            "failure",
+                            None,
+                            Some("Failed to load session security policy"),
+                            "operator",
+                            None,
+                        );
+                        if is_json {
+                            println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "POLICY_LOAD_FAILED", "message": e } }));
+                        } else {
+                            eprintln!("Failed to load session security policy: {}", e);
+                        }
+                        return 1;
+                    }
+                },
+                None => aiosh_core::session_policy::UserSessionSecurityPolicy::default(),
+            };
+
+            if let Some(ref spec_input) = spec_path_or_json {
+                let content = if std::path::Path::new(spec_input).exists() {
+                    match std::fs::read_to_string(spec_input) {
+                        Ok(c) => c,
+                        Err(e) => {
+                            let err_msg = format!("failed to read session specification file '{}': {}", spec_input, e);
+                            classify_and_emit(&mut ctx, "session", "policy", json!({ "error": err_msg }), "failure", None, Some("Failed to read spec file"), "operator", None);
+                            if is_json {
+                                println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "FILE_READ_ERROR", "message": err_msg } }));
+                            } else {
+                                eprintln!("{}", err_msg);
+                            }
+                            return 1;
+                        }
+                    }
+                } else {
+                    spec_input.clone()
+                };
+
+                let spec: aiosh_core::session::UserSessionSpec = match serde_json::from_str(&content) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        let err_msg = format!("failed to parse user session specification JSON: {}", e);
+                        classify_and_emit(&mut ctx, "session", "policy", json!({ "error": err_msg }), "failure", None, Some("Failed to parse spec JSON"), "operator", None);
+                        if is_json {
+                            println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "PARSE_ERROR", "message": err_msg } }));
+                        } else {
+                            eprintln!("{}", err_msg);
+                        }
+                        return 1;
+                    }
+                };
+
+                let verdict = policy.evaluate_spec(&spec);
+                let passed = verdict.allowed;
+                classify_and_emit(
+                    &mut ctx,
+                    "session",
+                    "policy",
+                    json!({ "session_id": spec.session_id, "allowed": passed, "violations": verdict.violations.len() }),
+                    if passed { "success" } else { "failure" },
+                    Some(&spec.session_id),
+                    Some("Evaluated session specification against security policy"),
+                    "operator",
+                    None,
+                );
+                if is_json {
+                    println!("{}", json!({
+                        "code": if passed { 0 } else { 1 },
+                        "data": verdict,
+                        "error": if passed { serde_json::Value::Null } else { json!({ "code": "POLICY_VIOLATION", "message": format!("Session '{}' violated security policy", spec.session_id), "violations": verdict.violations }) }
+                    }));
+                } else if passed {
+                    println!("PASSED: Session '{}' conforms to security policy (mode: {:?})", spec.session_id, policy.mode);
+                } else {
+                    eprintln!("FAILED: Session '{}' violated security policy (mode: {:?}):", spec.session_id, policy.mode);
+                    for v in &verdict.violations {
+                        eprintln!("  [{}] {}", v.rule_id, v.description);
+                    }
+                }
+                return if passed { 0 } else { 1 };
+            }
+
+            // Evaluate entire store if --spec is not provided
+            let service = match load_service() {
+                Ok(s) => s,
+                Err(e) => {
+                    classify_and_emit(&mut ctx, "session", "policy", json!({ "error": e }), "failure", None, Some("Failed to load session store"), "operator", None);
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "STORE_LOAD_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("Failed to load session store: {}", e);
+                    }
+                    return 1;
+                }
+            };
+
+            let verdicts = policy.evaluate_store(&service.store);
+            let any_failed = verdicts.iter().any(|v| !v.allowed);
+            let total_violations: usize = verdicts.iter().map(|v| v.violations.len()).sum();
+            classify_and_emit(
+                &mut ctx,
+                "session",
+                "policy",
+                json!({ "verdicts_count": verdicts.len(), "total_violations": total_violations, "allowed": !any_failed }),
+                if !any_failed { "success" } else { "failure" },
+                None,
+                Some("Evaluated session store against security policy"),
+                "operator",
+                None,
+            );
+
+            if is_json {
+                println!("{}", json!({
+                    "code": if !any_failed { 0 } else { 1 },
+                    "data": { "mode": policy.mode, "verdicts": verdicts, "total_violations": total_violations, "allowed": !any_failed },
+                    "error": if !any_failed { serde_json::Value::Null } else { json!({ "code": "POLICY_VIOLATION", "message": "One or more sessions violated security policy" }) }
+                }));
+            } else if !any_failed {
+                println!("PASSED: All sessions in store conform to security policy (mode: {:?}, evaluated: {})", policy.mode, verdicts.len());
+            } else {
+                eprintln!("FAILED: Session store contains security policy violations (mode: {:?}):", policy.mode);
+                for v in &verdicts {
+                    for viol in &v.violations {
+                        eprintln!("  [{}] ({}) {}", viol.rule_id, viol.session_id, viol.description);
+                    }
+                }
+            }
+            if !any_failed { 0 } else { 1 }
+        }
         Some("--help") | Some("-h") | None => {
-            println!("aiosh session — User Session Bootstrap Manager\n\nUsage:\n  aiosh session validate (--id <id> | --user <username> | --spec <file_or_json>) [--json]\n  aiosh session list [--user <username>] [--state <state>] [--type <type>] [--seat <seat>] [--limit <n>] [--json] [--store <path>]\n  aiosh session show <session_id> [--json] [--store <path>]\n  aiosh session status <session_id> [--json] [--store <path>]\n  aiosh session create <spec_file_or_json> [--json] [--store <path>]\n  aiosh session action <session_id> <authenticate|activate|lock|unlock|terminate> [--json] [--store <path>]\n  aiosh session activate <session_id> [--json] [--store <path>]\n  aiosh session lock <session_id> [--json] [--store <path>]\n  aiosh session unlock <session_id> [--json] [--store <path>]\n  aiosh session terminate <session_id> [--json] [--store <path>]\n  aiosh session config [--config <path>] [--json]");
+            println!("aiosh session — User Session Bootstrap Manager\n\nUsage:\n  aiosh session validate (--id <id> | --user <username> | --spec <file_or_json>) [--json]\n  aiosh session list [--user <username>] [--state <state>] [--type <type>] [--seat <seat>] [--limit <n>] [--json] [--store <path>]\n  aiosh session show <session_id> [--json] [--store <path>]\n  aiosh session status <session_id> [--json] [--store <path>]\n  aiosh session create <spec_file_or_json> [--json] [--store <path>]\n  aiosh session action <session_id> <authenticate|activate|lock|unlock|terminate> [--json] [--store <path>]\n  aiosh session activate <session_id> [--json] [--store <path>]\n  aiosh session lock <session_id> [--json] [--store <path>]\n  aiosh session unlock <session_id> [--json] [--store <path>]\n  aiosh session terminate <session_id> [--json] [--store <path>]\n  aiosh session config [--config <path>] [--json]\n  aiosh session policy [--policy <path>] [--spec <file_or_json>] [--store <path>] [--json]");
             0
         }
         Some(other) => {
@@ -8304,6 +8443,32 @@ mod task_cli_tests {
 
         let code_create_missing = cmd_session(&["create".to_string()]);
         assert_eq!(code_create_missing, 2);
+
+        // policy
+        let code_policy_default = cmd_session(&["policy".to_string()]);
+        assert_eq!(code_policy_default, 0);
+
+        let code_policy_json = cmd_session(&["policy".to_string(), "--json".to_string()]);
+        assert_eq!(code_policy_json, 0);
+
+        let code_policy_valid_spec = cmd_session(&["policy".to_string(), "--spec".to_string(), valid_spec.to_string()]);
+        assert_eq!(code_policy_valid_spec, 0);
+
+        let policy_bad_spec = r#"{
+            "session_id": "sess-root-01",
+            "username": "root",
+            "uid": 0,
+            "gid": 0,
+            "session_type": "tty",
+            "session_class": "user",
+            "seat": "seat0",
+            "vtnr": 1,
+            "display": null,
+            "remote_host": null,
+            "environment": {}
+        }"#;
+        let code_policy_bad_spec = cmd_session(&["policy".to_string(), "--spec".to_string(), policy_bad_spec.to_string()]);
+        assert_eq!(code_policy_bad_spec, 1);
     }
 }
 

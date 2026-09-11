@@ -307,8 +307,52 @@ Validate complete session specification against formal invariants (`SB1..SB5`):
 - **Name Format**: Service names are limited to 128 ASCII characters matching `^[a-zA-Z0-9][a-zA-Z0-9_\-\.]{0,126}\.service$`. Control characters are strictly rejected.
 - **Masking Invariant**: A service in `masked` mode cannot be started or enabled. Active services must be stopped before they can be masked.
 - **Persistence Boundary**: By default, tools operate on the active runtime store; passing `store_path` reads and atomically persists changes to the designated JSON file using PID-isolated temp files.
-- **Path Length & Character Limits**: Custom `store_path` and `policy_path` strings are restricted to $\le 1024$ characters and must not contain ASCII control characters.
-- **Audit Logging**: All observability queries emit immutable SHA-256 hash-chained audit records to the SQLite WAL ring buffer.
+### User Session Bootstrap Tools
+
+The User Session Bootstrap tools provide programmatic management, inspection, and security policy evaluation for interactive and autonomous AI agent sessions:
+
+#### `aios.session.validate`
+Validates session identifiers, user identity bounds, or full session specifications against invariants.
+
+#### `aios.session.list`
+Queries tracked user and agent sessions with optional filters (`session_type`, `state`, `username`, `seat`, `limit`).
+
+#### `aios.session.get`
+Retrieves detailed session status and specification by `session_id`.
+
+#### `aios.session.action`
+Executes lifecycle state transitions (`authenticate`, `activate`, `lock`, `unlock`, `terminate`) on a session.
+
+#### `aios.session.create`
+Bootstraps and initializes a new user or agent session specification.
+
+#### `aios.session.config`
+Inspects runtime session parameters, timeouts, and capacity ceilings.
+
+#### `aios.session.policy`
+Evaluates user session specifications or entire session stores against `UserSessionSecurityPolicy` (`SSP1..SSP7`):
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 10,
+  "method": "tools/call",
+  "params": {
+    "name": "aios.session.policy",
+    "arguments": {
+      "spec": {
+        "session_id": "agent-eval-01",
+        "username": "kali",
+        "uid": 1000,
+        "gid": 1000,
+        "session_type": "ai_agent",
+        "session_class": "agent",
+        "seat": "seat0"
+      }
+    }
+  }
+}
+```
 
 ## Running
 

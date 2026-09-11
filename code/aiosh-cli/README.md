@@ -195,6 +195,33 @@ Output:
 }
 ```
 
+## User Session Bootstrap Commands
+
+The `aiosh session` command family provides management and security policy enforcement for interactive and AI agent sessions:
+
+```bash
+# Validate session ID or user specification
+aiosh session validate --id sess-01
+aiosh session validate --spec session.json
+
+# List active sessions
+aiosh session list --json
+
+# Lifecycle management
+aiosh session create session.json --json
+aiosh session lock sess-01
+aiosh session unlock sess-01
+aiosh session terminate sess-01
+
+# Inspect configuration
+aiosh session config --json
+
+# Evaluate security policy (SSP1..SSP7)
+aiosh session policy --json
+aiosh session policy --spec session.json
+aiosh session policy --policy policy.json --store /path/to/sessions.json
+```
+
 ## Tests
 
 ```bash

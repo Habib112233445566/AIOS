@@ -120,6 +120,14 @@ def test_sb6_automated_integration():
     )
 
 
+def test_sb7_security_policy():
+    return _run_cargo_test(
+        ["--test", "test_session_policy"],
+        "SB7",
+        "session security policy enforcement & invariants (SSP1..SSP7)",
+    )
+
+
 def main() -> int:
     suites = [
         ("SB1", test_sb1_data_model_integrity),
@@ -128,6 +136,7 @@ def main() -> int:
         ("SB4", test_sb4_core_service_lifecycle),
         ("SB5", test_sb5_configuration),
         ("SB6", test_sb6_automated_integration),
+        ("SB7", test_sb7_security_policy),
     ]
 
     failed = []
@@ -140,7 +149,7 @@ def main() -> int:
         print(f"FAIL: session_suites failed criteria: {', '.join(failed)}", file=sys.stderr)
         return 1
 
-    print("PASS: session_suites criteria (SB1..SB6)")
+    print("PASS: session_suites criteria (SB1..SB7)")
     return 0
 
 

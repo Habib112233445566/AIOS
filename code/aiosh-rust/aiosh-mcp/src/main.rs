@@ -952,6 +952,20 @@ impl Server {
                 "additionalProperties": false
             }
         }));
+        tools.push(json!({
+            "name": "aios.session.policy",
+            "description": "Evaluate user session specifications or session stores against UserSessionSecurityPolicy (SSP1..SSP7)",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "policy_path": { "type": "string", "description": "Optional path to custom session policy JSON file" },
+                    "spec": { "type": "object", "description": "Optional complete UserSessionSpec payload to evaluate" },
+                    "store_path": { "type": "string", "description": "Optional path to session store JSON file to evaluate" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
         tools
     }
 
@@ -2724,6 +2738,65 @@ impl Server {
                 dispatch::recorded_call(
                     &mut self.ring, &self.pep,
                     "aios.session.config", "Get User Session Bootstrap configuration", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.session.policy" => {
+                let policy_path_opt = arguments.get("policy_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                if let Some(ref p) = policy_path_opt {
+                    if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+                        return json!({ "ok": false, "error": "policy_path exceeds maximum length of 1024 characters or contains control characters" });
+                    }
+                }
+                let spec_val = arguments.get("spec").cloned();
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                if let Some(ref p) = store_path_opt {
+                    if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+                        return json!({ "ok": false, "error": "store_path exceeds maximum length of 1024 characters or contains control characters" });
+                    }
+                }
+
+                let f = move || -> Result<Value, String> {
+                    let policy = match policy_path_opt.as_deref() {
+                        Some(p) => aiosh_core::session_policy::UserSessionSecurityPolicy::from_file(std::path::Path::new(p))?,
+                        None => aiosh_core::session_policy::UserSessionSecurityPolicy::default(),
+                    };
+
+                    if let Some(ref sval) = spec_val {
+                        let spec: aiosh_core::session::UserSessionSpec = serde_json::from_value(sval.clone())
+                            .map_err(|e| format!("Failed to parse spec JSON: {}", e))?;
+                        let verdict = policy.evaluate_spec(&spec);
+                        Ok(json!({
+                            "ok": verdict.allowed,
+                            "tool": "aios.session.policy",
+                            "session_id": spec.session_id,
+                            "allowed": verdict.allowed,
+                            "mode": verdict.mode,
+                            "violations": verdict.violations,
+                            "evaluated_at": verdict.evaluated_at,
+                        }))
+                    } else {
+                        let service = match store_path_opt.as_deref() {
+                            Some(p) => aiosh_core::session_service::UserSessionService::load_from_path(std::path::Path::new(p)).map_err(|e| e.to_string())?,
+                            None => aiosh_core::session_service::UserSessionService::new(),
+                        };
+                        let verdicts = policy.evaluate_store(&service.store);
+                        let any_failed = verdicts.iter().any(|v| !v.allowed);
+                        let total_violations: usize = verdicts.iter().map(|v| v.violations.len()).sum();
+                        Ok(json!({
+                            "ok": !any_failed,
+                            "tool": "aios.session.policy",
+                            "mode": policy.mode,
+                            "allowed": !any_failed,
+                            "total_violations": total_violations,
+                            "verdicts": verdicts,
+                        }))
+                    }
+                };
+
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.session.policy", "Evaluate User Session Bootstrap security policy", arguments,
                     None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
                 )
             }
@@ -4887,6 +4960,51 @@ mod tests {
         assert_eq!(res_config.pointer("/config/max_sessions_per_user").and_then(|v| v.as_u64()), Some(32));
         assert_eq!(res_config.pointer("/config/default_idle_timeout_seconds").and_then(|v| v.as_u64()), Some(900));
         assert_eq!(res_config.pointer("/config/auto_persist").and_then(|v| v.as_bool()), Some(true));
+
+        // 20. aios.session.policy discovery and execution
+        assert!(tools.iter().any(|t| t.get("name").and_then(|v| v.as_str()) == Some("aios.session.policy")));
+        // Evaluate default store (should pass with canonical greeter session)
+        let res_policy_store = server.call_tool("aios.session.policy", &json!({}));
+        assert_eq!(res_policy_store.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_policy_store.get("allowed").and_then(|v| v.as_bool()), Some(true));
+
+        // Evaluate valid spec
+        let res_policy_valid = server.call_tool("aios.session.policy", &json!({
+            "spec": {
+                "session_id": "valid-policy-sess",
+                "username": "kali",
+                "uid": 1000,
+                "gid": 1000,
+                "session_type": "wayland",
+                "session_class": "user",
+                "seat": "seat0",
+                "vtnr": 1,
+                "display": ":0",
+                "remote_host": null,
+                "environment": {}
+            }
+        }));
+        assert_eq!(res_policy_valid.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_policy_valid.get("allowed").and_then(|v| v.as_bool()), Some(true));
+
+        // Evaluate invalid spec: root disallowed
+        let res_policy_root = server.call_tool("aios.session.policy", &json!({
+            "spec": {
+                "session_id": "root-policy-sess",
+                "username": "root",
+                "uid": 0,
+                "gid": 0,
+                "session_type": "tty",
+                "session_class": "user",
+                "seat": "seat0",
+                "vtnr": 1,
+                "display": null,
+                "remote_host": null,
+                "environment": {}
+            }
+        }));
+        assert_eq!(res_policy_root.get("ok").and_then(|v| v.as_bool()), Some(false));
+        assert_eq!(res_policy_root.get("allowed").and_then(|v| v.as_bool()), Some(false));
     }
 }
 

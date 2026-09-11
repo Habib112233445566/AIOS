@@ -75,6 +75,7 @@ pub mod service_recovery;
 pub mod service_service;
 pub mod session;
 pub mod session_config;
+pub mod session_policy;
 pub mod session_service;
 pub mod task_service;
 pub mod toolchain_config;
@@ -119,6 +120,9 @@ pub use session::{
     UserSessionStore,
 };
 pub use session_config::SessionConfig;
+pub use session_policy::{
+    SessionPolicyMode, SessionPolicyVerdict, SessionPolicyViolation, UserSessionSecurityPolicy,
+};
 pub use session_service::{UserSessionActionReport, UserSessionService};
 pub use types::GENESIS_HASH;
 
