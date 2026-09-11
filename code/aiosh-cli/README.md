@@ -59,6 +59,8 @@ The `aiosh session` surface provides operator and AI agent management over graph
 | `aiosh session auth` | Shortcut to mark session authenticated | `aiosh session auth <session_id> [--store <path>] [--json]` |
 | `aiosh session create` | Ingest specification and bootstrap new session | `aiosh session create <spec_file_or_json> [--store <path>] [--json]` |
 | `aiosh session config` | Inspect resolved session configuration and limits | `aiosh session config [--config <path>] [--json]` |
+| `aiosh session policy` | Evaluate security policy compliance (SSP1..SSP7) | `aiosh session policy [--policy <path>] [--spec <file_or_json>] [--store <path>] [--json]` |
+| `aiosh session stats` | Generate observability telemetry and metrics (SSO1..SSO6) | `aiosh session stats [--policy <path>] [--store <path>] [--json]` |
 
 ### Copy-Pasteable Invocations
 
@@ -220,6 +222,10 @@ aiosh session config --json
 aiosh session policy --json
 aiosh session policy --spec session.json
 aiosh session policy --policy policy.json --store /path/to/sessions.json
+
+# Observability and Telemetry (SSO1..SSO6)
+aiosh session stats --json
+aiosh session stats --policy policy.json --store /path/to/sessions.json
 ```
 
 ## Tests

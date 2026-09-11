@@ -966,6 +966,19 @@ impl Server {
                 "additionalProperties": false
             }
         }));
+        tools.push(json!({
+            "name": "aios.session.stats",
+            "description": "Generate User Session Bootstrap observability telemetry and state distribution report (SSO1..SSO6)",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "policy_path": { "type": "string", "description": "Optional path to custom session policy JSON file" },
+                    "store_path": { "type": "string", "description": "Optional path to session store JSON file" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
         tools
     }
 
@@ -2797,6 +2810,45 @@ impl Server {
                 dispatch::recorded_call(
                     &mut self.ring, &self.pep,
                     "aios.session.policy", "Evaluate User Session Bootstrap security policy", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.session.stats" => {
+                let policy_path_opt = arguments.get("policy_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                if let Some(ref p) = policy_path_opt {
+                    if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+                        return json!({ "ok": false, "error": "policy_path exceeds maximum length of 1024 characters or contains control characters" });
+                    }
+                }
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                if let Some(ref p) = store_path_opt {
+                    if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+                        return json!({ "ok": false, "error": "store_path exceeds maximum length of 1024 characters or contains control characters" });
+                    }
+                }
+
+                let f = move || -> Result<Value, String> {
+                    let policy = match policy_path_opt.as_deref() {
+                        Some(p) => aiosh_core::session_policy::UserSessionSecurityPolicy::from_file(std::path::Path::new(p))?,
+                        None => aiosh_core::session_policy::UserSessionSecurityPolicy::default(),
+                    };
+
+                    let service = match store_path_opt.as_deref() {
+                        Some(p) => aiosh_core::session_service::UserSessionService::load_from_path(std::path::Path::new(p)).map_err(|e| e.to_string())?,
+                        None => aiosh_core::session_service::UserSessionService::new(),
+                    };
+
+                    let report = aiosh_core::session_observability::SessionObservabilityReport::generate(&service.store, Some(&policy));
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.session.stats",
+                        "report": report
+                    }))
+                };
+
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.session.stats", "Generate User Session Bootstrap observability report", arguments,
                     None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
                 )
             }
@@ -5005,6 +5057,13 @@ mod tests {
         }));
         assert_eq!(res_policy_root.get("ok").and_then(|v| v.as_bool()), Some(false));
         assert_eq!(res_policy_root.get("allowed").and_then(|v| v.as_bool()), Some(false));
+
+        // 21. aios.session.stats discovery and execution
+        assert!(tools.iter().any(|t| t.get("name").and_then(|v| v.as_str()) == Some("aios.session.stats")));
+        let res_stats = server.call_tool("aios.session.stats", &json!({}));
+        assert_eq!(res_stats.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert!(res_stats.pointer("/report/state_breakdown").is_some());
+        assert!(res_stats.pointer("/report/distinct_users_count").is_some());
     }
 }
 

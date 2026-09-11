@@ -3221,8 +3221,121 @@ fn cmd_session(args: &[String]) -> i32 {
             }
             if !any_failed { 0 } else { 1 }
         }
+        Some("stats") => {
+            let policy_path_opt = parse_flag(rest, "--policy");
+            if let Some(ref p) = policy_path_opt {
+                if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+                    let msg = "policy path cannot exceed 1024 characters and cannot contain control characters";
+                    classify_and_emit(
+                        &mut ctx,
+                        "session",
+                        "stats",
+                        json!({ "error": msg }),
+                        "failure",
+                        Some("INVALID_ARGUMENT"),
+                        Some("Invalid policy path"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENT", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+            }
+
+            let service = match load_service() {
+                Ok(s) => s,
+                Err(e) => {
+                    classify_and_emit(
+                        &mut ctx,
+                        "session",
+                        "stats",
+                        json!({ "error": e }),
+                        "failure",
+                        Some("LOAD_STORE_FAILED"),
+                        Some("Failed to load session store"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "LOAD_STORE_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("Failed to load session store: {}", e);
+                    }
+                    return 1;
+                }
+            };
+
+            let policy = match policy_path_opt {
+                Some(ref p) => match aiosh_core::session_policy::UserSessionSecurityPolicy::from_file(std::path::Path::new(p)) {
+                    Ok(pol) => pol,
+                    Err(e) => {
+                        classify_and_emit(
+                            &mut ctx,
+                            "session",
+                            "stats",
+                            json!({ "error": e }),
+                            "failure",
+                            Some("POLICY_RESOLUTION_FAILED"),
+                            Some("Failed to resolve session security policy"),
+                            "operator",
+                            None,
+                        );
+                        if is_json {
+                            println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "POLICY_RESOLUTION_FAILED", "message": e } }));
+                        } else {
+                            eprintln!("Failed to resolve session security policy: {}", e);
+                        }
+                        return 1;
+                    }
+                },
+                None => aiosh_core::session_policy::UserSessionSecurityPolicy::default(),
+            };
+
+            let report = aiosh_core::session_observability::SessionObservabilityReport::generate(&service.store, Some(&policy));
+
+            classify_and_emit(
+                &mut ctx,
+                "session",
+                "stats",
+                json!({
+                    "total_sessions": report.total_sessions,
+                    "distinct_users": report.distinct_users_count,
+                    "locked_count": report.locked_count,
+                    "idle_sessions": report.idle_sessions_count,
+                    "policy_violations": report.policy_violations_count
+                }),
+                "success",
+                None,
+                Some("Generated session observability report"),
+                "operator",
+                None,
+            );
+
+            if is_json {
+                println!("{}", json!({
+                    "code": 0,
+                    "data": report,
+                    "error": serde_json::Value::Null
+                }));
+            } else {
+                println!("User Session Observability Report:");
+                println!("  Total Sessions:        {}", report.total_sessions);
+                println!("  Distinct Users:        {}", report.distinct_users_count);
+                println!("  Locked Sessions:       {}", report.locked_count);
+                println!("  Idle Sessions:         {}", report.idle_sessions_count);
+                println!("  Max Idle Duration:     {}s", report.max_idle_seconds);
+                println!("  Total Idle Duration:   {}s", report.total_idle_seconds);
+                println!("  Policy Compliant:      {}", report.policy_compliant_count);
+                println!("  Policy Violations:     {}", report.policy_violations_count);
+            }
+            0
+        }
         Some("--help") | Some("-h") | None => {
-            println!("aiosh session — User Session Bootstrap Manager\n\nUsage:\n  aiosh session validate (--id <id> | --user <username> | --spec <file_or_json>) [--json]\n  aiosh session list [--user <username>] [--state <state>] [--type <type>] [--seat <seat>] [--limit <n>] [--json] [--store <path>]\n  aiosh session show <session_id> [--json] [--store <path>]\n  aiosh session status <session_id> [--json] [--store <path>]\n  aiosh session create <spec_file_or_json> [--json] [--store <path>]\n  aiosh session action <session_id> <authenticate|activate|lock|unlock|terminate> [--json] [--store <path>]\n  aiosh session activate <session_id> [--json] [--store <path>]\n  aiosh session lock <session_id> [--json] [--store <path>]\n  aiosh session unlock <session_id> [--json] [--store <path>]\n  aiosh session terminate <session_id> [--json] [--store <path>]\n  aiosh session config [--config <path>] [--json]\n  aiosh session policy [--policy <path>] [--spec <file_or_json>] [--store <path>] [--json]");
+            println!("aiosh session — User Session Bootstrap Manager\n\nUsage:\n  aiosh session validate (--id <id> | --user <username> | --spec <file_or_json>) [--json]\n  aiosh session list [--user <username>] [--state <state>] [--type <type>] [--seat <seat>] [--limit <n>] [--json] [--store <path>]\n  aiosh session show <session_id> [--json] [--store <path>]\n  aiosh session status <session_id> [--json] [--store <path>]\n  aiosh session create <spec_file_or_json> [--json] [--store <path>]\n  aiosh session action <session_id> <authenticate|activate|lock|unlock|terminate> [--json] [--store <path>]\n  aiosh session activate <session_id> [--json] [--store <path>]\n  aiosh session lock <session_id> [--json] [--store <path>]\n  aiosh session unlock <session_id> [--json] [--store <path>]\n  aiosh session terminate <session_id> [--json] [--store <path>]\n  aiosh session config [--config <path>] [--json]\n  aiosh session policy [--policy <path>] [--spec <file_or_json>] [--store <path>] [--json]\n  aiosh session stats [--policy <path>] [--store <path>] [--json]");
             0
         }
         Some(other) => {

@@ -128,6 +128,14 @@ def test_sb7_security_policy():
     )
 
 
+def test_sb8_observability():
+    return _run_cargo_test(
+        ["--test", "test_session_observability"],
+        "SB8",
+        "session observability & telemetry metrics (SSO1..SSO6)",
+    )
+
+
 def main() -> int:
     suites = [
         ("SB1", test_sb1_data_model_integrity),
@@ -137,6 +145,7 @@ def main() -> int:
         ("SB5", test_sb5_configuration),
         ("SB6", test_sb6_automated_integration),
         ("SB7", test_sb7_security_policy),
+        ("SB8", test_sb8_observability),
     ]
 
     failed = []
@@ -149,7 +158,7 @@ def main() -> int:
         print(f"FAIL: session_suites failed criteria: {', '.join(failed)}", file=sys.stderr)
         return 1
 
-    print("PASS: session_suites criteria (SB1..SB7)")
+    print("PASS: session_suites criteria (SB1..SB8)")
     return 0
 
 

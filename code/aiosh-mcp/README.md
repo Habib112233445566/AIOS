@@ -33,6 +33,8 @@ Implements **ADR-0035 §D-2** (MCP as the only tool-call protocol).
 | `aios.session.action` |       | ✓     | Executes lifecycle action (`authenticate`, `activate`, `lock`, `unlock`, `terminate`) with seat arbitration |
 | `aios.session.create` |       | ✓     | Atomically provisions a new user or agent session with validation and capacity enforcement |
 | `aios.session.config` | ✓     |        | Inspects User Session Bootstrap configuration parameters and limits (SC1..SC7) |
+| `aios.session.policy` | ✓     |        | Evaluates session specifications or stores against UserSessionSecurityPolicy (SSP1..SSP7) |
+| `aios.session.stats`  | ✓     |        | Generates telemetry, metrics, and state distribution report (SSO1..SSO6) |
 
 ¹ The pentest and service action tools write an audit row through the same recorded dispatch helper; in Sprint 0 the row is written synchronously.
 
@@ -278,6 +280,8 @@ Validate complete session specification against formal invariants (`SB1..SB5`):
 - Show session status: `aiosh session show greeter-seat0 --json`
 - Lock / Unlock session: `aiosh session action greeter-seat0 lock --json`
 - Create session: `aiosh session create --id sess-agent-01 --user aios-agent --type agent --seat seat0 --json`
+- Security policy: `aiosh session policy --policy /path/to/policy.json --store /path/to/store.json --json`
+- Telemetry & observability: `aiosh session stats --policy /path/to/policy.json --store /path/to/store.json --json`
 
 ### User Session Constraints & Invariants (CS1..CS5, SB1..SB5)
 - **Seat Mutual Exclusion (CS2)**: At most one session can hold `SessionScope::Foreground` on any physical/virtual seat (e.g. `seat0`). Activating a session automatically demotes prior foreground sessions on that seat to `SessionScope::Background`.
@@ -349,6 +353,23 @@ Evaluates user session specifications or entire session stores against `UserSess
         "session_class": "agent",
         "seat": "seat0"
       }
+    }
+  }
+}
+```
+
+#### `aios.session.stats`
+Generates comprehensive observability telemetry and distribution metrics across tracked user and agent sessions (`SSO1..SSO6`):
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 11,
+  "method": "tools/call",
+  "params": {
+    "name": "aios.session.stats",
+    "arguments": {
+      "store_path": "/path/to/sessions.json"
     }
   }
 }
