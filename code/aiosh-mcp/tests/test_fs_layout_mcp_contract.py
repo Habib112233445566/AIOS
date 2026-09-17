@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""MCP Contract Unit Test for the Filesystem Layout surface (T-01535).
+r"""MCP Contract Unit Test for the Filesystem Layout surface (T-01535).
 
 Focused, standalone unit-level contract checks for the three defects the audit
 probed on the T-01534 surface. Every case is exercised through the real
@@ -39,6 +39,13 @@ C7 path aliases       `scope.paths` matching is canonical, so a deny entry canno
                       trailing dot/space (T-01537 S-18/S-19, found by the follow-up audit).
                       The fail-closed half is pinned too: an allow entry in a different
                       case must still authorize the call.
+C8 device spellings   a device/extended-length spelling (`\\?\`, `\\.\`, `\\?\UNC\`,
+                      `/ /?/-style, stacked) of a denied path is refused, because it used to
+                      normalize to a key that can never resolve and so never matched the
+                      resolved deny entry (T-01537 S-22/S-23, found by the pre-PR audit).
+                      Paths that stay in the device namespace (`\\.\PhysicalDrive0`) must be
+                      refused rather than merely unmatched, and the extended spelling of an
+                      *allowed* directory must still authorize.
 
 Run standalone:
     python code/aiosh-mcp/tests/test_fs_layout_mcp_contract.py
@@ -574,6 +581,108 @@ def test_c7_path_scope_aliases_are_canonical():
               f"aliases refused; {len(cases)} deny spellings; case-flipped allow still authorizes)")
 
 
+def _long_path(p):
+    r"""Long form of a path, so `\\?\`-prefixed spellings are not defeated by 8.3 expansion.
+
+    `\\?\` disables short-name expansion, so a prefix probe written against a path that
+    still contains an 8.3 component (`OBSESS~1`) never reaches the filesystem and cannot
+    demonstrate anything. Returns the input unchanged off Windows.
+    """
+    if sys.platform != "win32":
+        return str(p)
+    import ctypes
+
+    buf = ctypes.create_unicode_buffer(1024)
+    n = ctypes.windll.kernel32.GetLongPathNameW(str(p), buf, 1024)
+    return buf.value if n else str(p)
+
+
+def test_c8_device_spelling_aliases_are_refused():
+    r"""A device/extended-length spelling must not escape a deny entry or smuggle a device path.
+
+    Regression (T-01537 S-22/S-23): `canonical_to_key` stripped the `\\?\` prefix that
+    `canonicalize` *returns*, but nothing stripped the mirror-image prefix a *caller* could
+    *supply*. `\\?\<denied>\x.json` normalized to `/?/...`, which can never resolve, so the
+    lexical fallback compared it against the resolved deny entry, failed to match, and
+    authorized a write into the denied directory.
+    """
+    with tempfile.TemporaryDirectory() as td:
+        deny_dir = Path(td) / "DeniedDir"
+        allow_dir = Path(td) / "AllowedDir"
+        deny_dir.mkdir()
+        allow_dir.mkdir()
+        long_deny = _long_path(deny_dir)
+        long_allow = _long_path(allow_dir)
+        sep = "\\" if sys.platform == "win32" else "/"
+
+        def assert_scope_refused(label, res):
+            assert res.get("ok") is False, f"{label} must be refused: {res}"
+            assert res.get("gate") == "pep", f"{label}: expected the PEP gate: {res}"
+            text = err_text(res)
+            assert "path subject" in text and "scope.paths" in text, (
+                f"{label}: expected a scope refusal naming the path subject, got {text!r}"
+            )
+
+        deny_grant = create_pep_grant(deny=long_deny)
+        assert deny_grant, "failed to mint the deny-only PEP grant"
+        denied_store = lambda name: sep.join([long_deny, name])  # noqa: E731
+        spellings = [
+            ("plain", denied_store("p.json")),
+            ("extended-length", "\\\\?\\" + denied_store("e.json")),
+            ("device-namespace", "\\\\.\\" + denied_store("d.json")),
+            ("extended forward slashes", "//?/" + denied_store("g.json").replace("\\", "/")),
+            ("stacked prefixes", "\\\\?\\\\\\?\\" + denied_store("s.json")),
+            ("case-flipped extended", "\\\\?\\" + denied_store("u.json").upper()),
+        ]
+        for label, store_arg in spellings:
+            res = call_mcp_tool("aios.fs_layout.register",
+                                {"layout": copy.deepcopy(base_layout()),
+                                 "store_path": store_arg, "grant_id": deny_grant})
+            assert_scope_refused(label, res)
+
+        # A path that stays in the device namespace names nothing a scope entry could
+        # describe, so it must be denied rather than pass as an unmatched spelling.
+        # The spelling is easy to mistype and a mistyped one is not a device path at
+        # all: `\.\PhysicalDrive0` (one backslash before the dot) is an ordinary path
+        # that normalizes to `/PhysicalDrive0`, which no deny entry covers, so the case
+        # would pass for the wrong reason. `\\.\` is two backslashes, a dot and one
+        # backslash — asserted below so this data cannot silently rot again.
+        device_paths = [
+            ("bare device", "\\\\.\\PhysicalDrive0"),
+            ("device GLOBALROOT escape",
+             "\\\\.\\GLOBALROOT\\\\Device\\\\HarddiskVolume2\\\\x.json"),
+        ]
+        for label, store_arg in device_paths:
+            assert store_arg.startswith("\\\\") and store_arg.count("\\") >= 3, (
+                f"{label}: not a Windows device-namespace spelling: {store_arg!r}"
+            )
+            res = call_mcp_tool("aios.fs_layout.register",
+                                {"layout": copy.deepcopy(base_layout()),
+                                 "store_path": store_arg, "grant_id": deny_grant})
+            assert_scope_refused(label, res)
+
+        leaked = sorted(p.name for p in deny_dir.iterdir())
+        assert not leaked, f"no refused call may write inside the denied directory: {leaked}"
+
+        # Positive control: the extended spelling of an *allowed* directory must authorize
+        # (the fail-closed half), so a fix that simply refused every `\\?\` spelling fails.
+        allow_grant = create_pep_grant(allow=long_allow)
+        assert allow_grant, "failed to mint the allow-list PEP grant"
+        layout = copy.deepcopy(base_layout())
+        layout["id"] = "device-allow-v1"
+        allowed = call_mcp_tool("aios.fs_layout.register",
+                                {"layout": layout,
+                                 "store_path": "\\\\?\\" + sep.join([long_allow, "ok.json"]),
+                                 "grant_id": allow_grant})
+        assert allowed.get("ok") is True, (
+            f"the extended spelling of an allowed directory must still authorize: {allowed}"
+        )
+        assert (allow_dir / "ok.json").exists(), "the authorized write must land"
+
+        print("PASS: C8 device/extended-length spellings are refused (6 deny spellings, 2 "
+              "device-namespace paths; extended allow spelling still authorizes)")
+
+
 def main():
     print("=== RUNNING FILESYSTEM LAYOUT MCP CONTRACT UNIT TESTS ===")
     test_c1_argument_contract()
@@ -583,6 +692,7 @@ def main():
     test_c5_grant_path_scope_is_enforced()
     test_c6_nested_injection_is_refused()
     test_c7_path_scope_aliases_are_canonical()
+    test_c8_device_spelling_aliases_are_refused()
     print("\nALL FILESYSTEM LAYOUT MCP CONTRACT CRITERIA PASSED!")
     return 0
 

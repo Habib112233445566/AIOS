@@ -68,7 +68,8 @@ const MAX_CANONICAL_ASCENTS: usize = 64;
 /// * **case** — a case-insensitive filesystem has one `C:\Secret`, not two;
 /// * **8.3 short names** — `C:\PROGRA~1` *is* `C:\Program Files`;
 /// * **trailing dots/spaces** — Windows drops them from a component;
-/// * **symlinks/junctions** — a link to a denied directory is that directory.
+/// * **symlinks/junctions** — a link to a denied directory is that directory;
+/// * **device/extended prefixes** — `\\?\C:\Secret\x` and `C:\Secret\x` are one file.
 ///
 /// The longest **existing** prefix is therefore resolved through the filesystem, and only
 /// the tail that does not exist yet is kept lexically — and that tail is the normal case,
@@ -80,8 +81,12 @@ const MAX_CANONICAL_ASCENTS: usize = 64;
 /// Deliberately stricter than the write path in one place: trailing dots/spaces are
 /// stripped from *every* component, including intermediate ones Windows would treat as
 /// distinct names. Over-matching a deny entry fails closed, which is the safe direction.
-pub fn canonical_path_key(p: &str) -> String {
-    let mut key = normalize_path_str(p);
+///
+/// Returns `None` when the spelling cannot be mapped into the filesystem namespace at all
+/// (see [`strip_device_prefix`]); callers must treat that as **denied**, never as "no
+/// entry matched".
+pub fn canonical_path_key(p: &str) -> Option<String> {
+    let mut key = normalize_path_str(&strip_device_prefix(p)?);
     #[cfg(windows)]
     {
         key = key
@@ -93,10 +98,80 @@ pub fn canonical_path_key(p: &str) -> String {
     let key = resolve_existing_prefix(&key);
     #[cfg(windows)]
     {
-        return key.to_lowercase();
+        return Some(key.to_lowercase());
     }
     #[cfg(not(windows))]
-    key
+    Some(key)
+}
+
+/// The device/extended-length prefixes a caller may supply, longest first, all lowercase
+/// because the input is lowercased before matching. Windows accepts `/` and `\`
+/// interchangeably in each, so both spellings are listed.
+const DEVICE_PREFIXES: [&str; 8] = [
+    "\\\\?\\unc\\",
+    "\\\\.\\unc\\",
+    "//?/unc/",
+    "//./unc/",
+    "\\\\?\\",
+    "\\\\.\\",
+    "//?/",
+    "//./",
+];
+
+/// Reduce a caller-supplied device/extended-length spelling to its ordinary form.
+///
+/// `std::fs::canonicalize` *returns* `\\?\`-prefixed paths and [`canonical_to_key`] strips
+/// that prefix from its **output** — but nothing stripped the mirror-image prefix a
+/// **caller** could *supply*. `\\?\C:\DenyDir\x.json` therefore normalized to
+/// `/?/C:/DenyDir/x.json`, which can never resolve, so the lexical fallback in
+/// [`resolve_existing_prefix`] compared that mangled key against the *resolved* key of a
+/// real deny entry, failed to match, and authorized the call — which then wrote into the
+/// denied directory (T-01537 S-22/S-23). Stripping the prefix on input puts both
+/// spellings in one namespace, so `\\?\C:\d\x`, `\\.\C:\d\x`, `\\?\UNC\s\sh\x` and
+/// the plain `C:\d\x` / `\\s\sh\x` all key alike, matching the only namespace
+/// `std::fs::canonicalize` knows.
+///
+/// Returns `None` for a path that is *still* in the device namespace once the prefixes are
+/// gone — `\\.\PhysicalDrive0`, `\\.\GLOBALROOT\Device\HarddiskVolume2\x`,
+/// `\\?\PIPE\name`. Those name no location a `scope.paths` entry could ever describe, so
+/// leaving them to fall through as an unmatchable key is exactly the fail-open this closes.
+/// A path that never had a device prefix is passed through unchanged, including a relative
+/// one, whose existing lexical behaviour is deliberate.
+fn strip_device_prefix(p: &str) -> Option<String> {
+    let mut current = p.to_string();
+    let mut stripped = false;
+    // Loop because the prefixes stack (`\\?\\\?\C:\x`): each pass shortens the string, so
+    // this terminates, and a single blind strip would leave the inner one to mangle the key.
+    loop {
+        let lower = current.to_ascii_lowercase();
+        let Some(prefix) = DEVICE_PREFIXES.iter().find(|pre| lower.starts_with(**pre)) else {
+            break;
+        };
+        let rest = current[prefix.len()..].to_string();
+        let rest_lower = rest.to_ascii_lowercase();
+        // `\\?\UNC\server\share\...` is the extended spelling of `\\server\share\...`.
+        current = if rest_lower.starts_with("unc/") || rest_lower.starts_with("unc\\") {
+            format!("\\\\{}", &rest[4..])
+        } else {
+            rest
+        };
+        stripped = true;
+    }
+    if stripped && !is_filesystem_addressable(&current) {
+        return None;
+    }
+    Some(current)
+}
+
+/// True when a stripped path still names something in the filesystem namespace rather than
+/// in the device namespace: absolute (`\dir` or `/dir`), or drive-absolute (`C:\dir`).
+/// A bare device name (`PhysicalDrive0`), a `GLOBALROOT` escape or a pipe is not.
+fn is_filesystem_addressable(p: &str) -> bool {
+    let b = p.as_bytes();
+    if matches!(b.first(), Some(b'/') | Some(b'\\')) {
+        return true;
+    }
+    b.len() >= 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && matches!(b[2], b'/' | b'\\')
 }
 
 /// Replace the longest existing prefix of an already separator-normalized path with its
@@ -155,9 +230,17 @@ pub fn path_allowed(target: Option<&str>, paths: &PathScope) -> bool {
         Some(t) => t,
         None => return false,
     };
-    let key_target = canonical_path_key(target);
+    // An unmappable spelling names no location a `scope.paths` entry could describe, so it
+    // cannot be shown to sit inside an allowed directory: fail closed (T-01537 S-22).
+    let key_target = match canonical_path_key(target) {
+        Some(k) => k,
+        None => return false,
+    };
     for p in &paths.deny {
-        let key_p = canonical_path_key(p);
+        let key_p = match canonical_path_key(p) {
+            Some(k) => k,
+            None => continue,
+        };
         if key_target == key_p
             || key_target.starts_with(&format!("{}/", key_p.trim_end_matches('/')))
         {
@@ -169,7 +252,10 @@ pub fn path_allowed(target: Option<&str>, paths: &PathScope) -> bool {
         return true;
     }
     for p in &paths.allow {
-        let key_p = canonical_path_key(p);
+        let key_p = match canonical_path_key(p) {
+            Some(k) => k,
+            None => continue,
+        };
         if key_target == key_p
             || key_target.starts_with(&format!("{}/", key_p.trim_end_matches('/')))
         {
@@ -803,8 +889,9 @@ mod tests {
         // spelling from escaping a deny entry.
         let dir = std::env::temp_dir();
         let tail = dir.join("pep-key-probe").join("nested").join("store.json");
-        let key_dir = canonical_path_key(&dir.to_string_lossy());
-        let key_tail = canonical_path_key(&tail.to_string_lossy());
+        let key_dir = canonical_path_key(&dir.to_string_lossy()).expect("temp dir is keyable");
+        let key_tail =
+            canonical_path_key(&tail.to_string_lossy()).expect("temp dir tail is keyable");
         assert!(
             key_tail.starts_with(&format!("{}/", key_dir.trim_end_matches('/'))),
             "non-existent tail {} must stay under the resolved prefix {}",
@@ -825,6 +912,64 @@ mod tests {
             deny: vec![],
         };
         assert!(path_allowed(Some(&tail.to_string_lossy()), &allow_dir));
+    }
+
+    // ---- T-01537 S-22: device/extended-length spellings cannot evade scope.paths ----
+
+    #[test]
+    fn device_aliases_key_like_their_plain_form() {
+        // The pre-fix keyer left `\\?\C:\DenyDir` mangled (it does not start with a
+        // separator, so it never resolved), so the key differed from the resolved deny
+        // entry and the deny did not apply. These paths do not exist, so both sides stay
+        // lexical and the assertions are deterministic on any machine.
+        #[cfg(windows)]
+        {
+            let deny = PathScope {
+                allow: vec![],
+                deny: vec![r"C:\DenyDir".into()],
+            };
+            for spelling in [
+                r"\\?\C:\DenyDir\x.json",
+                r"\\.\C:\DenyDir\x.json",
+                r"//?/C:/DenyDir/x.json",
+                r"\\.\c:\denydir\x.json",
+                r"\\?\\\?\C:\DenyDir\x.json",
+            ] {
+                assert!(
+                    !path_allowed(Some(spelling), &deny),
+                    "{} must not escape the deny entry",
+                    spelling
+                );
+            }
+            // The UNC form of a denied UNC directory is the same directory.
+            let deny_unc = PathScope {
+                allow: vec![],
+                deny: vec![r"\\server\share".into()],
+            };
+            assert!(!path_allowed(
+                Some(r"\\?\UNC\server\share\x.json"),
+                &deny_unc
+            ));
+            // And the allow list agrees, so a long-path agent is not refused for spelling
+            // its own directory the extended way (the fail-closed half).
+            let allow = PathScope {
+                allow: vec![r"C:\AllowedDir".into()],
+                deny: vec![],
+            };
+            assert!(path_allowed(Some(r"\\?\C:\AllowedDir\store.json"), &allow));
+        }
+        // A prefix that is stripped but leaves nothing addressable must fail closed rather
+        // than become an unmatchable key, on every platform.
+        assert!(canonical_path_key(r"\\.\PhysicalDrive0").is_none());
+        assert!(canonical_path_key(r"\\?\GLOBALROOT\Device\HarddiskVolume2\x").is_none());
+        assert!(canonical_path_key(r"\\?\").is_none());
+        assert!(
+            !path_allowed(
+                Some(r"\\.\PhysicalDrive0"),
+                &PathScope { allow: vec![], deny: vec!["/tmp".into()] }
+            ),
+            "an unmappable device path must be denied, not merely unmatched"
+        );
     }
 
     #[test]
