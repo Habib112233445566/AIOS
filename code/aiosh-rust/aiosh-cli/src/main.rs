@@ -140,6 +140,20 @@ fn classify_and_emit(
     emit(ctx, tool, command, args, outcome, target, outcome_detail, actor, grant_token, c, Some(&cls))
 }
 
+/// Renders untrusted text safely for human-readable terminal output.
+///
+/// Layout specs may be authored outside the operator's trust boundary (shared profiles,
+/// agent-written stores, imported fstab). Raw control characters — notably ESC — would
+/// otherwise drive terminal escape sequences (CWE-150), so they are replaced with U+FFFD,
+/// the same substitution the argv boundary already performs. JSON output is never
+/// sanitized: serde escapes control characters correctly there.
+fn sanitize_terminal(input: &str) -> String {
+    input
+        .chars()
+        .map(|c| if c.is_control() { '\u{FFFD}' } else { c })
+        .collect()
+}
+
 fn ok_out(v: Value) {
     println!("{}", serde_json::to_string_pretty(&v).unwrap());
 }
@@ -199,8 +213,9 @@ fn main() {
         Some("package") => cmd_package(&args[1..]),
         Some("service") => cmd_service(&args[1..]),
         Some("session") => cmd_session(&args[1..]),
+        Some("layout") | Some("fs-layout") => cmd_fs_layout(&args[1..]),
         Some("--help") | Some("-h") | None => {
-            println!("aiosh — AIOS shell CLI (Rust)\n\nUsage: aiosh <status|run|agent|audit|grant|pentest|classify|task|ci|release|backup|toolchain|doc|evidence|repo|secrets|triage|handoff|distro|image|package|service|session> ...\n\n  aiosh task <status|done|block|unblock|skip|rebuild|check>  Task ledger control\n  aiosh ci <show|failures|check|config|metrics> [--file PATH]  CI smoke reports\n  aiosh release generate  Create bootable ISO\n  aiosh backup create  Create system snapshot zip\n  aiosh toolchain check [--config <path>]  Verify host environment against ToolchainManifest\n  aiosh toolchain show [--config <path>]   Display the resolved ToolchainManifest\n  aiosh doc <show|check|search>  Documentation Index Control\n  aiosh evidence <verify|hash|scan>   Evidence & Audit Trail Control\n  aiosh repo <health|check>  Repository Health Diagnostics\n  aiosh secrets <scan|check> [--config <path>]  Secrets & Access Hygiene Scanner\n  aiosh triage <list|show|record|resolve|ingest|check>  Regression Triage Manager\n  aiosh handoff <list|show|initiate|accept|reject|complete|cancel>  Agent Handoff Protocol Manager\n  aiosh distro <list|show|evaluate|recommend|policy|stats|check>  Linux Distro Selection & Justification Manager\n  aiosh image <list|show|plan|filter>  Linux Base Image Build & Packaging Manager\n  aiosh package <list|show|search|plan|apply|validate>  Linux Package Management & Store Control\n  aiosh service <validate|list|show|status|action|start|stop|restart|reload|order>  Init & Service Supervision Control\n  aiosh session <validate|list|show|status|create|action|activate|lock|unlock|terminate|config>  User Session Bootstrap Control");
+            println!("aiosh — AIOS shell CLI (Rust)\n\nUsage: aiosh <status|run|agent|audit|grant|pentest|classify|task|ci|release|backup|toolchain|doc|evidence|repo|secrets|triage|handoff|distro|image|package|service|session|layout> ...\n\n  aiosh task <status|done|block|unblock|skip|rebuild|check>  Task ledger control\n  aiosh ci <show|failures|check|config|metrics> [--file PATH]  CI smoke reports\n  aiosh release generate  Create bootable ISO\n  aiosh backup create  Create system snapshot zip\n  aiosh toolchain check [--config <path>]  Verify host environment against ToolchainManifest\n  aiosh toolchain show [--config <path>]   Display the resolved ToolchainManifest\n  aiosh doc <show|check|search>  Documentation Index Control\n  aiosh evidence <verify|hash|scan>   Evidence & Audit Trail Control\n  aiosh repo <health|check>  Repository Health Diagnostics\n  aiosh secrets <scan|check> [--config <path>]  Secrets & Access Hygiene Scanner\n  aiosh triage <list|show|record|resolve|ingest|check>  Regression Triage Manager\n  aiosh handoff <list|show|initiate|accept|reject|complete|cancel>  Agent Handoff Protocol Manager\n  aiosh distro <list|show|evaluate|recommend|policy|stats|check>  Linux Distro Selection & Justification Manager\n  aiosh image <list|show|plan|filter>  Linux Base Image Build & Packaging Manager\n  aiosh package <list|show|search|plan|apply|validate>  Linux Package Management & Store Control\n  aiosh service <validate|list|show|status|action|start|stop|restart|reload|order>  Init & Service Supervision Control\n  aiosh session <validate|list|show|status|create|action|activate|lock|unlock|terminate|config>  User Session Bootstrap Control\n  aiosh layout <list|show|validate|check|probe|diff|fstab|register|set-active|remove|import-fstab>  Filesystem Layout & Target Partitioning Manager");
             0
         }
         Some(other) => {
@@ -3334,8 +3349,164 @@ fn cmd_session(args: &[String]) -> i32 {
             }
             0
         }
+        Some("check") | Some("recover") => {
+            let is_fix = sub == Some("recover") || has_flag(rest, "--fix");
+            let target_path = if let Some(ref p) = store_path_opt {
+                std::path::PathBuf::from(p)
+            } else {
+                std::path::PathBuf::from("/var/run/aios/sessions.json")
+            };
+
+            let (_service, report, recovered, backup_opt) = if is_fix {
+                match aiosh_core::session_recovery::load_or_recover(&target_path) {
+                    Ok(res) => res,
+                    Err(e) => {
+                        let msg = format!("recovery failed: {}", e);
+                        classify_and_emit(
+                            &mut ctx,
+                            "session",
+                            "check",
+                            json!({ "error": msg }),
+                            "failure",
+                            Some("RECOVERY_FAILED"),
+                            Some("Failed to recover user session store"),
+                            "operator",
+                            None,
+                        );
+                        if is_json {
+                            println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "RECOVERY_FAILED", "message": msg } }));
+                        } else {
+                            eprintln!("{}", msg);
+                        }
+                        return 1;
+                    }
+                }
+            } else if target_path.exists() {
+                match aiosh_core::session_service::UserSessionService::load_from_path(&target_path) {
+                    Ok(s) => {
+                        let rep = aiosh_core::session_recovery::validate_session_store(&s.store, &target_path);
+                        (s, rep, false, None)
+                    }
+                    Err(e) => {
+                        let rep = aiosh_core::session_recovery::SessionValidationReport {
+                            store_path: target_path.to_string_lossy().to_string(),
+                            total_sessions: 0,
+                            valid_sessions: 0,
+                            invalid_sessions: 0,
+                            errors: vec![format!("failed to load session store: {}", e)],
+                            warnings: vec![],
+                            healthy: false,
+                            evaluated_at: chrono::Utc::now().to_rfc3339(),
+                        };
+                        classify_and_emit(
+                            &mut ctx,
+                            "session",
+                            "check",
+                            json!({ "healthy": false, "errors": rep.errors }),
+                            "failure",
+                            Some("LOAD_STORE_FAILED"),
+                            Some("Session store check failed"),
+                            "operator",
+                            None,
+                        );
+                        if is_json {
+                            println!("{}", json!({
+                                "code": 1,
+                                "data": serde_json::Value::Null,
+                                "error": {
+                                    "code": "LOAD_STORE_FAILED",
+                                    "message": format!("Session store at {} is corrupted or unreadable. Run with --fix to recover.", target_path.display()),
+                                    "report": rep
+                                }
+                            }));
+                        } else {
+                            eprintln!("Session Store Validation: UNHEALTHY");
+                            for err in &rep.errors {
+                                eprintln!("  [-] {}", err);
+                            }
+                            eprintln!("Hint: Run with --fix to automatically recover.");
+                        }
+                        return 1;
+                    }
+                }
+            } else {
+                let s = aiosh_core::session_service::UserSessionService::new();
+                let rep = aiosh_core::session_recovery::validate_session_store(&s.store, &target_path);
+                (s, rep, false, None)
+            };
+
+            let action_name = if is_fix && recovered { "session.repair" } else { "session.check" };
+            classify_and_emit(
+                &mut ctx,
+                "session",
+                action_name,
+                json!({
+                    "healthy": report.healthy,
+                    "total_sessions": report.total_sessions,
+                    "valid_sessions": report.valid_sessions,
+                    "invalid_sessions": report.invalid_sessions,
+                    "recovered": recovered,
+                    "backup_path": backup_opt.as_ref().map(|p| p.to_string_lossy().to_string()),
+                    "errors_count": report.errors.len(),
+                    "warnings_count": report.warnings.len()
+                }),
+                if report.healthy { "success" } else { "failure" },
+                None,
+                Some(if recovered { "Recovered user session store" } else { "Checked user session store" }),
+                "operator",
+                None,
+            );
+
+            if is_json {
+                println!("{}", json!({
+                    "code": if report.healthy { 0 } else { 1 },
+                    "data": {
+                        "healthy": report.healthy,
+                        "recovered": recovered,
+                        "backup_path": backup_opt.map(|p| p.to_string_lossy().to_string()),
+                        "total_sessions": report.total_sessions,
+                        "valid_sessions": report.valid_sessions,
+                        "invalid_sessions": report.invalid_sessions,
+                        "errors": report.errors,
+                        "warnings": report.warnings,
+                        "evaluated_at": report.evaluated_at,
+                        "store_path": report.store_path
+                    },
+                    "error": if report.healthy { serde_json::Value::Null } else {
+                        json!({ "code": "VALIDATION_FAILED", "message": "Session store has validation errors" })
+                    }
+                }));
+            } else {
+                println!("User Session Store Validation Report:");
+                println!("  Store Path:        {}", report.store_path);
+                println!("  Status:            {}", if report.healthy { "HEALTHY" } else { "UNHEALTHY" });
+                println!("  Total Sessions:    {}", report.total_sessions);
+                println!("  Valid Sessions:    {}", report.valid_sessions);
+                println!("  Invalid Sessions:  {}", report.invalid_sessions);
+                if recovered {
+                    println!("  [+] Recovered: Store was repaired using canonical default");
+                    if let Some(bak) = backup_opt {
+                        println!("  [+] Quarantined Backup: {}", bak.display());
+                    }
+                }
+                if !report.errors.is_empty() {
+                    println!("  Errors ({}):", report.errors.len());
+                    for err in &report.errors {
+                        println!("    [-] {}", err);
+                    }
+                }
+                if !report.warnings.is_empty() {
+                    println!("  Warnings ({}):", report.warnings.len());
+                    for warn in &report.warnings {
+                        println!("    [!] {}", warn);
+                    }
+                }
+            }
+
+            if report.healthy { 0 } else { 1 }
+        }
         Some("--help") | Some("-h") | None => {
-            println!("aiosh session — User Session Bootstrap Manager\n\nUsage:\n  aiosh session validate (--id <id> | --user <username> | --spec <file_or_json>) [--json]\n  aiosh session list [--user <username>] [--state <state>] [--type <type>] [--seat <seat>] [--limit <n>] [--json] [--store <path>]\n  aiosh session show <session_id> [--json] [--store <path>]\n  aiosh session status <session_id> [--json] [--store <path>]\n  aiosh session create <spec_file_or_json> [--json] [--store <path>]\n  aiosh session action <session_id> <authenticate|activate|lock|unlock|terminate> [--json] [--store <path>]\n  aiosh session activate <session_id> [--json] [--store <path>]\n  aiosh session lock <session_id> [--json] [--store <path>]\n  aiosh session unlock <session_id> [--json] [--store <path>]\n  aiosh session terminate <session_id> [--json] [--store <path>]\n  aiosh session config [--config <path>] [--json]\n  aiosh session policy [--policy <path>] [--spec <file_or_json>] [--store <path>] [--json]\n  aiosh session stats [--policy <path>] [--store <path>] [--json]");
+            println!("aiosh session — User Session Bootstrap Manager\n\nUsage:\n  aiosh session validate (--id <id> | --user <username> | --spec <file_or_json>) [--json]\n  aiosh session list [--user <username>] [--state <state>] [--type <type>] [--seat <seat>] [--limit <n>] [--json] [--store <path>]\n  aiosh session show <session_id> [--json] [--store <path>]\n  aiosh session status <session_id> [--json] [--store <path>]\n  aiosh session create <spec_file_or_json> [--json] [--store <path>]\n  aiosh session action <session_id> <authenticate|activate|lock|unlock|terminate> [--json] [--store <path>]\n  aiosh session activate <session_id> [--json] [--store <path>]\n  aiosh session lock <session_id> [--json] [--store <path>]\n  aiosh session unlock <session_id> [--json] [--store <path>]\n  aiosh session terminate <session_id> [--json] [--store <path>]\n  aiosh session config [--config <path>] [--json]\n  aiosh session policy [--policy <path>] [--spec <file_or_json>] [--store <path>] [--json]\n  aiosh session stats [--policy <path>] [--store <path>] [--json]\n  aiosh session check [--fix] [--store <path>] [--json]\n  aiosh session recover [--store <path>] [--json]");
             0
         }
         Some(other) => {
@@ -3344,6 +3515,1181 @@ fn cmd_session(args: &[String]) -> i32 {
                 println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "UNKNOWN_SUBCOMMAND", "message": msg } }));
             } else {
                 eprintln!("{}", msg);
+            }
+            2
+        }
+    }
+}
+
+fn load_fs_layout_service(store_path_opt: Option<&str>) -> Result<aiosh_core::fs_layout_service::FilesystemLayoutService, String> {
+    match store_path_opt {
+        Some(p) => {
+            let path = std::path::Path::new(p);
+            if path.exists() {
+                aiosh_core::fs_layout_service::FilesystemLayoutService::load_from_path(path)
+            } else {
+                Ok(aiosh_core::fs_layout_service::FilesystemLayoutService::new())
+            }
+        }
+        None => Ok(aiosh_core::fs_layout_service::FilesystemLayoutService::new()),
+    }
+}
+
+fn cmd_fs_layout_register(
+    rest: &[String],
+    store_path_opt: Option<&str>,
+    is_json: bool,
+    ctx: &mut Ctx,
+) -> i32 {
+    let spec_str = match parse_flag(rest, "--spec") {
+        Some(s) => s,
+        None => {
+            let msg = "register requires '--spec <file_or_json>' argument";
+            classify_and_emit(
+                ctx,
+                "fs_layout",
+                "register",
+                json!({ "error": msg }),
+                "failure",
+                None,
+                Some("Missing --spec argument for layout register"),
+                "operator",
+                None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "ARGUMENT_ERROR", "message": msg } }));
+            } else {
+                eprintln!("{}", msg);
+            }
+            return 2;
+        }
+    };
+
+    // Inline JSON specs legitimately span multiple lines and often exceed 1024 bytes, so only
+    // null bytes are rejected up front; path-style values are still bounded when read below.
+    if spec_str.contains('\0') {
+        let msg = "spec argument cannot contain null bytes";
+        classify_and_emit(
+            ctx,
+            "fs_layout",
+            "register",
+            json!({ "error": msg }),
+            "failure",
+            None,
+            Some("Invalid spec argument"),
+            "operator",
+            None,
+        );
+        if is_json {
+            println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "ARGUMENT_ERROR", "message": msg } }));
+        } else {
+            eprintln!("{}", msg);
+        }
+        return 2;
+    }
+
+    let p = std::path::Path::new(&spec_str);
+    let spec = if p.exists() {
+        // Bounded, non-blocking read. A metadata-only size check is a check-then-use
+        // race, and a FIFO or character device named by --spec would otherwise block
+        // the CLI forever (FIFO) or stream until memory is exhausted (/dev/zero).
+        let content = match aiosh_core::fs_layout_service::read_bounded_text_file(
+            p,
+            aiosh_core::fs_layout_service::MAX_LAYOUT_DOC_BYTES,
+            "spec file",
+        ) {
+            Ok(c) => c,
+            Err(e) => {
+                let msg = e.message().to_string();
+                let (code, detail) = match e {
+                    aiosh_core::fs_layout_service::LayoutDocReadError::TooLarge(_) => {
+                        ("SPEC_SIZE_EXCEEDED", "Spec file exceeds size limit")
+                    }
+                    aiosh_core::fs_layout_service::LayoutDocReadError::NotRegularFile(_) => {
+                        ("SPEC_NOT_REGULAR_FILE", "Spec path is not a regular file")
+                    }
+                    _ => ("SPEC_READ_FAILED", "Failed to read spec file"),
+                };
+                classify_and_emit(
+                    ctx,
+                    "fs_layout",
+                    "register",
+                    json!({ "error": &msg }),
+                    "failure",
+                    None,
+                    Some(detail),
+                    "operator",
+                    None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": code, "message": msg } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(&msg));
+                }
+                return 1;
+            }
+        };
+        match aiosh_core::fs_layout::FilesystemLayoutSpec::from_json(&content) {
+            Ok(s) => s,
+            Err(e) => {
+                let msg = format!("failed to parse layout spec JSON: {}", e);
+                classify_and_emit(
+                    ctx,
+                    "fs_layout",
+                    "register",
+                    json!({ "error": &msg }),
+                    "failure",
+                    None,
+                    Some("Failed to parse layout spec JSON"),
+                    "operator",
+                    None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "SPEC_PARSE_FAILED", "message": msg } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(&msg));
+                }
+                return 1;
+            }
+        }
+    } else {
+        match aiosh_core::fs_layout::FilesystemLayoutSpec::from_json(&spec_str) {
+            Ok(s) => s,
+            Err(e) => {
+                let msg = format!("failed to parse layout spec JSON string: {}", e);
+                classify_and_emit(
+                    ctx,
+                    "fs_layout",
+                    "register",
+                    json!({ "error": &msg }),
+                    "failure",
+                    None,
+                    Some("Failed to parse layout spec JSON string"),
+                    "operator",
+                    None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "SPEC_PARSE_FAILED", "message": msg } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(&msg));
+                }
+                return 1;
+            }
+        }
+    };
+
+    if let Err(e) = spec.validate() {
+        let msg = format!("layout spec validation failed: {}", e);
+        classify_and_emit(
+            ctx,
+            "fs_layout",
+            "register",
+            json!({ "id": spec.id, "error": &msg }),
+            "failure",
+            Some(&spec.id),
+            Some("Layout spec validation failed on register"),
+            "operator",
+            None,
+        );
+        if is_json {
+            println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "VALIDATION_FAILED", "message": msg } }));
+        } else {
+            eprintln!("{}", sanitize_terminal(&msg));
+        }
+        return 1;
+    }
+
+    let mut service = match load_fs_layout_service(store_path_opt) {
+        Ok(s) => s,
+        Err(e) => {
+            let msg = format!("failed to load layout store: {}", e);
+            classify_and_emit(
+                ctx,
+                "fs_layout",
+                "register",
+                json!({ "error": &msg }),
+                "failure",
+                None,
+                Some("Failed to load layout store"),
+                "operator",
+                None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "LOAD_STORE_FAILED", "message": msg } }));
+            } else {
+                eprintln!("{}", sanitize_terminal(&msg));
+            }
+            return 1;
+        }
+    };
+
+    let layout_id = spec.id.clone();
+    if let Err(e) = service.store_mut().register_layout(spec) {
+        classify_and_emit(
+            ctx,
+            "fs_layout",
+            "register",
+            json!({ "id": layout_id, "error": &e }),
+            "failure",
+            Some(&layout_id),
+            Some("Failed to register layout in store"),
+            "operator",
+            None,
+        );
+        if is_json {
+            println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "REGISTER_FAILED", "message": e } }));
+        } else {
+            eprintln!("failed to register layout: {}", sanitize_terminal(&e));
+        }
+        return 1;
+    }
+
+    if let Some(store_path) = store_path_opt {
+        if let Err(e) = service.save_to_path(std::path::Path::new(store_path)) {
+            let msg = format!("failed to persist layout store to '{}': {}", store_path, e);
+            classify_and_emit(
+                ctx,
+                "fs_layout",
+                "register",
+                json!({ "id": layout_id, "error": &msg }),
+                "failure",
+                Some(&layout_id),
+                Some("Failed to persist layout store"),
+                "operator",
+                None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "SAVE_STORE_FAILED", "message": msg } }));
+            } else {
+                eprintln!("{}", sanitize_terminal(&msg));
+            }
+            return 1;
+        }
+    }
+
+    classify_and_emit(
+        ctx,
+        "fs_layout",
+        "register",
+        json!({ "id": layout_id, "registered": true, "store": store_path_opt }),
+        "success",
+        Some(&layout_id),
+        Some("Registered new filesystem layout"),
+        "operator",
+        None,
+    );
+
+    if is_json {
+        println!("{}", json!({ "code": 0, "data": { "id": layout_id, "registered": true }, "error": serde_json::Value::Null }));
+    } else {
+        println!("SUCCESS: Registered filesystem layout '{}'", layout_id);
+    }
+    0
+}
+
+fn cmd_fs_layout_set_active(
+    rest: &[String],
+    store_path_opt: Option<&str>,
+    is_json: bool,
+    ctx: &mut Ctx,
+) -> i32 {
+    let target_id = rest.iter().find(|s| !s.starts_with("--"));
+    let target_id = match target_id {
+        Some(id) if !id.is_empty() => id.as_str(),
+        _ => {
+            let msg = "set-active requires '<id>' argument";
+            classify_and_emit(
+                ctx,
+                "fs_layout",
+                "set_active",
+                json!({ "error": msg }),
+                "failure",
+                None,
+                Some("Missing <id> argument for layout set-active"),
+                "operator",
+                None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "ARGUMENT_ERROR", "message": msg } }));
+            } else {
+                eprintln!("{}", msg);
+            }
+            return 2;
+        }
+    };
+
+    let mut service = match load_fs_layout_service(store_path_opt) {
+        Ok(s) => s,
+        Err(e) => {
+            let msg = format!("failed to load layout store: {}", e);
+            classify_and_emit(
+                ctx,
+                "fs_layout",
+                "set_active",
+                json!({ "error": &msg }),
+                "failure",
+                None,
+                Some("Failed to load layout store"),
+                "operator",
+                None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "LOAD_STORE_FAILED", "message": msg } }));
+            } else {
+                eprintln!("{}", sanitize_terminal(&msg));
+            }
+            return 1;
+        }
+    };
+
+    let prev_active = service.store.active_layout_id.clone();
+    if let Err(e) = service.store_mut().set_active_layout(target_id) {
+        classify_and_emit(
+            ctx,
+            "fs_layout",
+            "set_active",
+            json!({ "id": target_id, "error": &e }),
+            "failure",
+            Some(target_id),
+            Some("Failed to set active layout"),
+            "operator",
+            None,
+        );
+        if is_json {
+            println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "SET_ACTIVE_FAILED", "message": e } }));
+        } else {
+            eprintln!("failed to set active layout: {}", sanitize_terminal(&e));
+        }
+        return 1;
+    }
+
+    if let Some(store_path) = store_path_opt {
+        if let Err(e) = service.save_to_path(std::path::Path::new(store_path)) {
+            let msg = format!("failed to persist layout store to '{}': {}", store_path, e);
+            classify_and_emit(
+                ctx,
+                "fs_layout",
+                "set_active",
+                json!({ "id": target_id, "error": &msg }),
+                "failure",
+                Some(target_id),
+                Some("Failed to persist layout store"),
+                "operator",
+                None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "SAVE_STORE_FAILED", "message": msg } }));
+            } else {
+                eprintln!("{}", sanitize_terminal(&msg));
+            }
+            return 1;
+        }
+    }
+
+    classify_and_emit(
+        ctx,
+        "fs_layout",
+        "set_active",
+        json!({ "id": target_id, "previous_active": prev_active, "new_active": target_id, "store": store_path_opt }),
+        "success",
+        Some(target_id),
+        Some("Updated active filesystem layout"),
+        "operator",
+        None,
+    );
+
+    if is_json {
+        println!("{}", json!({ "code": 0, "data": { "active": target_id, "previous_active": prev_active }, "error": serde_json::Value::Null }));
+    } else {
+        println!("SUCCESS: Active filesystem layout set to '{}'", target_id);
+    }
+    0
+}
+
+fn cmd_fs_layout_remove(
+    rest: &[String],
+    store_path_opt: Option<&str>,
+    is_json: bool,
+    ctx: &mut Ctx,
+) -> i32 {
+    let target_id = rest.iter().find(|s| !s.starts_with("--"));
+    let target_id = match target_id {
+        Some(id) if !id.is_empty() => id.as_str(),
+        _ => {
+            let msg = "remove requires '<id>' argument";
+            classify_and_emit(
+                ctx,
+                "fs_layout",
+                "remove",
+                json!({ "error": msg }),
+                "failure",
+                None,
+                Some("Missing <id> argument for layout remove"),
+                "operator",
+                None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "ARGUMENT_ERROR", "message": msg } }));
+            } else {
+                eprintln!("{}", msg);
+            }
+            return 2;
+        }
+    };
+
+    let mut service = match load_fs_layout_service(store_path_opt) {
+        Ok(s) => s,
+        Err(e) => {
+            let msg = format!("failed to load layout store: {}", e);
+            classify_and_emit(
+                ctx,
+                "fs_layout",
+                "remove",
+                json!({ "error": &msg }),
+                "failure",
+                None,
+                Some("Failed to load layout store"),
+                "operator",
+                None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "LOAD_STORE_FAILED", "message": msg } }));
+            } else {
+                eprintln!("{}", sanitize_terminal(&msg));
+            }
+            return 1;
+        }
+    };
+
+    if let Err(e) = service.store_mut().remove_layout(target_id) {
+        classify_and_emit(
+            ctx,
+            "fs_layout",
+            "remove",
+            json!({ "id": target_id, "error": &e }),
+            "failure",
+            Some(target_id),
+            Some("Failed to remove layout"),
+            "operator",
+            None,
+        );
+        if is_json {
+            println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "REMOVE_FAILED", "message": e } }));
+        } else {
+            eprintln!("failed to remove layout: {}", sanitize_terminal(&e));
+        }
+        return 1;
+    }
+
+    if let Some(store_path) = store_path_opt {
+        if let Err(e) = service.save_to_path(std::path::Path::new(store_path)) {
+            let msg = format!("failed to persist layout store to '{}': {}", store_path, e);
+            classify_and_emit(
+                ctx,
+                "fs_layout",
+                "remove",
+                json!({ "id": target_id, "error": &msg }),
+                "failure",
+                Some(target_id),
+                Some("Failed to persist layout store"),
+                "operator",
+                None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "SAVE_STORE_FAILED", "message": msg } }));
+            } else {
+                eprintln!("{}", sanitize_terminal(&msg));
+            }
+            return 1;
+        }
+    }
+
+    classify_and_emit(
+        ctx,
+        "fs_layout",
+        "remove",
+        json!({ "id": target_id, "removed": true, "store": store_path_opt }),
+        "success",
+        Some(target_id),
+        Some("Removed filesystem layout profile"),
+        "operator",
+        None,
+    );
+
+    if is_json {
+        println!("{}", json!({ "code": 0, "data": { "id": target_id, "removed": true }, "error": serde_json::Value::Null }));
+    } else {
+        println!("SUCCESS: Removed filesystem layout '{}'", target_id);
+    }
+    0
+}
+
+fn cmd_fs_layout_import_fstab(
+    rest: &[String],
+    store_path_opt: Option<&str>,
+    is_json: bool,
+    ctx: &mut Ctx,
+) -> i32 {
+    let positional: Vec<&str> = rest.iter().filter(|s| !s.starts_with("--")).map(|s| s.as_str()).collect();
+    let fstab_arg = parse_flag(rest, "--fstab");
+    let base_id = parse_flag(rest, "--base");
+
+    if positional.len() < 2 || fstab_arg.is_none() {
+        let msg = "import-fstab requires '<id> <name> --fstab <file_or_content>' arguments";
+        classify_and_emit(
+            ctx,
+            "fs_layout",
+            "import_fstab",
+            json!({ "error": msg }),
+            "failure",
+            None,
+            Some("Missing arguments for layout import-fstab"),
+            "operator",
+            None,
+        );
+        if is_json {
+            println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "ARGUMENT_ERROR", "message": msg } }));
+        } else {
+            eprintln!("{}", msg);
+        }
+        return 2;
+    }
+
+    let id = positional[0];
+    let name = positional[1];
+    let fstab_input = fstab_arg.unwrap();
+
+    let fstab_content = {
+        let p = std::path::Path::new(&fstab_input);
+        if p.exists() {
+            // Bounded, non-blocking read: see read_bounded_text_file.
+            match aiosh_core::fs_layout_service::read_bounded_text_file(
+                p,
+                aiosh_core::fs_layout_service::MAX_LAYOUT_DOC_BYTES,
+                "fstab file",
+            ) {
+                Ok(c) => c,
+                Err(e) => {
+                    let msg = e.message().to_string();
+                    let (code, detail) = match e {
+                        aiosh_core::fs_layout_service::LayoutDocReadError::TooLarge(_) => {
+                            ("FSTAB_SIZE_EXCEEDED", "Fstab file exceeds size limit")
+                        }
+                        aiosh_core::fs_layout_service::LayoutDocReadError::NotRegularFile(_) => {
+                            ("FSTAB_NOT_REGULAR_FILE", "Fstab path is not a regular file")
+                        }
+                        _ => ("FSTAB_READ_FAILED", "Failed to read fstab file"),
+                    };
+                    classify_and_emit(
+                        ctx,
+                        "fs_layout",
+                        "import_fstab",
+                        json!({ "id": id, "error": &msg }),
+                        "failure",
+                        Some(id),
+                        Some(detail),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": code, "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    return 1;
+                }
+            }
+        } else {
+            fstab_input
+        }
+    };
+
+    let mut service = match load_fs_layout_service(store_path_opt) {
+        Ok(s) => s,
+        Err(e) => {
+            let msg = format!("failed to load layout store: {}", e);
+            classify_and_emit(
+                ctx,
+                "fs_layout",
+                "import_fstab",
+                json!({ "id": id, "error": &msg }),
+                "failure",
+                Some(id),
+                Some("Failed to load layout store"),
+                "operator",
+                None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "LOAD_STORE_FAILED", "message": msg } }));
+            } else {
+                eprintln!("{}", sanitize_terminal(&msg));
+            }
+            return 1;
+        }
+    };
+
+    let imported_spec = match service.import_fstab_as_layout(id, name, &fstab_content, base_id.as_deref()) {
+        Ok(spec) => spec,
+        Err(e) => {
+            let msg = format!("failed to import fstab as layout: {}", e);
+            classify_and_emit(
+                ctx,
+                "fs_layout",
+                "import_fstab",
+                json!({ "id": id, "error": &msg }),
+                "failure",
+                Some(id),
+                Some("Failed to import fstab as layout"),
+                "operator",
+                None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "IMPORT_FAILED", "message": msg } }));
+            } else {
+                eprintln!("{}", sanitize_terminal(&msg));
+            }
+            return 1;
+        }
+    };
+
+    if let Some(store_path) = store_path_opt {
+        if let Err(e) = service.save_to_path(std::path::Path::new(store_path)) {
+            let msg = format!("failed to persist layout store to '{}': {}", store_path, e);
+            classify_and_emit(
+                ctx,
+                "fs_layout",
+                "import_fstab",
+                json!({ "id": id, "error": &msg }),
+                "failure",
+                Some(id),
+                Some("Failed to persist layout store"),
+                "operator",
+                None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "SAVE_STORE_FAILED", "message": msg } }));
+            } else {
+                eprintln!("{}", sanitize_terminal(&msg));
+            }
+            return 1;
+        }
+    }
+
+    classify_and_emit(
+        ctx,
+        "fs_layout",
+        "import_fstab",
+        json!({ "id": id, "name": name, "mounts": imported_spec.mounts.len(), "store": store_path_opt }),
+        "success",
+        Some(id),
+        Some("Imported filesystem layout from fstab"),
+        "operator",
+        None,
+    );
+
+    if is_json {
+        println!("{}", json!({ "code": 0, "data": imported_spec, "error": serde_json::Value::Null }));
+    } else {
+        println!("SUCCESS: Imported filesystem layout '{}' with {} mounts", id, imported_spec.mounts.len());
+    }
+    0
+}
+
+fn cmd_fs_layout(args: &[String]) -> i32 {
+    let mut ctx = open_context();
+    let sub = args.first().map(|s| s.as_str());
+    let rest = if args.len() > 1 { &args[1..] } else { &[] };
+    let is_json = has_flag(rest, "--json");
+
+    let store_path_opt = parse_flag(rest, "--store");
+    if let Some(ref p) = store_path_opt {
+        if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+            let msg = "store path cannot exceed 1024 characters and cannot contain control characters";
+            classify_and_emit(
+                &mut ctx,
+                "fs_layout",
+                sub.unwrap_or("unknown"),
+                json!({ "error": msg }),
+                "failure",
+                None,
+                Some("Invalid store path"),
+                "operator",
+                None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENT", "message": msg } }));
+            } else {
+                eprintln!("{}", msg);
+            }
+            return 2;
+        }
+    }
+
+    let resolve_layout = |rest: &[String]| -> Result<aiosh_core::fs_layout::FilesystemLayoutSpec, String> {
+        let first_id = rest.first().filter(|s| !s.starts_with("--"));
+        if let Some(id) = first_id {
+            let service = load_fs_layout_service(store_path_opt.as_deref())?;
+            if let Some(spec) = service.store().get_layout(id) {
+                return Ok(spec.clone());
+            } else {
+                return Err(format!("layout with id '{}' not found in store", id));
+            }
+        }
+        if has_flag(rest, "--standard") {
+            Ok(aiosh_core::fs_layout::FilesystemLayoutSpec::standard_uefi())
+        } else if has_flag(rest, "--container") {
+            Ok(aiosh_core::fs_layout::FilesystemLayoutSpec::minimal_container())
+        } else if let Some(spec_str) = parse_flag(rest, "--spec") {
+            // Only null bytes are rejected up front: inline JSON content is multi-line by nature.
+            if spec_str.contains('\0') {
+                return Err("spec argument cannot contain null bytes".into());
+            }
+            let p = std::path::Path::new(&spec_str);
+            if p.exists() {
+                // Bounded, non-blocking read: see read_bounded_text_file.
+                let content = aiosh_core::fs_layout_service::read_bounded_text_file(
+                    p,
+                    aiosh_core::fs_layout_service::MAX_LAYOUT_DOC_BYTES,
+                    "spec file",
+                )
+                .map_err(|e| e.message().to_string())?;
+                aiosh_core::fs_layout::FilesystemLayoutSpec::from_json(&content)
+            } else {
+                aiosh_core::fs_layout::FilesystemLayoutSpec::from_json(&spec_str)
+            }
+        } else {
+            let service = load_fs_layout_service(store_path_opt.as_deref())?;
+            service.store().get_active_layout().map(|s| s.clone())
+        }
+    };
+
+    match sub {
+        Some("show") => {
+            let layout = match resolve_layout(rest) {
+                Ok(l) => l,
+                Err(e) => {
+                    classify_and_emit(
+                        &mut ctx,
+                        "fs_layout",
+                        "show",
+                        json!({ "error": e }),
+                        "failure",
+                        None,
+                        Some("Failed to resolve layout"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "RESOLVE_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("failed to resolve layout: {}", sanitize_terminal(&e));
+                    }
+                    return 1;
+                }
+            };
+
+            classify_and_emit(
+                &mut ctx,
+                "fs_layout",
+                "show",
+                json!({ "id": layout.id, "partitions": layout.partitions.len(), "mounts": layout.mounts.len() }),
+                "success",
+                Some(&layout.id),
+                Some("Showed filesystem layout"),
+                "operator",
+                None,
+            );
+
+            if is_json {
+                println!("{}", json!({ "code": 0, "data": layout, "error": serde_json::Value::Null }));
+            } else {
+                println!("Filesystem Layout: {}", sanitize_terminal(&layout.name));
+                println!("  ID:          {}", sanitize_terminal(&layout.id));
+                println!("  Description: {}", sanitize_terminal(&layout.description));
+                println!("  Min Target:  {} GiB", layout.target_disk_min_bytes / (1024 * 1024 * 1024));
+                println!("  Partitions ({}):", layout.partitions.len());
+                for p in &layout.partitions {
+                    println!("    [{}] {} ({:?}, {} MiB)", p.index, sanitize_terminal(&p.label), p.partition_type, p.size_mib);
+                }
+                println!("  Mounts ({}):", layout.mounts.len());
+                for m in &layout.mounts {
+                    println!("    {} -> {} ({:?})", sanitize_terminal(&m.device), sanitize_terminal(&m.path), m.fs_type);
+                }
+            }
+            0
+        }
+        Some("validate") | Some("check") => {
+            let layout_res = resolve_layout(rest);
+            let (is_ok, err_msg, layout_id) = match layout_res {
+                Ok(l) => match l.validate() {
+                    Ok(()) => (true, None, l.id),
+                    Err(e) => (false, Some(e), l.id),
+                },
+                Err(e) => (false, Some(e), "unknown".to_string()),
+            };
+
+            classify_and_emit(
+                &mut ctx,
+                "fs_layout",
+                "validate",
+                json!({ "id": layout_id, "valid": is_ok, "error": err_msg }),
+                if is_ok { "success" } else { "failure" },
+                Some(&layout_id),
+                Some(if is_ok { "Filesystem layout validated successfully" } else { "Filesystem layout validation failed" }),
+                "operator",
+                None,
+            );
+
+            if is_json {
+                println!("{}", json!({
+                    "code": if is_ok { 0 } else { 1 },
+                    "data": { "id": layout_id, "valid": is_ok },
+                    "error": if is_ok { serde_json::Value::Null } else { json!({ "code": "VALIDATION_FAILED", "message": err_msg }) }
+                }));
+            } else if is_ok {
+                println!("VALID: Filesystem layout '{}' satisfies all FL1..FL5 invariants", sanitize_terminal(&layout_id));
+            } else {
+                eprintln!("INVALID: {}", sanitize_terminal(&err_msg.unwrap_or_default()));
+            }
+
+            if is_ok { 0 } else { 1 }
+        }
+        Some("fstab") => {
+            let layout = match resolve_layout(rest) {
+                Ok(l) => l,
+                Err(e) => {
+                    classify_and_emit(
+                        &mut ctx,
+                        "fs_layout",
+                        "fstab",
+                        json!({ "error": e }),
+                        "failure",
+                        None,
+                        Some("Failed to resolve layout for fstab generation"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "RESOLVE_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("failed to resolve layout: {}", sanitize_terminal(&e));
+                    }
+                    return 1;
+                }
+            };
+
+            let fstab_content = layout.generate_fstab();
+            classify_and_emit(
+                &mut ctx,
+                "fs_layout",
+                "fstab",
+                json!({ "id": layout.id, "lines": fstab_content.lines().count() }),
+                "success",
+                Some(&layout.id),
+                Some("Generated /etc/fstab from layout"),
+                "operator",
+                None,
+            );
+
+            if is_json {
+                println!("{}", json!({ "code": 0, "data": { "id": layout.id, "fstab": fstab_content }, "error": serde_json::Value::Null }));
+            } else {
+                print!("{}", sanitize_terminal(&fstab_content));
+            }
+            0
+        }
+        Some("list") => {
+            let service = match load_fs_layout_service(store_path_opt.as_deref()) {
+                Ok(s) => s,
+                Err(e) => {
+                    classify_and_emit(
+                        &mut ctx,
+                        "fs_layout",
+                        "list",
+                        json!({ "error": e }),
+                        "failure",
+                        None,
+                        Some("Failed to load layout store"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "LOAD_STORE_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("failed to load layout store: {}", sanitize_terminal(&e));
+                    }
+                    return 1;
+                }
+            };
+            let layouts = service.store.list_layouts();
+            classify_and_emit(
+                &mut ctx,
+                "fs_layout",
+                "list",
+                json!({ "count": layouts.len(), "active": service.store.active_layout_id }),
+                "success",
+                Some(&service.store.active_layout_id),
+                Some("Listed registered filesystem layouts"),
+                "operator",
+                None,
+            );
+
+            if is_json {
+                println!("{}", json!({ "code": 0, "data": { "active": service.store.active_layout_id, "layouts": layouts }, "error": serde_json::Value::Null }));
+            } else {
+                println!("Registered Filesystem Layouts (active: {}):", sanitize_terminal(&service.store.active_layout_id));
+                for l in layouts {
+                    let active_marker = if l.id == service.store.active_layout_id { "*" } else { " " };
+                    println!("  {} {:<28} - {} (min: {} GiB)", active_marker, sanitize_terminal(&l.id), sanitize_terminal(&l.name), l.target_disk_min_bytes / (1024 * 1024 * 1024));
+                }
+            }
+            0
+        }
+        Some("probe") => {
+            let layout = match resolve_layout(rest) {
+                Ok(l) => l,
+                Err(e) => {
+                    classify_and_emit(
+                        &mut ctx,
+                        "fs_layout",
+                        "probe",
+                        json!({ "error": e }),
+                        "failure",
+                        None,
+                        Some("Failed to resolve layout for probe"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "RESOLVE_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("failed to resolve layout: {}", sanitize_terminal(&e));
+                    }
+                    return 1;
+                }
+            };
+            let target_bytes: u64 = match parse_flag(rest, "--bytes") {
+                Some(ref raw) => match raw.parse::<u64>() {
+                    Ok(v) => v,
+                    Err(_) => {
+                        let msg = format!(
+                            "invalid --bytes value '{}': expected a non-negative integer",
+                            raw
+                        );
+                        classify_and_emit(
+                            &mut ctx,
+                            "fs_layout",
+                            "probe",
+                            json!({ "error": &msg }),
+                            "failure",
+                            None,
+                            Some("Invalid --bytes argument for layout probe"),
+                            "operator",
+                            None,
+                        );
+                        if is_json {
+                            println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "ARGUMENT_ERROR", "message": msg } }));
+                        } else {
+                            eprintln!("{}", msg);
+                        }
+                        return 2;
+                    }
+                },
+                None => layout.target_disk_min_bytes,
+            };
+
+            let mut service = aiosh_core::fs_layout_service::FilesystemLayoutService::empty();
+            let layout_id = layout.id.clone();
+            // A layout rejected by FL1..FL5 must fail loudly rather than silently degrade
+            // into the "layout not found" path of probe_target below.
+            if let Err(e) = service.store_mut().register_layout(layout) {
+                let msg = format!("layout '{}' cannot be probed: {}", layout_id, e);
+                classify_and_emit(
+                    &mut ctx,
+                    "fs_layout",
+                    "probe",
+                    json!({ "id": layout_id, "error": &msg }),
+                    "failure",
+                    Some(&layout_id),
+                    Some("Probe layout rejected by FL1..FL5 validation"),
+                    "operator",
+                    None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "INVALID_LAYOUT", "message": msg } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(&msg));
+                }
+                return 1;
+            }
+
+            let eval = match service.probe_target(&layout_id, target_bytes) {
+                Ok(ev) => ev,
+                Err(e) => {
+                    classify_and_emit(
+                        &mut ctx,
+                        "fs_layout",
+                        "probe",
+                        json!({ "id": layout_id, "error": e }),
+                        "failure",
+                        Some(&layout_id),
+                        Some("Failed to probe target disk capacity"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "PROBE_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("probe failed: {}", sanitize_terminal(&e));
+                    }
+                    return 1;
+                }
+            };
+
+            classify_and_emit(
+                &mut ctx,
+                "fs_layout",
+                "probe",
+                json!({ "id": eval.layout_id, "is_viable": eval.is_viable, "errors": eval.errors.len(), "warnings": eval.warnings.len() }),
+                if eval.is_viable { "success" } else { "failure" },
+                Some(&eval.layout_id),
+                Some("Probed target disk capacity for filesystem layout"),
+                "operator",
+                None,
+            );
+
+            if is_json {
+                println!("{}", json!({ "code": if eval.is_viable { 0 } else { 1 }, "data": eval, "error": if eval.is_viable { serde_json::Value::Null } else { json!({ "code": "NOT_VIABLE", "errors": eval.errors }) } }));
+            } else {
+                println!("Target Disk Probe for '{}' (Capacity: {} GiB):", sanitize_terminal(&eval.layout_id), eval.target_disk_bytes / (1024 * 1024 * 1024));
+                println!("  Status:           {}", if eval.is_viable { "VIABLE" } else { "INSUFFICIENT" });
+                println!("  Required Minimum: {} GiB", eval.required_disk_bytes / (1024 * 1024 * 1024));
+                println!("  Partition Budget: {} GiB", eval.partition_budget_bytes / (1024 * 1024 * 1024));
+                if !eval.errors.is_empty() {
+                    println!("  Errors:");
+                    for err in &eval.errors {
+                        println!("    - {}", sanitize_terminal(err));
+                    }
+                }
+                if !eval.warnings.is_empty() {
+                    println!("  Warnings:");
+                    for w in &eval.warnings {
+                        println!("    - {}", sanitize_terminal(w));
+                    }
+                }
+            }
+            if eval.is_viable { 0 } else { 1 }
+        }
+        Some("diff") => {
+            let positional: Vec<&str> = rest.iter().filter(|s| !s.starts_with("--")).map(|s| s.as_str()).collect();
+            let source_id = if !positional.is_empty() {
+                positional[0]
+            } else {
+                "aios-uefi-standard-v1"
+            };
+            let target_id = if positional.len() > 1 {
+                positional[1]
+            } else {
+                "aios-container-minimal-v1"
+            };
+
+            let service = match load_fs_layout_service(store_path_opt.as_deref()) {
+                Ok(s) => s,
+                Err(e) => {
+                    classify_and_emit(
+                        &mut ctx,
+                        "fs_layout",
+                        "diff",
+                        json!({ "error": e }),
+                        "failure",
+                        None,
+                        Some("Failed to load layout store for diff"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "LOAD_STORE_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("failed to load layout store: {}", sanitize_terminal(&e));
+                    }
+                    return 1;
+                }
+            };
+            let diff = match service.diff_layouts(source_id, target_id) {
+                Ok(d) => d,
+                Err(e) => {
+                    classify_and_emit(
+                        &mut ctx,
+                        "fs_layout",
+                        "diff",
+                        json!({ "source": source_id, "target": target_id, "error": e }),
+                        "failure",
+                        Some(source_id),
+                        Some("Failed to compute layout diff"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "DIFF_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("diff failed: {}", sanitize_terminal(&e));
+                    }
+                    return 1;
+                }
+            };
+
+            classify_and_emit(
+                &mut ctx,
+                "fs_layout",
+                "diff",
+                json!({ "source": source_id, "target": target_id, "destructive": diff.destructive }),
+                "success",
+                Some(source_id),
+                Some("Computed diff between filesystem layouts"),
+                "operator",
+                None,
+            );
+
+            if is_json {
+                println!("{}", json!({ "code": 0, "data": diff, "error": serde_json::Value::Null }));
+            } else {
+                println!("{}", sanitize_terminal(&diff.summary));
+            }
+            0
+        }
+        Some("register") => {
+            cmd_fs_layout_register(rest, store_path_opt.as_deref(), is_json, &mut ctx)
+        }
+        Some("set-active") => {
+            cmd_fs_layout_set_active(rest, store_path_opt.as_deref(), is_json, &mut ctx)
+        }
+        Some("remove") => {
+            cmd_fs_layout_remove(rest, store_path_opt.as_deref(), is_json, &mut ctx)
+        }
+        Some("import-fstab") => {
+            cmd_fs_layout_import_fstab(rest, store_path_opt.as_deref(), is_json, &mut ctx)
+        }
+        Some("--help") | Some("-h") | None => {
+            println!("aiosh layout — Filesystem Layout & Target Partitioning Manager\n\nUsage:\n  aiosh layout list [--store <path>] [--json]\n  aiosh layout show [ID] [--standard|--container|--spec <file_or_json>] [--store <path>] [--json]\n  aiosh layout validate [--standard|--container|--spec <file_or_json>] [--store <path>] [--json]\n  aiosh layout check [--standard|--container|--spec <file_or_json>] [--store <path>] [--json]\n  aiosh layout probe [--bytes <N>] [--standard|--container|--spec <file_or_json>] [--store <path>] [--json]\n  aiosh layout diff [<source_id> <target_id>] [--store <path>] [--json]\n  aiosh layout fstab [--standard|--container|--spec <file_or_json>] [--store <path>] [--json]\n  aiosh layout register --spec <file_or_json> [--store <path>] [--json]\n  aiosh layout set-active <id> [--store <path>] [--json]\n  aiosh layout remove <id> [--store <path>] [--json]\n  aiosh layout import-fstab <id> <name> --fstab <file_or_content> [--base <id>] [--store <path>] [--json]");
+            0
+        }
+        Some(other) => {
+            let msg = format!("unknown layout subcommand: {}", other);
+            classify_and_emit(
+                &mut ctx,
+                "fs_layout",
+                "unknown",
+                json!({ "error": &msg }),
+                "failure",
+                None,
+                Some("Unknown filesystem layout subcommand"),
+                "operator",
+                None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "UNKNOWN_SUBCOMMAND", "message": msg } }));
+            } else {
+                eprintln!("{}", sanitize_terminal(&msg));
             }
             2
         }
@@ -8582,6 +9928,223 @@ mod task_cli_tests {
         }"#;
         let code_policy_bad_spec = cmd_session(&["policy".to_string(), "--spec".to_string(), policy_bad_spec.to_string()]);
         assert_eq!(code_policy_bad_spec, 1);
+    }
+
+    #[test]
+    fn test_cmd_fs_layout_flow() {
+        let code_help = cmd_fs_layout(&["--help".to_string()]);
+        assert_eq!(code_help, 0);
+
+        let code_unknown = cmd_fs_layout(&["unknown_subcmd".to_string()]);
+        assert_eq!(code_unknown, 2);
+
+        let code_show = cmd_fs_layout(&["show".to_string()]);
+        assert_eq!(code_show, 0);
+
+        let code_show_json = cmd_fs_layout(&["show".to_string(), "--json".to_string()]);
+        assert_eq!(code_show_json, 0);
+
+        let code_show_container = cmd_fs_layout(&["show".to_string(), "--container".to_string(), "--json".to_string()]);
+        assert_eq!(code_show_container, 0);
+
+        let code_validate = cmd_fs_layout(&["validate".to_string()]);
+        assert_eq!(code_validate, 0);
+
+        let code_validate_json = cmd_fs_layout(&["validate".to_string(), "--json".to_string()]);
+        assert_eq!(code_validate_json, 0);
+
+        let code_check = cmd_fs_layout(&["check".to_string()]);
+        assert_eq!(code_check, 0);
+
+        let code_fstab = cmd_fs_layout(&["fstab".to_string()]);
+        assert_eq!(code_fstab, 0);
+
+        let code_fstab_json = cmd_fs_layout(&["fstab".to_string(), "--json".to_string()]);
+        assert_eq!(code_fstab_json, 0);
+
+        let bad_spec = r#"{
+            "id": "bad-layout",
+            "name": "Bad",
+            "description": "No root",
+            "target_disk_min_bytes": 1000,
+            "partitions": [],
+            "mounts": [],
+            "directories": [],
+            "created_at": "2026-09-16T00:00:00Z"
+        }"#;
+        let code_bad_val = cmd_fs_layout(&["validate".to_string(), "--spec".to_string(), bad_spec.to_string(), "--json".to_string()]);
+        assert_eq!(code_bad_val, 1);
+
+        let code_list = cmd_fs_layout(&["list".to_string()]);
+        assert_eq!(code_list, 0);
+
+        let code_list_json = cmd_fs_layout(&["list".to_string(), "--json".to_string()]);
+        assert_eq!(code_list_json, 0);
+
+        let code_probe_ok = cmd_fs_layout(&["probe".to_string(), "--bytes".to_string(), "107374182400".to_string()]);
+        assert_eq!(code_probe_ok, 0);
+
+        let code_probe_fail = cmd_fs_layout(&["probe".to_string(), "--bytes".to_string(), "10485760".to_string(), "--json".to_string()]);
+        assert_eq!(code_probe_fail, 1);
+
+        let code_diff = cmd_fs_layout(&["diff".to_string()]);
+        assert_eq!(code_diff, 0);
+
+        let code_diff_json = cmd_fs_layout(&["diff".to_string(), "aios-uefi-standard-v1".to_string(), "aios-container-minimal-v1".to_string(), "--json".to_string()]);
+        assert_eq!(code_diff_json, 0);
+
+        // Store path validation
+        let code_bad_store = cmd_fs_layout(&["list".to_string(), "--store".to_string(), "bad\x00store".to_string(), "--json".to_string()]);
+        assert_eq!(code_bad_store, 2);
+
+        // Subcommand missing argument validation tests (code 2)
+        let code_reg_no_spec = cmd_fs_layout(&["register".to_string(), "--json".to_string()]);
+        assert_eq!(code_reg_no_spec, 2);
+
+        let code_set_active_no_id = cmd_fs_layout(&["set-active".to_string(), "--json".to_string()]);
+        assert_eq!(code_set_active_no_id, 2);
+
+        let code_remove_no_id = cmd_fs_layout(&["remove".to_string(), "--json".to_string()]);
+        assert_eq!(code_remove_no_id, 2);
+
+        let code_import_no_args = cmd_fs_layout(&["import-fstab".to_string(), "--json".to_string()]);
+        assert_eq!(code_import_no_args, 2);
+
+        // Persistent store workflow testing
+        let temp_store_file = std::env::temp_dir().join(format!("aios_fs_layout_test_{}_{}.json", std::process::id(), chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)));
+        let store_str = temp_store_file.to_str().unwrap().to_string();
+
+        let valid_custom_spec = aiosh_core::fs_layout::FilesystemLayoutSpec {
+            id: "custom-srv-v1".to_string(),
+            name: "Custom Server Layout".to_string(),
+            description: "Test layout".to_string(),
+            target_disk_min_bytes: 30_u64 * 1024 * 1024 * 1024,
+            partitions: vec![
+                aiosh_core::fs_layout::PartitionSpec {
+                    index: 1,
+                    label: "boot".to_string(),
+                    partition_type: aiosh_core::fs_layout::PartitionType::EfiSystem,
+                    size_mib: 512,
+                    uuid: None,
+                    bootable: true,
+                    format_as: Some(aiosh_core::fs_layout::FsType::Vfat),
+                },
+                aiosh_core::fs_layout::PartitionSpec {
+                    index: 2,
+                    label: "root".to_string(),
+                    partition_type: aiosh_core::fs_layout::PartitionType::LinuxRoot,
+                    size_mib: 20480,
+                    uuid: None,
+                    bootable: false,
+                    format_as: Some(aiosh_core::fs_layout::FsType::Ext4),
+                },
+            ],
+            mounts: vec![
+                aiosh_core::fs_layout::MountPointSpec {
+                    path: "/".to_string(),
+                    device: "/dev/sda2".to_string(),
+                    fs_type: aiosh_core::fs_layout::FsType::Ext4,
+                    options: vec!["defaults".to_string(), "noatime".to_string()],
+                    dump: 1,
+                    pass: 1,
+                    required: true,
+                },
+                aiosh_core::fs_layout::MountPointSpec {
+                    path: "/boot/efi".to_string(),
+                    device: "/dev/sda1".to_string(),
+                    fs_type: aiosh_core::fs_layout::FsType::Vfat,
+                    options: vec!["umask=0077".to_string()],
+                    dump: 0,
+                    pass: 2,
+                    required: true,
+                },
+            ],
+            directories: vec![],
+            created_at: "2026-09-16T00:00:00Z".to_string(),
+        };
+        let valid_custom_json = valid_custom_spec.to_json().unwrap();
+
+        // 1. Register valid layout into persistent store
+        let code_reg_ok = cmd_fs_layout(&[
+            "register".to_string(),
+            "--spec".to_string(),
+            valid_custom_json.clone(),
+            "--store".to_string(),
+            store_str.clone(),
+            "--json".to_string(),
+        ]);
+        assert_eq!(code_reg_ok, 0);
+
+        // Duplicate registration fails with code 1
+        let code_reg_dup = cmd_fs_layout(&[
+            "register".to_string(),
+            "--spec".to_string(),
+            valid_custom_json,
+            "--store".to_string(),
+            store_str.clone(),
+            "--json".to_string(),
+        ]);
+        assert_eq!(code_reg_dup, 1);
+
+        // 2. List layouts from persistent store
+        let code_list_store = cmd_fs_layout(&["list".to_string(), "--store".to_string(), store_str.clone(), "--json".to_string()]);
+        assert_eq!(code_list_store, 0);
+
+        // 3. Show custom layout from persistent store
+        let code_show_custom = cmd_fs_layout(&["show".to_string(), "custom-srv-v1".to_string(), "--store".to_string(), store_str.clone(), "--json".to_string()]);
+        assert_eq!(code_show_custom, 0);
+
+        // 4. Set active layout
+        let code_set_active = cmd_fs_layout(&["set-active".to_string(), "custom-srv-v1".to_string(), "--store".to_string(), store_str.clone(), "--json".to_string()]);
+        assert_eq!(code_set_active, 0);
+
+        // Cannot remove currently active layout
+        let code_remove_active = cmd_fs_layout(&["remove".to_string(), "custom-srv-v1".to_string(), "--store".to_string(), store_str.clone(), "--json".to_string()]);
+        assert_eq!(code_remove_active, 1);
+
+        // 5. Import fstab into new profile
+        // fstab entries are ordered root-first so the import satisfies the FL3 parent-before-child rule.
+        let fstab_text = "/dev/sda2 / ext4 defaults 1 1\n/dev/sda1 /boot/efi vfat umask=0077 0 2\n";
+        let code_import = cmd_fs_layout(&[
+            "import-fstab".to_string(),
+            "imported-srv-v1".to_string(),
+            "Imported Server".to_string(),
+            "--fstab".to_string(),
+            fstab_text.to_string(),
+            "--store".to_string(),
+            store_str.clone(),
+            "--json".to_string(),
+        ]);
+        assert_eq!(code_import, 0);
+
+        // 6. Diff between custom-srv-v1 and imported-srv-v1
+        let code_diff_custom = cmd_fs_layout(&[
+            "diff".to_string(),
+            "custom-srv-v1".to_string(),
+            "imported-srv-v1".to_string(),
+            "--store".to_string(),
+            store_str.clone(),
+            "--json".to_string(),
+        ]);
+        assert_eq!(code_diff_custom, 0);
+
+        // 7. Switch active layout back to standard, then remove custom-srv-v1
+        let code_set_active_orig = cmd_fs_layout(&["set-active".to_string(), "aios-uefi-standard-v1".to_string(), "--store".to_string(), store_str.clone(), "--json".to_string()]);
+        assert_eq!(code_set_active_orig, 0);
+
+        let code_remove_ok = cmd_fs_layout(&["remove".to_string(), "custom-srv-v1".to_string(), "--store".to_string(), store_str.clone(), "--json".to_string()]);
+        assert_eq!(code_remove_ok, 0);
+
+        // Cannot remove already removed layout
+        let code_remove_again = cmd_fs_layout(&["remove".to_string(), "custom-srv-v1".to_string(), "--store".to_string(), store_str.clone(), "--json".to_string()]);
+        assert_eq!(code_remove_again, 1);
+
+        // Cannot remove built-in canonical layout
+        let code_remove_builtin = cmd_fs_layout(&["remove".to_string(), "aios-container-minimal-v1".to_string(), "--store".to_string(), store_str.clone(), "--json".to_string()]);
+        assert_eq!(code_remove_builtin, 1);
+
+        // Clean up temp store file
+        let _ = std::fs::remove_file(&temp_store_file);
     }
 }
 

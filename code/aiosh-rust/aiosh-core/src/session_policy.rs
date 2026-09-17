@@ -87,11 +87,18 @@ impl Default for UserSessionSecurityPolicy {
             disallowed_env_vars: vec![
                 "LD_PRELOAD".into(),
                 "LD_LIBRARY_PATH".into(),
+                "LD_AUDIT".into(),
                 "IFS".into(),
                 "NODE_OPTIONS".into(),
                 "PYTHONPATH".into(),
+                "PYTHONSTARTUP".into(),
                 "RUBYOPT".into(),
                 "PERL5OPT".into(),
+                "PERL5LIB".into(),
+                "BASH_ENV".into(),
+                "ENV".into(),
+                "PROMPT_COMMAND".into(),
+                "GCC_EXEC_PREFIX".into(),
             ],
             max_env_vars: 256,
             max_sessions_per_user: 32,
@@ -282,7 +289,11 @@ impl UserSessionSecurityPolicy {
         }
 
         for (k, _) in &spec.environment {
-            if self.disallowed_env_vars.contains(k) {
+            let normalized_k = k.trim_start_matches('_');
+            if self.disallowed_env_vars.contains(k)
+                || self.disallowed_env_vars.iter().any(|b| b == normalized_k)
+                || normalized_k.starts_with("LD_")
+            {
                 violations.push(SessionPolicyViolation {
                     rule_id: "SSP4-DISALLOWED-ENV-VAR".into(),
                     session_id: session_id.clone(),
@@ -419,6 +430,27 @@ impl UserSessionSecurityPolicy {
         let policy: UserSessionSecurityPolicy = serde_json::from_slice(&buffer)
             .map_err(|e| format!("Failed to parse policy JSON: {}", e))?;
 
+        policy.validate()?;
+        Ok(policy)
+    }
+
+    /// Loads security policy with environment variable overrides for capacity limits (SSP5).
+    pub fn from_env() -> Result<Self, String> {
+        let mut policy = Self::default();
+        if let Ok(val) = std::env::var("AIOS_SESSION_MAX_PER_USER") {
+            if let Ok(cnt) = val.trim().parse::<usize>() {
+                policy.max_sessions_per_user = cnt;
+            } else {
+                return Err(format!("invalid integer in AIOS_SESSION_MAX_PER_USER: {}", val));
+            }
+        }
+        if let Ok(val) = std::env::var("AIOS_SESSION_MAX_TOTAL") {
+            if let Ok(cnt) = val.trim().parse::<usize>() {
+                policy.max_total_sessions = cnt;
+            } else {
+                return Err(format!("invalid integer in AIOS_SESSION_MAX_TOTAL: {}", val));
+            }
+        }
         policy.validate()?;
         Ok(policy)
     }

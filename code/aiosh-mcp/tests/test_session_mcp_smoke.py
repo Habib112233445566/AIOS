@@ -33,6 +33,35 @@ def get_mcp_binary():
     return "aiosh-mcp"
 
 
+def get_cli_binary():
+    candidates = [
+        ROOT / "code/aiosh-rust/target/debug/aiosh.exe",
+        ROOT / "code/aiosh-rust/target/debug/aiosh",
+        ROOT / "target/debug/aiosh.exe",
+        ROOT / "target/debug/aiosh",
+    ]
+    for c in candidates:
+        if c.exists():
+            return str(c)
+    return "aiosh"
+
+
+def create_pep_grant(tools="aios.session.*"):
+    cli_bin = get_cli_binary()
+    cp = subprocess.run(
+        [cli_bin, "grant", "create", "--to", "agent:mcp-smoke", "--tools", tools],
+        capture_output=True,
+        text=True,
+    )
+    if cp.returncode == 0:
+        try:
+            data = json.loads(cp.stdout)
+            return data.get("data", {}).get("grant_id")
+        except Exception:
+            pass
+    return None
+
+
 def run_mcp(payload, timeout_s=30):
     bin_path = get_mcp_binary()
     p = subprocess.Popen(
@@ -103,12 +132,13 @@ def test_manifest():
         "aios.session.get",
         "aios.session.action",
         "aios.session.create",
+        "aios.session.check",
     }
     missing = required - names
     if missing:
         print(f"FAIL: tools/list missing session tools: {missing}")
         sys.exit(1)
-    print("PASS: tools/list contains all 5 aios.session.* tools")
+    print("PASS: tools/list contains all 6 aios.session.* tools")
 
 
 def test_session_validate():
@@ -196,31 +226,39 @@ def test_session_action():
         store_path = tf.name
 
     try:
+        # 0. Ungranted action fails PEP gate
+        res_ungranted = call_mcp_tool("aios.session.action", {"session_id": "greeter-seat0", "action": "lock", "store_path": store_path})
+        assert res_ungranted.get("ok") is False, f"Expected ungranted action failure: {res_ungranted}"
+        assert res_ungranted.get("gate") == "pep", f"Expected PEP gate rejection: {res_ungranted}"
+
+        grant_id = create_pep_grant("aios.session.*")
+        assert grant_id is not None, "Failed to create PEP grant for aios.session.*"
+
         # 1. Action lock with persistent store
-        res = call_mcp_tool("aios.session.action", {"session_id": "greeter-seat0", "action": "lock", "store_path": store_path})
+        res = call_mcp_tool("aios.session.action", {"session_id": "greeter-seat0", "action": "lock", "store_path": store_path, "grant_id": grant_id})
         assert res.get("ok") is True, f"Action lock failed: {res}"
         report = res.get("report", {})
         assert report.get("new_state") == "locked", f"Expected locked new_state: {report}"
 
         # 2. Action unlock with persistent store
-        res = call_mcp_tool("aios.session.action", {"session_id": "greeter-seat0", "action": "unlock", "store_path": store_path})
+        res = call_mcp_tool("aios.session.action", {"session_id": "greeter-seat0", "action": "unlock", "store_path": store_path, "grant_id": grant_id})
         assert res.get("ok") is True, f"Action unlock failed: {res}"
         report = res.get("report", {})
         assert report.get("new_state") == "active", f"Expected active new_state: {report}"
 
         # 3. Unknown action
-        res = call_mcp_tool("aios.session.action", {"session_id": "greeter-seat0", "action": "self_destruct"})
+        res = call_mcp_tool("aios.session.action", {"session_id": "greeter-seat0", "action": "self_destruct", "grant_id": grant_id})
         assert res.get("ok") is False, f"Expected unknown action failure: {res}"
 
         # 4. Non-existent session
-        res = call_mcp_tool("aios.session.action", {"session_id": "ghost", "action": "lock"})
+        res = call_mcp_tool("aios.session.action", {"session_id": "ghost", "action": "lock", "grant_id": grant_id})
         assert res.get("ok") is False, f"Expected failure on ghost session: {res}"
 
         # 5. Missing action
-        res = call_mcp_tool("aios.session.action", {"session_id": "greeter-seat0"})
+        res = call_mcp_tool("aios.session.action", {"session_id": "greeter-seat0", "grant_id": grant_id})
         assert res.get("ok") is False, f"Expected failure on missing action: {res}"
 
-        print("PASS: aios.session.action (lock, unlock, unknown action, missing params)")
+        print("PASS: aios.session.action (PEP enforcement, lock, unlock, unknown action, missing params)")
     finally:
         if os.path.exists(store_path):
             os.unlink(store_path)
@@ -245,8 +283,16 @@ def test_session_create_and_persistence():
             "environment": {"AIOS_AGENT": "1"},
         }
 
+        # 0. Ungranted create fails PEP gate
+        res_ungranted = call_mcp_tool("aios.session.create", {"spec": agent_spec, "store_path": store_path})
+        assert res_ungranted.get("ok") is False, f"Expected ungranted create failure: {res_ungranted}"
+        assert res_ungranted.get("gate") == "pep", f"Expected PEP gate rejection: {res_ungranted}"
+
+        grant_id = create_pep_grant("aios.session.*")
+        assert grant_id is not None, "Failed to create PEP grant for aios.session.*"
+
         # 1. Create session into custom store
-        res = call_mcp_tool("aios.session.create", {"spec": agent_spec, "store_path": store_path})
+        res = call_mcp_tool("aios.session.create", {"spec": agent_spec, "store_path": store_path, "grant_id": grant_id})
         assert res.get("ok") is True, f"Create session failed: {res}"
         assert res.get("session_id") == "agent-copilot-smoke", f"Mismatched session_id: {res}"
         assert res.get("status", {}).get("state") == "initializing", f"Expected initializing state: {res}"
@@ -257,33 +303,34 @@ def test_session_create_and_persistence():
         assert res.get("status", {}).get("session_id") == "agent-copilot-smoke", f"Status mismatch: {res}"
 
         # 3. Create duplicate session fails
-        res = call_mcp_tool("aios.session.create", {"spec": agent_spec, "store_path": store_path})
+        res = call_mcp_tool("aios.session.create", {"spec": agent_spec, "store_path": store_path, "grant_id": grant_id})
         assert res.get("ok") is False, f"Expected duplicate create failure: {res}"
         assert "already exists" in str(res.get("error", "")), f"Expected 'already exists' in error: {res}"
 
         # 4. Create with invalid spec fails
         bad_spec = dict(agent_spec)
         bad_spec["session_id"] = "bad/id/with/slashes"
-        res = call_mcp_tool("aios.session.create", {"spec": bad_spec, "store_path": store_path})
+        res = call_mcp_tool("aios.session.create", {"spec": bad_spec, "store_path": store_path, "grant_id": grant_id})
         assert res.get("ok") is False, f"Expected invalid spec failure: {res}"
 
         # 5. Missing spec parameter fails
-        res = call_mcp_tool("aios.session.create", {"store_path": store_path})
+        res = call_mcp_tool("aios.session.create", {"store_path": store_path, "grant_id": grant_id})
         assert res.get("ok") is False, f"Expected missing spec failure: {res}"
 
-        print("PASS: aios.session.create & persistence (create, get, duplicate rejection, invalid spec)")
+        print("PASS: aios.session.create & persistence (PEP enforcement, create, get, duplicate rejection, invalid spec)")
     finally:
         if os.path.exists(store_path):
             os.unlink(store_path)
 
 
 def test_cross_surface_cli_mcp_parity():
-    cli_bin = ROOT / "code/aiosh-rust/target/debug/aiosh.exe"
-    if not cli_bin.exists():
-        cli_bin = ROOT / "code/aiosh-rust/target/debug/aiosh"
-    if not cli_bin.exists():
+    cli_bin = get_cli_binary()
+    if not os.path.exists(cli_bin):
         print("SKIP: aiosh binary not found for cross-surface test")
         return
+
+    grant_id = create_pep_grant("aios.session.*")
+    assert grant_id is not None, "Failed to create PEP grant for aios.session.*"
 
     with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tf:
         store_path = tf.name
@@ -317,7 +364,7 @@ def test_cross_surface_cli_mcp_parity():
         assert res.get("status", {}).get("state") == "initializing", f"Expected initializing state: {res}"
 
         # 3. Authenticate via MCP (Initializing -> Authenticating)
-        res = call_mcp_tool("aios.session.action", {"session_id": "cross-surface-sess", "action": "authenticate", "store_path": store_path})
+        res = call_mcp_tool("aios.session.action", {"session_id": "cross-surface-sess", "action": "authenticate", "store_path": store_path, "grant_id": grant_id})
         assert res.get("ok") is True, f"MCP authenticate failed: {res}"
         assert res.get("report", {}).get("new_state") == "authenticating", f"Expected authenticating state: {res}"
 
@@ -330,7 +377,7 @@ def test_cross_surface_cli_mcp_parity():
         assert cp.returncode == 0, f"CLI activate failed: {cp.stderr}"
 
         # 5. Lock via MCP (Active -> Locked)
-        res = call_mcp_tool("aios.session.action", {"session_id": "cross-surface-sess", "action": "lock", "store_path": store_path})
+        res = call_mcp_tool("aios.session.action", {"session_id": "cross-surface-sess", "action": "lock", "store_path": store_path, "grant_id": grant_id})
         assert res.get("ok") is True, f"MCP lock failed: {res}"
         assert res.get("report", {}).get("new_state") == "locked", f"Expected locked state: {res}"
 
@@ -354,11 +401,11 @@ def test_cross_surface_cli_mcp_parity():
         assert cp.returncode == 0, f"CLI unlock failed: {cp.stderr}"
 
         # 8. Terminate via MCP: Active -> Terminating -> Terminated
-        res1 = call_mcp_tool("aios.session.action", {"session_id": "cross-surface-sess", "action": "terminate", "store_path": store_path})
+        res1 = call_mcp_tool("aios.session.action", {"session_id": "cross-surface-sess", "action": "terminate", "store_path": store_path, "grant_id": grant_id})
         assert res1.get("ok") is True, f"MCP terminate failed: {res1}"
         assert res1.get("report", {}).get("new_state") == "terminating", f"Expected terminating state: {res1}"
 
-        res2 = call_mcp_tool("aios.session.action", {"session_id": "cross-surface-sess", "action": "terminate", "store_path": store_path})
+        res2 = call_mcp_tool("aios.session.action", {"session_id": "cross-surface-sess", "action": "terminate", "store_path": store_path, "grant_id": grant_id})
         assert res2.get("ok") is True, f"MCP second terminate failed: {res2}"
         assert res2.get("report", {}).get("new_state") == "terminated", f"Expected terminated state: {res2}"
 
@@ -379,6 +426,9 @@ def test_cross_surface_cli_mcp_parity():
 
 
 def test_session_mcp_hardening():
+    grant_id = create_pep_grant("aios.session.*")
+    assert grant_id is not None, "Failed to create PEP grant for aios.session.*"
+
     # 1. aios.session.validate: oversized payload (>1 MiB)
     res = call_mcp_tool("aios.session.validate", {"spec": "X" * (1024 * 1024 + 10)})
     assert res.get("ok") is False, f"Expected rejection of oversized validate payload: {res}"
@@ -414,17 +464,17 @@ def test_session_mcp_hardening():
     assert "1024" in str(res.get("error", "")), f"Expected 1024 error: {res}"
 
     # 6. aios.session.action: invalid session_id
-    res = call_mcp_tool("aios.session.action", {"session_id": "../evil", "action": "lock"})
+    res = call_mcp_tool("aios.session.action", {"session_id": "../evil", "action": "lock", "grant_id": grant_id})
     assert res.get("ok") is False, f"Expected rejection of invalid session_id on action: {res}"
     assert "Invalid session_id" in str(res.get("error", "")), f"Expected Invalid session_id error: {res}"
 
     # 7. aios.session.action: store_path bounds
-    res = call_mcp_tool("aios.session.action", {"session_id": "valid-id", "action": "lock", "store_path": "a" * 1025})
+    res = call_mcp_tool("aios.session.action", {"session_id": "valid-id", "action": "lock", "store_path": "a" * 1025, "grant_id": grant_id})
     assert res.get("ok") is False, f"Expected rejection of oversized store_path on action: {res}"
     assert "1024" in str(res.get("error", "")), f"Expected 1024 error: {res}"
 
     # 8. aios.session.create: oversized spec payload (>1 MiB)
-    res = call_mcp_tool("aios.session.create", {"spec": "Y" * (1024 * 1024 + 10)})
+    res = call_mcp_tool("aios.session.create", {"spec": "Y" * (1024 * 1024 + 10), "grant_id": grant_id})
     assert res.get("ok") is False, f"Expected rejection of oversized create payload: {res}"
     err_str = str(res.get("error", ""))
     assert "1048576 bytes" in err_str or "1 MiB" in err_str, f"Expected 1048576 bytes / 1 MiB error: {res}"
@@ -443,11 +493,47 @@ def test_session_mcp_hardening():
         "remote_host": None,
         "environment": {}
     }
-    res = call_mcp_tool("aios.session.create", {"spec": dummy_spec, "store_path": "a" * 1025})
+    res = call_mcp_tool("aios.session.create", {"spec": dummy_spec, "store_path": "a" * 1025, "grant_id": grant_id})
     assert res.get("ok") is False, f"Expected rejection of oversized store_path on create: {res}"
     assert "1024" in res.get("error", ""), f"Expected 1024 error: {res}"
 
     print("PASS: MCP session hardening (payload limits, query bounds, ID injection, store path sanitization)")
+
+
+def test_session_check_and_recover():
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+        temp_path = f.name
+
+    try:
+        if os.path.exists(temp_path):
+            os.unlink(temp_path)
+
+        # 1. Non-existent / fresh store check
+        res = call_mcp_tool("aios.session.check", {"store_path": temp_path, "auto_recover": False})
+        assert res.get("ok") is True, f"Expected clean check on default store: {res}"
+        assert res.get("report", {}).get("healthy") is True
+
+        # 2. Corrupt store without auto_recover -> returns unhealthy
+        with open(temp_path, "wb") as f:
+            f.write(b"CORRUPTED_JSON_SESSION_STORE")
+
+        res_bad = call_mcp_tool("aios.session.check", {"store_path": temp_path, "auto_recover": False})
+        assert res_bad.get("ok") is False or res_bad.get("report", {}).get("healthy") is False, f"Expected unhealthy on corrupt: {res_bad}"
+
+        # 3. Corrupt store with auto_recover -> triggers quarantine backup and recovers canonical store
+        res_rec = call_mcp_tool("aios.session.check", {"store_path": temp_path, "auto_recover": True})
+        assert res_rec.get("ok") is True, f"Expected recovery success: {res_rec}"
+        assert res_rec.get("recovered") is True, f"Expected recovered=True: {res_rec}"
+        assert res_rec.get("report", {}).get("healthy") is True
+        bak = res_rec.get("backup_path")
+        assert bak and os.path.exists(bak), f"Expected backup file to exist: {bak}"
+        if bak and os.path.exists(bak):
+            os.unlink(bak)
+
+        print("PASS: aios.session.check validation and quarantine recovery")
+    finally:
+        if os.path.exists(temp_path):
+            os.unlink(temp_path)
 
 
 def main():
@@ -458,6 +544,7 @@ def main():
     test_session_action()
     test_session_create_and_persistence()
     test_cross_surface_cli_mcp_parity()
+    test_session_check_and_recover()
     test_session_mcp_hardening()
     print("\nALL USER SESSION BOOTSTRAP MCP SMOKE TESTS PASSED!")
     return 0

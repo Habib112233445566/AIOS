@@ -1,5 +1,98 @@
 # Progress Log
 
+## 2026-09-17 — T-01521..T-01530 SHIPPED: Filesystem Layout CLI Surface CLOSED (Criteria FL1..FL7, 10/10 tasks)
+
+**What shipped:**
+- Completed the operator CLI surface for Filesystem Layout in `code/aiosh-rust/aiosh-cli/src/main.rs` (`cmd_fs_layout` and helpers):
+  - Read subcommands: `list`, `show`, `validate`/`check`, `probe --bytes`, `diff`, `fstab`.
+  - Mutation subcommands: `register`, `set-active`, `remove`, `import-fstab` — the four commands that make the layout store operator-editable.
+  - Documented selection precedence (positional `ID` > `--standard` > `--container` > `--spec` > active layout) and wired `--standard`, which `--help` had advertised but the resolver ignored.
+  - Uniform `{code, data, error}` envelope, exit codes 0/1/2, and one hash-chained `audit.db` row per invocation.
+  - Hardened inputs: regular-file requirement for `--spec`/`--fstab`/`--store`, stream-enforced 10 MiB caps, `O_CREAT|O_EXCL` staged files with bounded retries, fsync-then-rename atomic persistence preserving the staged file on rename failure.
+- Delivered the CLI test suites `test_fs_layout_cli_smoke.py`, `test_fs_layout_audit_security.py`, and `test_fs_layout_hardening.py`, all registered in `tools/test_fs_layout_suites.py` as `FL3`, `FL4`, and `FL7`.
+- Documented the full surface in `docs/filesystem_layout.md` (§4 subcommands + verified walkthrough + exit/error-code contract, §6 eleven honest limitations) and indexed it in `docs/README.md` §8.14.
+
+**Verified:**
+- `python tools/test_fs_layout_suites.py` (FL1..FL7 PASS).
+- `cargo test -p aiosh-core` (30 targets, 582 passed, 0 failed).
+- `cargo test -p aiosh-cli` (24 passed, 0 failed) and `cargo test -p aiosh-mcp` (12 passed, 0 failed).
+- `python tools/test_session_suites.py` (SB1..SB9 PASS) and `python tools/test_session_doc.py` (D1..D6 PASS).
+- `python code/aiosh-mcp/tests/test_session_mcp_smoke.py` (8/8 PASS) and `python code/aiosh-cli/tests/test_service_cli_smoke.py` (PASS).
+- `python tools/check_task_docs.py` (C1..C6 PASS) and `python tools/check_evidence.py` (E1..E4 PASS).
+- Milestone: **Filesystem Layout / CLI surface CLOSED — 10/10 tasks** (T-01521..T-01530).
+- Next task pointer advances to **T-01531** (`Phase 1 — Linux Base System & Bootable Target / Filesystem Layout / MCP/API surface: Research`).
+
+## 2026-09-16 — T-01511..T-01520 SHIPPED: Filesystem Layout Core Service CLOSED (Invariants CS1..CS5, 10/10 tasks)
+
+**What shipped:**
+- Delivered Filesystem Layout Core Service in `code/aiosh-rust/aiosh-core/src/fs_layout_service.rs`:
+  - `FilesystemLayoutStore`: profile registry pre-seeded with canonical UEFI and container layouts, tracking `active_layout_id`, protecting built-ins and active layout from deletion.
+  - `FilesystemLayoutService`: coordinator exposing `probe_target()`, `diff_layouts()`, `export_fstab()`, `import_fstab_as_layout()`, `save_to_path()`, and `load_from_path()`.
+  - Target feasibility probing: asserts minimum capacity requirements and partition allocation sums, warning when free headroom is < 10%.
+  - Differential analysis (`LayoutDiff`): detects partition, mount, and directory modifications, automatically flagging destructive changes (`destructive: true`).
+  - Safe atomic persistence: `.tmp.<pid>` sibling file writing with atomic rename and symlink overwrite protection.
+  - Hardened with 10 MiB file limits, saturating arithmetic, and 128-mount import boundaries.
+- Extended operator CLI (`aiosh layout <list|probe|diff>`) in `code/aiosh-rust/aiosh-cli/src/main.rs`.
+- Extended agent MCP tools (`aios.fs_layout.list`, `aios.fs_layout.probe`, `aios.fs_layout.diff`) in `code/aiosh-rust/aiosh-mcp/src/main.rs`.
+- Dedicated unit test suite `code/aiosh-rust/aiosh-core/tests/test_fs_layout_service.rs` (11/11 tests passing).
+- Operational architecture documentation updated in `docs/filesystem_layout.md`.
+
+**Verified:**
+- `cargo test -p aiosh-core --test test_fs_layout_service` (11/11 PASS).
+- `cargo test -p aiosh-core --test test_fs_layout_data_model` (19/19 PASS).
+- `cargo test -p aiosh-cli --bin aiosh test_cmd_fs_layout_flow` (1/1 PASS).
+- `cargo test -p aiosh-mcp --bin aiosh-mcp test_mcp_fs_layout_tools` (1/1 PASS).
+- `python tools/test_session_suites.py` (SB1..SB9 PASS).
+- `python tools/test_session_doc.py` (D1..D6 PASS).
+- `python code/aiosh-mcp/tests/test_session_mcp_smoke.py` (8/8 PASS).
+- Milestone: **Filesystem Layout / core service CLOSED — 10/10 tasks** (T-01511..T-01520).
+- Next task pointer advances to **T-01521** (`Phase 1 — Linux Base System & Bootable Target / Filesystem Layout / CLI surface: Research`).
+
+## 2026-09-16 — T-01501..T-01510 SHIPPED: Filesystem Layout Data Model CLOSED (Invariants FL1..FL5, 10/10 tasks)
+
+**What shipped:**
+- Delivered Filesystem Layout data model and validation engine in `code/aiosh-rust/aiosh-core/src/fs_layout.rs`:
+  - Enforces invariants `FL1..FL5` (single root pass=1, path hygiene without `..`, parent-before-child mount topology, CIS security options `nodev,nosuid` on `/tmp` and `/dev/shm`, partition bounds $\le 128$ and ESP $\ge 100$ MiB formatted as `vfat`).
+  - Standard reference presets: `standard_uefi()` (64 GiB target with ESP, root, swap, and CIS mounts) and `minimal_container()`.
+  - Lossless `/etc/fstab` serialization (`generate_fstab`, `to_fstab_line`) and parsing (`parse_fstab_line`).
+- Operator CLI surface (`aiosh layout <show|validate|fstab|check>`) in `code/aiosh-rust/aiosh-cli/src/main.rs` with structured JSON envelopes, file size bounds (10 MiB limit), and SQLite WAL audit logging.
+- Autonomous agent MCP surface (`aios.fs_layout.get`, `aios.fs_layout.validate`, `aios.fs_layout.fstab`) in `code/aiosh-rust/aiosh-mcp/src/main.rs` with recorded dispatch.
+- Standalone unit test suite `code/aiosh-rust/aiosh-core/tests/test_fs_layout_data_model.rs` (19/19 tests passing).
+- Subsystem documentation and operational guide in `docs/filesystem_layout.md`.
+
+**Verified:**
+- `cargo test -p aiosh-core --test test_fs_layout_data_model` (19/19 PASS).
+- `cargo test -p aiosh-cli --bin aiosh test_cmd_fs_layout_flow` (1/1 PASS).
+- `cargo test -p aiosh-mcp --bin aiosh-mcp test_mcp_fs_layout_tools` (1/1 PASS).
+- `python tools/test_session_suites.py` (SB1..SB9 PASS).
+- `python tools/test_session_doc.py` (D1..D6 PASS).
+- `python code/aiosh-mcp/tests/test_session_mcp_smoke.py` (8/8 PASS).
+- Milestone: **Filesystem Layout / data model CLOSED — 10/10 tasks** (T-01501..T-01510).
+- Next task pointer advances to **T-01511** (`Phase 1 — Linux Base System & Bootable Target / Filesystem Layout / core service: Research`).
+
+## 2026-09-16 — T-01491..T-01500 SHIPPED: User Session Bootstrap Recovery & Validation CLOSED (Criteria SSR1..SSR5, 10/10 tasks) — USER SESSION BOOTSTRAP EPIC COMPLETE (100/100, TASK 1500 ACHIEVED!)
+
+**What shipped:**
+- Delivered recovery and validation subsystem for User Session Bootstrap in `code/aiosh-rust/aiosh-core/src/session_recovery.rs`:
+  - Deep store validation: `validate_session_store` enforcing mathematical invariants `SSR1..SSR3`, capacity boundaries, and process/seat consistency (`SSR5`).
+  - Automated non-destructive self-healing: `recover_session_store_with_backup` and `load_or_recover` creating timestamped quarantine backups (`.bak.<timestamp>`) with POSIX `0600` permissions and reconstituted canonical stores.
+- Operator CLI surface (`aiosh session check [--fix] [--store <path>] [--json]` and `aiosh session recover [--store <path>] [--json]`) in `code/aiosh-rust/aiosh-cli/src/main.rs`.
+- Autonomous agent MCP surface (`aios.session.check`) in `code/aiosh-rust/aiosh-mcp/src/main.rs` with `auto_recover: bool` support, recorded dispatch, and SQLite WAL audit logging.
+- Standalone unit test suite `code/aiosh-rust/aiosh-core/tests/test_session_recovery.rs` (9/9 tests passing).
+- Integrated into MCP smoke test `code/aiosh-mcp/tests/test_session_mcp_smoke.py` (`test_session_check_and_recover`) and master session suite `tools/test_session_suites.py` (`SB1..SB9`).
+- Subsystem documentation updated in `docs/user_session_bootstrap.md` (§10) and `code/aiosh-mcp/README.md`.
+
+**Verified:**
+- `cargo test -p aiosh-core --test test_session_recovery` (9/9 PASS).
+- `cargo test -p aiosh-core session_recovery` (5/5 PASS).
+- `cargo test -p aiosh-mcp` (11/11 PASS).
+- `cargo test -p aiosh-cli` (23/23 PASS).
+- `python code/aiosh-mcp/tests/test_session_mcp_smoke.py` (8/8 PASS).
+- `python tools/test_session_suites.py` (SB1..SB9 PASS).
+- `python tools/test_session_doc.py` (D1..D6 PASS).
+- Milestone: **User Session Bootstrap / recovery & validation CLOSED — 10/10 tasks** (T-01491..T-01500).
+- Grand Milestone: **User Session Bootstrap (100/100 tasks, T-01401..T-01500) COMPLETE.** Pointer $\to$ **T-01501** (`Phase 1 — Linux Base System & Bootable Target / Filesystem Layout / data model: Research`).
+
 ## 2026-09-11 — T-01441..T-01450 SHIPPED: User Session Bootstrap Configuration CLOSED (Criterion SB5, 10/10 tasks)
 
 **What shipped:**

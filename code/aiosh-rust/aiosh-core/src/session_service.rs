@@ -7,6 +7,7 @@ use crate::session::{
     SessionClass, SessionScope, SessionState, SessionType, UserSessionAction, UserSessionQuery,
     UserSessionSpec, UserSessionStatus, UserSessionStore, MAX_SESSIONS_PER_USER, MAX_TOTAL_SESSIONS,
 };
+use crate::session_policy::{SessionPolicyMode, UserSessionSecurityPolicy};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::io;
@@ -36,6 +37,9 @@ pub struct UserSessionActionReport {
 pub struct UserSessionService {
     /// In-memory and persistent session store.
     pub store: UserSessionStore,
+    /// Security policy enforced during session creation and operations.
+    #[serde(default)]
+    pub policy: UserSessionSecurityPolicy,
 }
 
 impl Default for UserSessionService {
@@ -77,14 +81,29 @@ impl UserSessionService {
         };
 
         let _ = store.add_session(greeter_spec, greeter_status);
-        Self { store }
+        Self {
+            store,
+            policy: UserSessionSecurityPolicy::default(),
+        }
     }
 
     /// Initializes an unseeded, empty session service for isolated testing.
     pub fn empty() -> Self {
         Self {
             store: UserSessionStore::new(),
+            policy: UserSessionSecurityPolicy::default(),
         }
+    }
+
+    /// Sets or replaces the security policy on this service instance.
+    pub fn with_policy(mut self, policy: UserSessionSecurityPolicy) -> Self {
+        self.policy = policy;
+        self
+    }
+
+    /// Mutates the security policy on this service instance.
+    pub fn set_policy(&mut self, policy: UserSessionSecurityPolicy) {
+        self.policy = policy;
     }
 
     /// Registers and initializes a new session from a specification (CS1, CS3).
@@ -94,6 +113,16 @@ impl UserSessionService {
     ) -> Result<UserSessionActionReport, String> {
         if let Err(errs) = crate::session::validate_user_session_spec(&spec) {
             return Err(format!("Invalid session specification: {}", errs.join("; ")));
+        }
+
+        if self.policy.mode == SessionPolicyMode::Enforcing {
+            let verdict = self.policy.evaluate_spec(&spec);
+            if let Some(fatal) = verdict.violations.iter().find(|v| v.fatal) {
+                return Err(format!(
+                    "Security policy violation ({}): {}",
+                    fatal.rule_id, fatal.description
+                ));
+            }
         }
 
         if self.store.sessions.contains_key(&spec.session_id) {
@@ -328,7 +357,10 @@ impl UserSessionService {
             return Ok(Self::new());
         }
         let store = UserSessionStore::load_from_path(path.as_ref())?;
-        Ok(Self { store })
+        Ok(Self {
+            store,
+            policy: UserSessionSecurityPolicy::default(),
+        })
     }
 }
 
@@ -568,4 +600,39 @@ mod tests {
         assert!(loaded.get_session("greeter-seat0").is_some());
         assert!(loaded.get_session("sess-persist").is_some());
     }
+
+    #[test]
+    fn test_security_policy_enforcement_on_create() {
+        let mut service = UserSessionService::empty();
+
+        // 1. Root user (uid 0) creation must fail in enforcing mode (SSP1)
+        let mut root_spec = sample_user_spec("sess-root", "root", "seat0");
+        root_spec.uid = 0;
+        root_spec.gid = 0;
+        let err_root = service.create_session(root_spec);
+        assert!(err_root.is_err());
+        assert!(err_root.unwrap_err().contains("SSP1-ROOT-DISALLOWED"));
+
+        // 2. Remote session on seat0 must fail (SSP3)
+        let mut remote_spec = sample_user_spec("sess-rem0", "kali", "seat0");
+        remote_spec.remote_host = Some("192.168.1.50".to_string());
+        let err_rem = service.create_session(remote_spec);
+        assert!(err_rem.is_err());
+        assert!(err_rem.unwrap_err().contains("SSP3-REMOTE-SEAT0-FORBIDDEN"));
+
+        // 3. Prohibited environment variable (e.g. LD_PRELOAD, BASH_ENV) must fail (SSP4)
+        let mut env_spec = sample_user_spec("sess-env", "kali", "seat0");
+        env_spec.environment.insert("LD_PRELOAD".into(), "/lib/evil.so".into());
+        let err_env = service.create_session(env_spec);
+        assert!(err_env.is_err());
+        assert!(err_env.unwrap_err().contains("SSP4-DISALLOWED-ENV-VAR"));
+
+        // 4. Underscore-prefixed prohibited environment variable must also fail
+        let mut env_spec2 = sample_user_spec("sess-env2", "kali", "seat0");
+        env_spec2.environment.insert("_BASH_ENV".into(), "/tmp/pwn".into());
+        let err_env2 = service.create_session(env_spec2);
+        assert!(err_env2.is_err());
+        assert!(err_env2.unwrap_err().contains("SSP4-DISALLOWED-ENV-VAR"));
+    }
 }
+

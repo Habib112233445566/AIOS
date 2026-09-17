@@ -1197,6 +1197,25 @@ Evidence: `docs/tasks/evidence/T-01301-data-model-research.md` .. `docs/tasks/ev
 
 
 
+### 8.14 Linux Filesystem Layout Subsystem (`aiosh-core::fs_layout`, T-01501..T-01530)
+
+Declarative target-disk layout profiles — partitions, mount points, FHS directories, and
+`/etc/fstab` generation — validated against invariants `FL1..FL5` (data model) and `CS1..CS5`
+(store, probe, diff, atomic persistence), then operated through `aiosh layout`.
+
+Comprehensive architecture and operational guide: [docs/filesystem_layout.md](filesystem_layout.md).
+
+```bash
+aiosh layout validate --standard                     # FL1..FL5 over the canonical UEFI preset
+aiosh layout register --spec ./layout.json --store ./layouts.json
+aiosh layout set-active lab-vm-v1 --store ./layouts.json
+aiosh layout probe lab-vm-v1 --bytes 214748364800 --store ./layouts.json
+aiosh layout import-fstab lab-vm-v2 "Imported" --fstab ./fstab.sample --store ./layouts.json
+python3 tools/test_fs_layout_suites.py               # FL1..FL7
+```
+
+Evidence: `docs/tasks/evidence/T-01501-data-model-research.md` .. `docs/tasks/evidence/T-01530-cli-surface-verification-evidenc.md`.
+
 ## Documentation invariants (Task Ledger Control, T-00091..T-00100)
 
 `tools/check_task_docs.py` keeps THIS doc set rot-proof. Read-only,

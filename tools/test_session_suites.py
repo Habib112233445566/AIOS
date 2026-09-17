@@ -136,6 +136,15 @@ def test_sb8_observability():
     )
 
 
+def test_sb9_documentation():
+    doc_script = ROOT / "tools" / "test_session_doc.py"
+    return _run_python_script(
+        doc_script,
+        "SB9",
+        "session documentation architecture & operational guide (D1..D6)",
+    )
+
+
 def main() -> int:
     suites = [
         ("SB1", test_sb1_data_model_integrity),
@@ -146,6 +155,7 @@ def main() -> int:
         ("SB6", test_sb6_automated_integration),
         ("SB7", test_sb7_security_policy),
         ("SB8", test_sb8_observability),
+        ("SB9", test_sb9_documentation),
     ]
 
     failed = []
@@ -158,7 +168,7 @@ def main() -> int:
         print(f"FAIL: session_suites failed criteria: {', '.join(failed)}", file=sys.stderr)
         return 1
 
-    print("PASS: session_suites criteria (SB1..SB8)")
+    print("PASS: session_suites criteria (SB1..SB9)")
     return 0
 
 

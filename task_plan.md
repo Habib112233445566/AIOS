@@ -35,6 +35,115 @@ Strategic decision to adopt **Kali Linux** as the primary underlying distributio
 - **Desktop Interface (Pillar B)**: Deliver a Windows 10/11 desktop experience via XFCE `kali-undercover` or KDE Plasma Fluent themes, eliminating Linux terminal friction for operators.
 - **Autonomous AI Kernel (Pillar C)**: Integrate the AIOS AI shell (`ai_agent.py` + local SLM) as the desktop co-pilot with smart routing across all native Kali security tools.
 
+### 2026-09-17 — MILESTONE: Filesystem Layout CLI Surface CLOSED 10/10 (T-01521..T-01530)
+
+Complete research, specification, scaffolding, implementation, unit/integration testing, security review, hardening, documentation, and verification for Phase 1 `Filesystem Layout / CLI surface` (10/10 tasks, `T-01521..T-01530`):
+- **Operator CLI Surface (`aiosh layout`)**: `code/aiosh-rust/aiosh-cli/src/main.rs`:
+  - Read subcommands: `list`, `show` (positional `ID`, `--standard`, `--container`, `--spec`), `validate` / alias `check`, `probe --bytes <N>`, `diff [<source_id> <target_id>]`, `fstab`.
+  - Mutation subcommands: `register --spec <file_or_json>`, `set-active <id>`, `remove <id>`, `import-fstab <id> <name> --fstab <file_or_content> [--base <id>]`.
+  - Layout selection precedence: positional `ID` > `--standard` (`standard_uefi` preset) > `--container` (`minimal_container` preset) > `--spec` > the store's active layout. `--standard` had been advertised in `--help` but silently ignored by the resolver; it is now wired to the canonical preset and pinned by two smoke assertions.
+  - Uniform result envelope `{code, data, error}` on every branch, exit codes `0` (success) / `1` (operational, validation, I/O) / `2` (argument), and one SHA-256 hash-chained SQLite WAL audit row per invocation (ADR-0035), including fail-open paths.
+  - Input hardening: `--spec` / `--fstab` / `--store` must be regular files (FIFOs and character devices refused by type instead of blocking or streaming), 10 MiB cap enforced during the read (not from metadata alone), staged files created `O_CREAT | O_EXCL` with bounded retries, fsync-then-rename atomic persistence that preserves the staged file when only the rename fails.
+- **Shared store with the agent surface**: the CLI and the `aios.fs_layout.*` MCP tools read/write one canonical store, verified by the cross-surface parity suite.
+- **Automated Suites**:
+  - `code/aiosh-cli/tests/test_fs_layout_cli_smoke.py` (criterion `FL3`).
+  - `code/aiosh-cli/tests/test_fs_layout_audit_security.py` (`FL4`, audit emission + CWE-150 escape-injection proof).
+  - `code/aiosh-cli/tests/test_fs_layout_hardening.py` (`FL7`, non-regular paths, bounded reads, atomic persistence).
+  - `tools/test_fs_layout_suites.py` criteria `FL1..FL7` PASS, plus `cargo test -p aiosh-core` (582 passed), `-p aiosh-cli` (24), `-p aiosh-mcp` (12), and the `SB1..SB9` / `D1..D6` baseline smoke set.
+- **Documentation**: `docs/filesystem_layout.md` §4 (all 11 subcommands, selection precedence, verified end-to-end walkthrough, exit/error-code contract) and §6 (11 honest limitations); repository index entry `docs/README.md` §8.14.
+- **Milestone Advance**: task pointer advances to **T-01531** (`Phase 1 — Linux Base System & Bootable Target / Filesystem Layout / MCP/API surface: Research`).
+
+### 2026-09-16 — MILESTONE: Filesystem Layout Core Service CLOSED 10/10 (T-01511..T-01520)
+
+Complete research, specification, scaffolding, implementation, unit testing, CLI/MCP integration, security review, hardening, and verification for Phase 1 `Filesystem Layout / core service` (10/10 tasks, `T-01511..T-01520`):
+- **Core Service (`aiosh_core::fs_layout_service`)**: `code/aiosh-rust/aiosh-core/src/fs_layout_service.rs`:
+  - `FilesystemLayoutStore`: in-memory registry of layout profiles, pre-seeded with canonical UEFI and container presets; protects built-ins and active layout against accidental removal.
+  - `FilesystemLayoutService`: coordinator managing layout probing, diffing, fstab reconciliation, and atomic persistence.
+  - Invariants `CS1..CS5`: store coherence, target capacity feasibility, destructive mutation flagging, fstab topological order, atomic persistence with tempfile replace and 10 MiB limit.
+  - `probe_target`: evaluates block device size against required minimum and partition sums with saturating arithmetic, warning if slack < 10%.
+  - `diff_layouts`: calculates itemized partition, mount, and directory deltas, flagging `destructive: true` on partition deletions, shrinking, or filesystem format changes.
+  - `save_to_path` & `load_from_path`: crash-safe persistence via `.tmp.<pid>` with symlink overwrite protection.
+- **Operator CLI Surface (`aiosh layout`)**: `code/aiosh-rust/aiosh-cli/src/main.rs`:
+  - `aiosh layout list [--json]`
+  - `aiosh layout probe [--bytes <N>] [--json]`
+  - `aiosh layout diff [<source_id> <target_id>] [--json]`
+- **Autonomous Agent MCP Surface (`aios.fs_layout.*`)**: `code/aiosh-rust/aiosh-mcp/src/main.rs`:
+  - `aios.fs_layout.list`: Enumerate registered layout profiles.
+  - `aios.fs_layout.probe`: Evaluate target disk capacity.
+  - `aios.fs_layout.diff`: Compute differential comparisons between layouts.
+- **Verification Battery**:
+  - `test_fs_layout_service.rs` (11/11 PASS).
+  - `test_fs_layout_data_model.rs` (19/19 PASS).
+  - `test_cmd_fs_layout_flow` (1/1 PASS).
+  - `test_mcp_fs_layout_tools` (1/1 PASS).
+  - `test_session_suites.py` (SB1..SB9 PASS).
+  - `test_session_doc.py` (D1..D6 PASS).
+  - `test_session_mcp_smoke.py` (8/8 PASS).
+
+### 2026-09-16 — MILESTONE: Filesystem Layout Data Model CLOSED 10/10 (T-01501..T-01510)
+
+Complete research, specification, scaffolding, implementation, unit testing, CLI/MCP integration, security review, hardening, and verification for Phase 1 `Filesystem Layout / data model` (10/10 tasks, `T-01501..T-01510`):
+- **Data Model Core (`aiosh_core::fs_layout`)**: `code/aiosh-rust/aiosh-core/src/fs_layout.rs`:
+  - `FsType`: Ext4, Btrfs, Xfs, Vfat, Tmpfs, Devtmpfs, Procfs, Sysfs, Overlayfs, Squashfs, Swap, Custom.
+  - `PartitionType`: Canonical GPT Type GUID resolution (ESP, LinuxRoot, LinuxHome, LinuxSwap, LinuxVar, LinuxGeneric).
+  - `MountPointSpec` & `/etc/fstab`: Exact 6-field formatting and parsing conforming to Linux `fstab(5)` standards.
+  - `PartitionSpec` & `DirectorySpec`: FHS 3.0 directories and UsrMerge symlinks (`/bin -> usr/bin`, etc.).
+  - `FilesystemLayoutSpec`: Presets `standard_uefi` (64 GiB target host) and `minimal_container`.
+  - Consistency invariants `FL1..FL5` actively validated:
+    - `FL1`: Exactly one root mount point (`/`) with pass number 1.
+    - `FL2`: Path hygiene (absolute paths, no `..` traversal, no control characters, no trailing slashes).
+    - `FL3`: Mount hierarchy topology (parent precedes child, no duplicates).
+    - `FL4`: CIS benchmark security mount options (`nodev` and `nosuid` mandatory on `/tmp` and `/dev/shm`).
+    - `FL5`: Partition table boundaries ($\le 128$ partitions, positive sizes, ESP $\ge 100$ MiB formatted as `vfat`).
+- **Operator CLI Surface (`aiosh layout`)**: `code/aiosh-rust/aiosh-cli/src/main.rs`:
+  - `aiosh layout show [--standard|--container|--spec <path>] [--json]`
+  - `aiosh layout validate [--standard|--container|--spec <path>] [--json]`
+  - `aiosh layout fstab [--standard|--container|--spec <path>] [--json]`
+  - `aiosh layout check [--standard|--container|--spec <path>] [--json]`
+  - Emits structured audit records via `classify_and_emit` to SQLite WAL ring.
+- **Autonomous Agent MCP Surface (`aios.fs_layout.*`)**: `code/aiosh-rust/aiosh-mcp/src/main.rs`:
+  - `aios.fs_layout.get`: Reference layout discovery.
+  - `aios.fs_layout.validate`: Invariant validation over specifications or inline JSON.
+  - `aios.fs_layout.fstab`: Automated `/etc/fstab` file generation.
+  - All tools dispatched via `dispatch::recorded_call` into `AuditRing`.
+- **Dedicated Automated Unit & Integration Suite**:
+  - `code/aiosh-rust/aiosh-core/tests/test_fs_layout_data_model.rs`: 19/19 tests passing across FL1..FL5, boundary values, and negative cases.
+  - `test_cmd_fs_layout_flow` in `aiosh-cli` passing.
+  - `test_mcp_fs_layout_tools` in `aiosh-mcp` passing.
+- **Documentation**:
+  - Architecture and operational guide in `docs/filesystem_layout.md` with CLI and MCP examples.
+- **Milestone Advance**:
+  - `Filesystem Layout / data model` (10/10 tasks, T-01501..T-01510) COMPLETE.
+  - Next task pointer advances to **T-01511** (`Phase 1 — Linux Base System & Bootable Target / Filesystem Layout / core service: Research`).
+
+### 2026-09-16 — MILESTONE: User Session Bootstrap Recovery & Validation CLOSED 10/10 (T-01491..T-01500) — USER SESSION BOOTSTRAP EPIC COMPLETE (100/100, TASK 1500 ACHIEVED!)
+
+Complete implementation, governance, verification, and hardening for Phase 1 `User Session Bootstrap / recovery & validation` (10/10 tasks, `T-01491..T-01500`) and conclusion of the entire User Session Bootstrap feature (100/100 tasks, `T-01401..T-01500`):
+- **Recovery & Validation Subsystem (`aiosh_core::session_recovery`)**: `code/aiosh-rust/aiosh-core/src/session_recovery.rs`:
+  - Enforces mathematical & consistency invariants `SSR1..SSR5`:
+    - `SSR1`: `valid_sessions + invalid_sessions == total_sessions`
+    - `SSR2`: `healthy == (errors.is_empty() && invalid_sessions == 0)`
+    - `SSR3`: `invalid_sessions > 0 => errors.len() >= invalid_sessions`
+    - `SSR4`: Non-destructive quarantine via `.bak.<YYYYMMDD_HHMMSS_micros>` with POSIX `0600` permissions.
+    - `SSR5`: Single foreground session per hardware seat (`seat0`), no duplicate leader PIDs across non-terminated sessions.
+  - Core methods: `validate_session_store`, `create_backup_file`, `recover_session_store_with_backup`, `load_or_recover`.
+- **Operator CLI Surface (`aiosh session check` / `recover`)**: `code/aiosh-rust/aiosh-cli/src/main.rs`:
+  - `aiosh session check [--fix] [--store <path>] [--json]` providing human-readable diagnostic summaries or structured JSON envelopes with SQLite WAL audit row emission (`session.check` / `session.repair`).
+  - `aiosh session recover [--store <path>] [--json]` shortcut for automatic repair with quarantine backup.
+- **Autonomous Agent MCP Surface (`aios.session.check`)**: `code/aiosh-rust/aiosh-mcp/src/main.rs`:
+  - JSON-RPC 2.0 tool `aios.session.check` registered in tool manifest, handling inspection and `auto_recover: true` self-healing with quarantine backup and SQLite WAL audit logging.
+- **Dedicated Automated Unit & Integration Suite**:
+  - `code/aiosh-rust/aiosh-core/tests/test_session_recovery.rs`: 9/9 tests passing across SSR1..SSR5, capacity boundary limits, and lifecycle corruption scenarios.
+- **End-to-End Smoke & Integration Parity**:
+  - `code/aiosh-mcp/tests/test_session_mcp_smoke.py`: 8/8 test phases passing including `test_session_check_and_recover`.
+  - `tools/test_session_suites.py`: criteria `SB1..SB9` passing with 0 failures.
+  - `tools/test_session_doc.py`: documentation criteria `D1..D6` passing.
+- **Documentation**:
+  - `docs/user_session_bootstrap.md` (§10) and `code/aiosh-mcp/README.md` updated with operational guide, copy-pasteable CLI/MCP examples, constraints, and task evidence links.
+- **Grand Milestone**:
+  - **User Session Bootstrap (100/100 tasks, T-01401..T-01500) COMPLETE.**
+  - Task pointer advances to **T-01501** (`Phase 1 — Linux Base System & Bootable Target / Filesystem Layout / data model: Research`).
+
 ### 2026-09-11 — MILESTONE: User Session Bootstrap Configuration CLOSED 10/10 (T-01441..T-01450)
 
 Complete implementation, governance, verification, and hardening for Phase 1 `User Session Bootstrap / configuration` (10/10 tasks, `T-01441..T-01450`):

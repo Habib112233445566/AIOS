@@ -364,6 +364,32 @@ impl UserSessionStore {
             ));
         }
 
+        // Validate all session specs and statuses
+        let mut seen_pids = std::collections::HashSet::new();
+        for (id, spec) in &store.specs {
+            if id != &spec.session_id {
+                return Err(format!("Spec key '{}' does not match spec session_id '{}'", id, spec.session_id));
+            }
+            validate_user_session_spec(spec)
+                .map_err(|errs| format!("Session spec '{}' is invalid: {}", id, errs.join("; ")))?;
+        }
+
+        for (id, status) in &store.sessions {
+            if id != &status.session_id {
+                return Err(format!("Session key '{}' does not match status session_id '{}'", id, status.session_id));
+            }
+            validate_user_session_status(status)
+                .map_err(|errs| format!("Session status '{}' is invalid: {}", id, errs.join("; ")))?;
+
+            if status.state != SessionState::Terminated {
+                if let Some(pid) = status.leader_pid {
+                    if !seen_pids.insert(pid) {
+                        return Err(format!("Duplicate leader_pid {} detected across sessions in store", pid));
+                    }
+                }
+            }
+        }
+
         Ok(store)
     }
 
@@ -383,7 +409,29 @@ impl UserSessionStore {
             chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)
         ));
 
-        if let Err(e) = fs::write(&temp_path, json.as_bytes()) {
+        let write_res = (|| -> io::Result<()> {
+            use std::io::Write;
+            #[cfg(unix)]
+            let mut file = {
+                use std::os::unix::fs::OpenOptionsExt;
+                fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .mode(0o600)
+                    .open(&temp_path)?
+            };
+            #[cfg(not(unix))]
+            let mut file = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&temp_path)?;
+
+            file.write_all(json.as_bytes())?;
+            file.flush()?;
+            Ok(())
+        })();
+
+        if let Err(e) = write_res {
             let _ = fs::remove_file(&temp_path);
             return Err(e);
         }
@@ -509,8 +557,13 @@ pub fn validate_username(name: &str) -> Result<(), String> {
         ));
     }
 
-    for &b in bytes {
-        let valid = b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-';
+    for (i, &b) in bytes.iter().enumerate() {
+        let is_last = i == bytes.len() - 1;
+        let valid = b.is_ascii_lowercase()
+            || b.is_ascii_digit()
+            || b == b'_'
+            || b == b'-'
+            || (is_last && i > 0 && b == b'$');
         if !valid {
             return Err(format!(
                 "username contains invalid character '{}' in '{}'",
@@ -560,9 +613,9 @@ pub fn validate_user_session_spec(spec: &UserSessionSpec) -> Result<(), Vec<Stri
 
     // VTNR bounds
     if let Some(vtnr) = spec.vtnr {
-        if !(1..=12).contains(&vtnr) {
+        if !(1..=64).contains(&vtnr) {
             errors.push(format!(
-                "virtual terminal number (vtnr) must be between 1 and 12 (was {})",
+                "virtual terminal number (vtnr) must be between 1 and 64 (was {})",
                 vtnr
             ));
         }
@@ -598,8 +651,42 @@ pub fn validate_user_session_spec(spec: &UserSessionSpec) -> Result<(), Vec<Stri
                 "remote_host exceeds 255 characters (was {})",
                 host.len()
             ));
-        } else if host.contains(' ') || host.contains('\0') {
-            errors.push("remote_host contains prohibited whitespace or null byte".into());
+        } else if host.starts_with('-') {
+            errors.push(format!(
+                "remote_host cannot start with hyphen '-' to prevent argument injection: '{}'",
+                host
+            ));
+        } else if host.chars().any(|c| c.is_whitespace() || c.is_control() || ";`$|&><'\"\\".contains(c)) {
+            errors.push(format!(
+                "remote_host contains prohibited whitespace, control, or shell metacharacters: '{}'",
+                host
+            ));
+        } else {
+            let is_ip = host.parse::<std::net::IpAddr>().is_ok();
+            let is_hostname = || -> bool {
+                let labels: Vec<&str> = host.split('.').collect();
+                if labels.is_empty() {
+                    return false;
+                }
+                for label in labels {
+                    if label.is_empty() || label.len() > 63 {
+                        return false;
+                    }
+                    if label.starts_with('-') || label.ends_with('-') {
+                        return false;
+                    }
+                    if !label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+                        return false;
+                    }
+                }
+                true
+            };
+            if !is_ip && !is_hostname() {
+                errors.push(format!(
+                    "remote_host must be a valid IPv4/IPv6 address or RFC 1123 hostname: '{}'",
+                    host
+                ));
+            }
         }
     }
 

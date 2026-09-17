@@ -221,6 +221,45 @@ pub fn recorded_call<F>(
     require_grant: bool,
     actor_id: &str,
     actor: &str,
+    f: F,
+) -> serde_json::Value
+where
+    F: FnMut() -> Result<serde_json::Value, String>,
+{
+    recorded_call_with_resolved_target(
+        ring, pep, tool, command, args, target, grant_id, require_grant, actor_id, actor,
+        &|_: &serde_json::Value| None,
+        f,
+    )
+}
+
+/// [`recorded_call`] for a tool whose audit `target` is only knowable *after* the body
+/// has run.
+///
+/// `resolve_target` is handed the body's successful result and may return the target to
+/// record; returning `None` falls back to the pre-gate `target`. This exists for
+/// `aios.fs_layout.register`, which accepts either an inline layout object or a path to
+/// a spec file: the layout id (the audit target required by the spec) can only be known
+/// after parsing, and that parse must happen **after** authorization — reading the file
+/// before the gate would let an unauthorized caller trigger the read, and would let a
+/// FIFO named by `spec` stall the single-threaded request loop before policy was
+/// consulted.
+///
+/// The pre-gate `target` is still what the classifier and PEP see, and it is what a
+/// refusal row records; only the post-gate outcome row can be enriched.
+#[allow(clippy::too_many_arguments)]
+pub fn recorded_call_with_resolved_target<F>(
+    ring: &mut AuditRing,
+    pep: &PepStore,
+    tool: &str,
+    command: &str,
+    args: &serde_json::Value,
+    target: Option<&str>,
+    grant_id: Option<&str>,
+    require_grant: bool,
+    actor_id: &str,
+    actor: &str,
+    resolve_target: &dyn Fn(&serde_json::Value) -> Option<String>,
     mut f: F,
 ) -> serde_json::Value
 where
@@ -245,8 +284,10 @@ where
             } else {
                 raw.get("error").and_then(|v| v.as_str()).map(|s| s.to_string())
             };
+            // A body may resolve a target the gate could not know before running.
+            let row_target = resolve_target(&raw).or_else(|| target.map(|s| s.to_string()));
             let row = commit(
-                ring, tool, command, args, target, grant_id, outcome, detail.as_deref(),
+                ring, tool, command, args, row_target.as_deref(), grant_id, outcome, detail.as_deref(),
                 actor_id, actor, &verdict,
             );
             raw["audit_id"] = serde_json::json!(row.id);

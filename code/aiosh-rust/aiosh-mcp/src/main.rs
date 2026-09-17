@@ -979,6 +979,164 @@ impl Server {
                 "additionalProperties": false
             }
         }));
+        tools.push(json!({
+            "name": "aios.session.check",
+            "description": "Validate on-disk user session store integrity and optionally perform non-destructive recovery (SSR1..SSR5)",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "store_path": { "type": "string", "description": "Optional custom path to the user session store JSON file" },
+                    "auto_recover": { "type": "boolean", "description": "Automatically repair corrupted or invalid session store with timestamped backup" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.fs_layout.get",
+            "description": "Retrieve a Filesystem Layout: a stored layout by id, or a built-in preset profile",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "layout_id": { "type": "string", "description": "Id of a stored layout to return; takes precedence over profile" },
+                    "profile": { "type": "string", "enum": ["standard_uefi", "minimal_container"], "description": "Built-in preset to retrieve (default: standard_uefi; used only when layout_id is absent)" },
+                    "store_path": { "type": "string", "description": "Optional canonical layout store JSON shared with the CLI; consulted only when layout_id is given" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.fs_layout.validate",
+            "description": "Validate a Filesystem Layout against consistency invariants (FL1..FL5)",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "spec": { "type": "string", "description": "JSON string or path to layout specification" },
+                    "layout": { "type": "object", "description": "Inline layout JSON object (takes precedence over spec)" },
+                    "store_path": { "type": "string", "description": "Optional canonical layout store JSON; bound-checked for signature parity, never read by this tool" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.fs_layout.fstab",
+            "description": "Generate standard 6-field /etc/fstab file content from a Filesystem Layout",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "profile": { "type": "string", "enum": ["standard_uefi", "minimal_container"], "description": "Profile to generate fstab for" },
+                    "spec": { "type": "string", "description": "Optional custom layout JSON string or path" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.fs_layout.list",
+            "description": "List all registered Filesystem Layout profiles",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "store_path": { "type": "string", "description": "Optional canonical layout store JSON shared with the CLI (default: seeded built-in presets)" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.fs_layout.probe",
+            "description": "Probe target disk capacity and evaluate feasibility for a Filesystem Layout",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "layout_id": { "type": "string", "description": "Layout identifier (default: active layout)" },
+                    "target_disk_bytes": { "type": "integer", "description": "Target disk capacity in bytes (default: 68719476736 = 64 GiB)" },
+                    "store_path": { "type": "string", "description": "Optional canonical layout store JSON shared with the CLI" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.fs_layout.diff",
+            "description": "Compute differential comparison between two Filesystem Layouts",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "source_id": { "type": "string", "description": "Source layout identifier (default: aios-uefi-standard-v1)" },
+                    "target_id": { "type": "string", "description": "Target layout identifier (default: aios-container-minimal-v1)" },
+                    "store_path": { "type": "string", "description": "Optional canonical layout store JSON shared with the CLI" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
+        // T-01533 scaffold — Filesystem Layout mutation surface (interfaces only;
+        // bodies are filled in by T-01534). Every mutation requires a PEP grant and
+        // an explicit store_path, because no canonical default store exists yet
+        // (configuration sub-epic T-01541+ owns that default).
+        tools.push(json!({
+            "name": "aios.fs_layout.register",
+            "description": "Register a new Filesystem Layout profile into the canonical layout store (requires PEP grant)",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "layout": { "type": "object", "description": "Inline layout JSON object (either this or spec is required)" },
+                    "spec": { "type": "string", "description": "Path to a regular layout JSON file, or inline layout JSON" },
+                    "store_path": { "type": "string", "description": "Canonical layout store JSON path to persist into (required: no default store is defined yet)" },
+                    "grant_id": { "type": "string", "description": "PEP authorization grant ID" }
+                },
+                "required": ["store_path"],
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.fs_layout.set_active",
+            "description": "Switch the active Filesystem Layout pointer to an existing layout id (requires PEP grant)",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "layout_id": { "type": "string", "description": "Id of an already-registered layout to activate" },
+                    "store_path": { "type": "string", "description": "Canonical layout store JSON path to persist into (required: no default store is defined yet)" },
+                    "grant_id": { "type": "string", "description": "PEP authorization grant ID" }
+                },
+                "required": ["layout_id", "store_path"],
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.fs_layout.remove",
+            "description": "Remove a non-active, non-built-in Filesystem Layout profile from the store (requires PEP grant)",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "layout_id": { "type": "string", "description": "Id of the layout profile to remove" },
+                    "store_path": { "type": "string", "description": "Canonical layout store JSON path to persist into (required: no default store is defined yet)" },
+                    "grant_id": { "type": "string", "description": "PEP authorization grant ID" }
+                },
+                "required": ["layout_id", "store_path"],
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.fs_layout.import_fstab",
+            "description": "Import /etc/fstab content as a new Filesystem Layout profile (requires PEP grant)",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "layout_id": { "type": "string", "description": "Id for the new layout profile" },
+                    "name": { "type": "string", "description": "Human-readable profile name" },
+                    "fstab": { "type": "string", "description": "Path to a regular fstab file, or inline fstab content" },
+                    "base_layout_id": { "type": "string", "description": "Layout whose partitions/directories are inherited (default: store active layout)" },
+                    "store_path": { "type": "string", "description": "Canonical layout store JSON path to persist into (required: no default store is defined yet)" },
+                    "grant_id": { "type": "string", "description": "PEP authorization grant ID" }
+                },
+                "required": ["layout_id", "name", "fstab", "store_path"],
+                "additionalProperties": false
+            }
+        }));
         tools
     }
 
@@ -2673,7 +2831,7 @@ impl Server {
                 dispatch::recorded_call(
                     &mut self.ring, &self.pep,
                     "aios.session.action", "Execute lifecycle action on session", arguments,
-                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                    None, grant_id, true, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
                 )
             }
             "aios.session.create" => {
@@ -2730,7 +2888,7 @@ impl Server {
                 dispatch::recorded_call(
                     &mut self.ring, &self.pep,
                     "aios.session.create", "Bootstrap and register a new user or agent session", arguments,
-                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                    None, grant_id, true, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
                 )
             }
             "aios.session.config" => {
@@ -2850,6 +3008,381 @@ impl Server {
                     &mut self.ring, &self.pep,
                     "aios.session.stats", "Generate User Session Bootstrap observability report", arguments,
                     None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.session.check" => {
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                if let Some(ref p) = store_path_opt {
+                    if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+                        return json!({ "ok": false, "error": "store_path exceeds maximum length of 1024 characters or contains control characters" });
+                    }
+                }
+                let auto_recover = arguments.get("auto_recover").and_then(|v| v.as_bool()).unwrap_or(false);
+
+                let f = move || -> Result<Value, String> {
+                    let target_path = if let Some(ref p) = store_path_opt {
+                        std::path::PathBuf::from(p)
+                    } else {
+                        std::path::PathBuf::from("/var/run/aios/sessions.json")
+                    };
+
+                    let (service, report, recovered, backup_opt) = if auto_recover {
+                        aiosh_core::session_recovery::load_or_recover(&target_path)?
+                    } else if target_path.exists() {
+                        let s = aiosh_core::session_service::UserSessionService::load_from_path(&target_path)
+                            .map_err(|e| format!("Failed to load session store: {}", e))?;
+                        let rep = aiosh_core::session_recovery::validate_session_store(&s.store, &target_path);
+                        (s, rep, false, None)
+                    } else {
+                        let s = aiosh_core::session_service::UserSessionService::new();
+                        let rep = aiosh_core::session_recovery::validate_session_store(&s.store, &target_path);
+                        (s, rep, false, None)
+                    };
+
+                    Ok(json!({
+                        "ok": report.healthy,
+                        "tool": "aios.session.check",
+                        "report": report,
+                        "recovered": recovered,
+                        "backup_path": backup_opt.map(|p| p.to_string_lossy().to_string()),
+                        "total_sessions": service.store.specs.len()
+                    }))
+                };
+
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.session.check", "Validate or recover User Session Bootstrap store", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.fs_layout.get" => {
+                let layout_id_opt = arguments.get("layout_id").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let profile = arguments.get("profile").and_then(|v| v.as_str()).unwrap_or("standard_uefi").to_string();
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = move || -> Result<Value, String> {
+                    // T-01534 (spec D-4): `layout_id` widens `get` to stored layouts.
+                    // The `profile` preset path below stays byte-identical to before,
+                    // so existing callers are unaffected.
+                    if let Some(id) = layout_id_opt.clone() {
+                        let service = resolve_fs_layout_service(&store_path_opt)?;
+                        let layout = service
+                            .store()
+                            .get_layout(&id)
+                            .ok_or_else(|| format!("layout with id '{}' not found in store", id))?
+                            .clone();
+                        return Ok(json!({
+                            "ok": true,
+                            "tool": "aios.fs_layout.get",
+                            "layout": layout
+                        }));
+                    }
+                    let layout = match profile.as_str() {
+                        "minimal_container" | "container" => aiosh_core::fs_layout::FilesystemLayoutSpec::minimal_container(),
+                        _ => aiosh_core::fs_layout::FilesystemLayoutSpec::standard_uefi(),
+                    };
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.fs_layout.get",
+                        "layout": layout
+                    }))
+                };
+
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.fs_layout.get", "Retrieve reference Filesystem Layout", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.fs_layout.validate" => {
+                let spec_opt = arguments.get("spec").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let layout_val = arguments.get("layout").cloned();
+                let f = move || -> Result<Value, String> {
+                    // Spec §4.2: `store_path` is accepted for bounds parity only — this
+                    // tool never reads the store, so only its bounds are checked.
+                    check_fs_layout_store_path_bounds(arguments)?;
+                    let layout = if let Some(ref val) = layout_val {
+                        ensure_inline_payload_bounded(val, "layout")?;
+                        serde_json::from_value::<aiosh_core::fs_layout::FilesystemLayoutSpec>(val.clone())
+                            .map_err(|e| format!("invalid layout JSON: {}", e))?
+                    } else if let Some(ref s) = spec_opt {
+                        // T-01534 (spec D-6): bounded, type-checked, non-blocking read.
+                        let content = read_layout_document_input(s, "spec file", "spec")?;
+                        aiosh_core::fs_layout::FilesystemLayoutSpec::from_json(&content)?
+                    } else {
+                        aiosh_core::fs_layout::FilesystemLayoutSpec::standard_uefi()
+                    };
+
+                    let res = layout.validate();
+                    Ok(json!({
+                        "ok": res.is_ok(),
+                        "tool": "aios.fs_layout.validate",
+                        "id": layout.id,
+                        "valid": res.is_ok(),
+                        "error": res.err()
+                    }))
+                };
+
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.fs_layout.validate", "Validate Filesystem Layout invariants (FL1..FL5)", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.fs_layout.fstab" => {
+                let profile_opt = arguments.get("profile").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let spec_opt = arguments.get("spec").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = move || -> Result<Value, String> {
+                    let layout = if let Some(ref s) = spec_opt {
+                        // T-01534 (spec D-6): bounded, type-checked, non-blocking read.
+                        let content = read_layout_document_input(s, "spec file", "spec")?;
+                        aiosh_core::fs_layout::FilesystemLayoutSpec::from_json(&content)?
+                    } else {
+                        match profile_opt.as_deref() {
+                            Some("minimal_container") | Some("container") => aiosh_core::fs_layout::FilesystemLayoutSpec::minimal_container(),
+                            _ => aiosh_core::fs_layout::FilesystemLayoutSpec::standard_uefi(),
+                        }
+                    };
+
+                    let fstab = layout.generate_fstab();
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.fs_layout.fstab",
+                        "id": layout.id,
+                        "fstab": fstab
+                    }))
+                };
+
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.fs_layout.fstab", "Generate /etc/fstab from Filesystem Layout", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.fs_layout.list" => {
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = move || -> Result<Value, String> {
+                    let service = resolve_fs_layout_service(&store_path_opt)?;
+                    let layouts = service.store.list_layouts();
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.fs_layout.list",
+                        "active_layout_id": service.store.active_layout_id,
+                        "count": layouts.len(),
+                        "layouts": layouts
+                    }))
+                };
+
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.fs_layout.list", "List registered Filesystem Layout profiles", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.fs_layout.probe" => {
+                let layout_id_opt = arguments.get("layout_id").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let target_disk_bytes = arguments
+                    .get("target_disk_bytes")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(64 * 1024 * 1024 * 1024);
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+                let f = move || -> Result<Value, String> {
+                    let service = resolve_fs_layout_service(&store_path_opt)?;
+                    // T-01534 (spec D-5): default to the store's active layout, matching
+                    // the CLI resolver, instead of the literal preset. With a seeded store
+                    // the active id *is* the preset, so the default case is unchanged.
+                    let layout_id = match layout_id_opt.clone() {
+                        Some(id) => id,
+                        None => service.store().get_active_layout()?.id.clone(),
+                    };
+                    let eval = service.probe_target(&layout_id, target_disk_bytes)?;
+                    Ok(json!({
+                        "ok": eval.is_viable,
+                        "tool": "aios.fs_layout.probe",
+                        "evaluation": eval
+                    }))
+                };
+
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.fs_layout.probe", "Probe target disk capacity for Filesystem Layout", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.fs_layout.diff" => {
+                let source_id = arguments
+                    .get("source_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("aios-uefi-standard-v1")
+                    .to_string();
+                let target_id = arguments
+                    .get("target_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("aios-container-minimal-v1")
+                    .to_string();
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+                let f = move || -> Result<Value, String> {
+                    let service = resolve_fs_layout_service(&store_path_opt)?;
+                    let diff = service.diff_layouts(&source_id, &target_id)?;
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.fs_layout.diff",
+                        "diff": diff
+                    }))
+                };
+
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.fs_layout.diff", "Compute differential comparison between Filesystem Layouts", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            // T-01534: Filesystem Layout mutation surface (spec §4.7). Each tool is a
+            // thin adapter over an existing FilesystemLayoutStore / -Service method so
+            // the agent surface and the operator CLI cannot drift semantically. All four
+            // require a PEP grant and an explicit store_path (spec §3.1, §8.1).
+            "aios.fs_layout.register" => {
+                let layout_val = arguments.get("layout").cloned();
+                let spec_opt = arguments.get("spec").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let target_opt = layout_val
+                    .as_ref()
+                    .and_then(|v| v.get("id"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                let f = move || -> Result<Value, String> {
+                    let store_path = require_fs_layout_store_path(arguments)?;
+                    let spec = if let Some(ref val) = layout_val {
+                        ensure_inline_payload_bounded(val, "layout")?;
+                        serde_json::from_value::<aiosh_core::fs_layout::FilesystemLayoutSpec>(val.clone())
+                            .map_err(|e| format!("invalid layout JSON: {}", e))?
+                    } else if let Some(ref s) = spec_opt {
+                        let content = read_layout_document_input(s, "spec file", "spec")?;
+                        aiosh_core::fs_layout::FilesystemLayoutSpec::from_json(&content)?
+                    } else {
+                        return Err("register requires a 'layout' object or a 'spec' string".into());
+                    };
+                    let layout_id = spec.id.clone();
+                    let mut service = resolve_fs_layout_service(&Some(store_path.clone()))?;
+                    // `register_layout` validates FL1..FL5 and refuses duplicate ids.
+                    service.store_mut().register_layout(spec)?;
+                    service.save_to_path(std::path::Path::new(&store_path))?;
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.fs_layout.register",
+                        "id": layout_id,
+                        "registered": true,
+                        "active_layout_id": service.store.active_layout_id
+                    }))
+                };
+                dispatch::recorded_call_with_resolved_target(
+                    &mut self.ring, &self.pep,
+                    "aios.fs_layout.register", "Register Filesystem Layout profile", arguments,
+                    target_opt.as_deref(), grant_id, true, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR,
+                    // Spec §9: the audit target is the layout id for per-layout operations.
+                    // The id is only knowable after parsing, and parsing must stay behind
+                    // the gate, so the row target is resolved from the body's result.
+                    // Both accepted input forms (`spec` path or inline `layout`) then
+                    // record the same id instead of `None` for the path form.
+                    &|body: &Value| body.get("id").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    f,
+                )
+            }
+            "aios.fs_layout.set_active" => {
+                let layout_id_opt = arguments.get("layout_id").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let target_opt = layout_id_opt.clone();
+                let f = move || -> Result<Value, String> {
+                    let store_path = require_fs_layout_store_path(arguments)?;
+                    let layout_id = layout_id_opt
+                        .clone()
+                        .ok_or_else(|| "set_active requires a 'layout_id' argument".to_string())?;
+                    let mut service = resolve_fs_layout_service(&Some(store_path.clone()))?;
+                    let previous_active = service.store.active_layout_id.clone();
+                    // `set_active_layout` refuses unknown ids.
+                    service.store_mut().set_active_layout(&layout_id)?;
+                    service.save_to_path(std::path::Path::new(&store_path))?;
+                    // Spec D-7: report the destructive verdict of the transition, never
+                    // refuse it. `null` when it cannot be computed (empty previous id).
+                    let destructive_transition = service
+                        .diff_layouts(&previous_active, &layout_id)
+                        .ok()
+                        .map(|d| d.destructive);
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.fs_layout.set_active",
+                        "previous_active": previous_active,
+                        "active": layout_id,
+                        "destructive_transition": destructive_transition
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.fs_layout.set_active", "Set active Filesystem Layout", arguments,
+                    target_opt.as_deref(), grant_id, true, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.fs_layout.remove" => {
+                let layout_id_opt = arguments.get("layout_id").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let target_opt = layout_id_opt.clone();
+                let f = move || -> Result<Value, String> {
+                    let store_path = require_fs_layout_store_path(arguments)?;
+                    let layout_id = layout_id_opt
+                        .clone()
+                        .ok_or_else(|| "remove requires a 'layout_id' argument".to_string())?;
+                    let mut service = resolve_fs_layout_service(&Some(store_path.clone()))?;
+                    // `remove_layout` refuses the active layout and the built-in presets.
+                    service.store_mut().remove_layout(&layout_id)?;
+                    service.save_to_path(std::path::Path::new(&store_path))?;
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.fs_layout.remove",
+                        "id": layout_id,
+                        "removed": true,
+                        "active_layout_id": service.store.active_layout_id
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.fs_layout.remove", "Remove Filesystem Layout profile", arguments,
+                    target_opt.as_deref(), grant_id, true, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.fs_layout.import_fstab" => {
+                let layout_id_opt = arguments.get("layout_id").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let name_opt = arguments.get("name").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let fstab_opt = arguments.get("fstab").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let base_opt = arguments.get("base_layout_id").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let target_opt = layout_id_opt.clone();
+                let f = move || -> Result<Value, String> {
+                    let store_path = require_fs_layout_store_path(arguments)?;
+                    let layout_id = layout_id_opt
+                        .clone()
+                        .ok_or_else(|| "import_fstab requires a 'layout_id' argument".to_string())?;
+                    let name = name_opt
+                        .clone()
+                        .ok_or_else(|| "import_fstab requires a 'name' argument".to_string())?;
+                    let fstab_arg = fstab_opt
+                        .clone()
+                        .ok_or_else(|| "import_fstab requires a 'fstab' path or inline content".to_string())?;
+                    let content = read_layout_document_input(&fstab_arg, "fstab file", "fstab")?;
+                    let mut service = resolve_fs_layout_service(&Some(store_path.clone()))?;
+                    let spec = service
+                        .import_fstab_as_layout(&layout_id, &name, &content, base_opt.as_deref())
+                        .map_err(|e| format!("failed to import fstab as layout: {}", e))?;
+                    service.save_to_path(std::path::Path::new(&store_path))?;
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.fs_layout.import_fstab",
+                        "id": spec.id,
+                        "name": spec.name,
+                        "mounts": spec.mounts.len(),
+                        "layout": spec
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.fs_layout.import_fstab", "Import Filesystem Layout from fstab", arguments,
+                    target_opt.as_deref(), grant_id, true, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
                 )
             }
             "aios.triage.list" => {
@@ -3856,6 +4389,102 @@ fn row_to_json(r: &aiosh_core::types::AuditRow) -> Value {
     m.insert("prev_hash".into(), json!(r.prev_hash));
     m.insert("hash".into(), json!(r.hash));
     Value::Object(m)
+}
+
+/// Loads a Filesystem Layout service, honoring an optional canonical JSON store path.
+///
+/// Mirrors `aiosh-cli` semantics so the operator and agent surfaces observe identical
+/// state: a store path that does not exist yet yields the seeded default store (built-in
+/// UEFI and container presets) rather than an error.
+fn resolve_fs_layout_service(
+    store_path_opt: &Option<String>,
+) -> Result<aiosh_core::fs_layout_service::FilesystemLayoutService, String> {
+    match store_path_opt {
+        Some(p) => {
+            if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+                return Err("store_path exceeds 1024 characters or contains control characters".into());
+            }
+            let path = std::path::Path::new(p);
+            if path.exists() {
+                aiosh_core::fs_layout_service::FilesystemLayoutService::load_from_path(path)
+            } else {
+                Ok(aiosh_core::fs_layout_service::FilesystemLayoutService::new())
+            }
+        }
+        None => Ok(aiosh_core::fs_layout_service::FilesystemLayoutService::new()),
+    }
+}
+
+/// Upper bound for an inline (non-file) layout / fstab payload. Mirrors the explicit
+/// 1 MiB spec check the session tools perform and the transport request-line cap.
+const MAX_INLINE_LAYOUT_BYTES: usize = 1024 * 1024;
+
+/// Resolves a `spec` / `fstab` argument that may name a regular file or carry the
+/// document inline.
+///
+/// T-01534 (spec D-6): when the value names an existing path it is read with
+/// `read_bounded_text_file`, so a directory, FIFO, or device is refused *by type*
+/// instead of being read, and the 10 MiB ceiling is enforced on the byte stream.
+/// This matters more here than on the CLI: the MCP server is single-threaded, so a
+/// FIFO named by `spec` used to block the entire request loop (an unauthenticated
+/// transport DoS), and `/dev/zero` streamed until memory was exhausted. Inline
+/// payloads cannot be refused by type, so they are bounded explicitly instead.
+fn read_layout_document_input(
+    value: &str,
+    label: &str,
+    inline_label: &str,
+) -> Result<String, String> {
+    let path = std::path::Path::new(value);
+    if path.exists() {
+        return aiosh_core::fs_layout_service::read_bounded_text_file(
+            path,
+            aiosh_core::fs_layout_service::MAX_LAYOUT_DOC_BYTES,
+            label,
+        )
+        .map_err(|e| e.message().to_string());
+    }
+    if value.len() > MAX_INLINE_LAYOUT_BYTES {
+        return Err(format!("inline {} exceeds 1 MiB limit", inline_label));
+    }
+    Ok(value.to_string())
+}
+
+/// Bounds an inline JSON payload that never touches the filesystem.
+fn ensure_inline_payload_bounded(value: &serde_json::Value, label: &str) -> Result<(), String> {
+    let len = serde_json::to_string(value).map(|s| s.len()).unwrap_or(0);
+    if len > MAX_INLINE_LAYOUT_BYTES {
+        return Err(format!("inline {} exceeds 1 MiB limit", label));
+    }
+    Ok(())
+}
+
+/// Resolves the **required** `store_path` of a mutating `fs_layout` tool.
+///
+/// No canonical default layout store exists yet (the configuration sub-epic,
+/// T-01541..T-01550, owns that default). Without an explicit path a mutation would
+/// succeed against a throw-away in-memory store and still report success — which for
+/// a long-lived agent is worse than an error, because the discard is invisible.
+/// The bound matches `resolve_fs_layout_service` (<= 1024 chars, no control chars).
+fn require_fs_layout_store_path(arguments: &serde_json::Value) -> Result<String, String> {
+    check_fs_layout_store_path_bounds(arguments)?;
+    match arguments.get("store_path").and_then(|v| v.as_str()) {
+        Some(p) if !p.is_empty() => Ok(p.to_string()),
+        _ => Err("store_path is required for mutating fs_layout tools (no canonical default store is defined yet)".into()),
+    }
+}
+
+/// Bounds an **optional** `store_path` argument (<= 1024 chars, no control chars).
+///
+/// Spec §4.2 keeps `store_path` on `validate` for signature/bounds parity with the
+/// store-backed tools without reading the store; this is the single owner of that
+/// predicate for the mutation path too.
+fn check_fs_layout_store_path_bounds(arguments: &serde_json::Value) -> Result<(), String> {
+    match arguments.get("store_path").and_then(|v| v.as_str()) {
+        Some(p) if p.len() > 1024 || p.chars().any(|c| c.is_control()) => {
+            Err("store_path exceeds 1024 characters or contains control characters".into())
+        }
+        _ => Ok(()),
+    }
 }
 
 fn resolve_service_store(
@@ -4937,10 +5566,27 @@ mod tests {
         let res_get_missing = server.call_tool("aios.session.get", &json!({ "session_id": "non-existent" }));
         assert_eq!(res_get_missing.get("ok").and_then(|v| v.as_bool()), Some(false));
 
-        // 13. Apply action: Lock greeter session
-        let res_lock = server.call_tool("aios.session.action", &json!({
+        // 13. Apply action: Without grant must fail PEP gate
+        let res_lock_nogrant = server.call_tool("aios.session.action", &json!({
             "session_id": "greeter-seat0",
             "action": "lock"
+        }));
+        assert_eq!(res_lock_nogrant.get("ok").and_then(|v| v.as_bool()), Some(false));
+        assert_eq!(res_lock_nogrant.get("gate").and_then(|v| v.as_str()), Some("pep"));
+
+        // Issue PEP grant for session operations
+        let grant_scope = aiosh_core::types::GrantScope {
+            tools: vec!["aios.session.*".into(), "session.*".into()],
+            ..Default::default()
+        };
+        let grant = server.pep.create(&grant_scope, 3600, "agent:test", &server.constitution_rev).unwrap();
+        let gid = &grant.grant_id;
+
+        // Apply action: With valid grant succeeds
+        let res_lock = server.call_tool("aios.session.action", &json!({
+            "session_id": "greeter-seat0",
+            "action": "lock",
+            "grant_id": gid
         }));
         assert_eq!(res_lock.get("ok").and_then(|v| v.as_bool()), Some(true));
         assert_eq!(res_lock.pointer("/report/new_state").and_then(|v| v.as_str()), Some("locked"));
@@ -4948,8 +5594,28 @@ mod tests {
         // 14. Discovery of aios.session.create
         assert!(tools.iter().any(|t| t.get("name").and_then(|v| v.as_str()) == Some("aios.session.create")));
 
-        // 15. Create valid agent session
+        // 15. Create without grant must fail PEP gate
+        let res_create_nogrant = server.call_tool("aios.session.create", &json!({
+            "spec": {
+                "session_id": "agent-copilot-01",
+                "username": "kali",
+                "uid": 1000,
+                "gid": 1000,
+                "session_type": "ai_agent",
+                "session_class": "agent",
+                "seat": "seat0",
+                "vtnr": 1,
+                "display": null,
+                "remote_host": null,
+                "environment": {}
+            }
+        }));
+        assert_eq!(res_create_nogrant.get("ok").and_then(|v| v.as_bool()), Some(false));
+        assert_eq!(res_create_nogrant.get("gate").and_then(|v| v.as_str()), Some("pep"));
+
+        // Create valid agent session with grant
         let res_create_valid = server.call_tool("aios.session.create", &json!({
+            "grant_id": gid,
             "spec": {
                 "session_id": "agent-copilot-01",
                 "username": "kali",
@@ -4970,6 +5636,7 @@ mod tests {
 
         // 16. Create duplicate session fails (greeter-seat0 already exists in default store)
         let res_create_dup = server.call_tool("aios.session.create", &json!({
+            "grant_id": gid,
             "spec": {
                 "session_id": "greeter-seat0",
                 "username": "kali",
@@ -4989,6 +5656,7 @@ mod tests {
 
         // 17. Create invalid spec fails
         let res_create_invalid = server.call_tool("aios.session.create", &json!({
+            "grant_id": gid,
             "spec": {
                 "session_id": "../evil",
                 "username": "kali",
@@ -5002,7 +5670,9 @@ mod tests {
         assert_eq!(res_create_invalid.get("ok").and_then(|v| v.as_bool()), Some(false));
 
         // 18. Create missing spec parameter fails
-        let res_create_missing = server.call_tool("aios.session.create", &json!({}));
+        let res_create_missing = server.call_tool("aios.session.create", &json!({
+            "grant_id": gid
+        }));
         assert_eq!(res_create_missing.get("ok").and_then(|v| v.as_bool()), Some(false));
 
         // 19. aios.session.config discovery and execution
@@ -5064,6 +5734,531 @@ mod tests {
         assert_eq!(res_stats.get("ok").and_then(|v| v.as_bool()), Some(true));
         assert!(res_stats.pointer("/report/state_breakdown").is_some());
         assert!(res_stats.pointer("/report/distinct_users_count").is_some());
+
+        // 22. aios.session.check discovery and execution
+        assert!(tools.iter().any(|t| t.get("name").and_then(|v| v.as_str()) == Some("aios.session.check")));
+        let res_check = server.call_tool("aios.session.check", &json!({}));
+        assert_eq!(res_check.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_check.pointer("/report/healthy").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_check.pointer("/recovered").and_then(|v| v.as_bool()), Some(false));
+    }
+
+    #[test]
+    fn test_mcp_fs_layout_tools() {
+        let mut server = Server::open();
+        let tools = server.tool_manifest();
+
+        // 1. Tool discovery
+        assert!(tools.iter().any(|t| t.get("name").and_then(|v| v.as_str()) == Some("aios.fs_layout.get")));
+        assert!(tools.iter().any(|t| t.get("name").and_then(|v| v.as_str()) == Some("aios.fs_layout.validate")));
+        assert!(tools.iter().any(|t| t.get("name").and_then(|v| v.as_str()) == Some("aios.fs_layout.fstab")));
+
+        // 2. aios.fs_layout.get - standard_uefi
+        let res_get_uefi = server.call_tool("aios.fs_layout.get", &json!({ "profile": "standard_uefi" }));
+        assert_eq!(res_get_uefi.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_get_uefi.pointer("/layout/id").and_then(|v| v.as_str()), Some("aios-uefi-standard-v1"));
+
+        // 3. aios.fs_layout.get - minimal_container
+        let res_get_cont = server.call_tool("aios.fs_layout.get", &json!({ "profile": "minimal_container" }));
+        assert_eq!(res_get_cont.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_get_cont.pointer("/layout/id").and_then(|v| v.as_str()), Some("aios-container-minimal-v1"));
+
+        // 4. aios.fs_layout.validate - default standard_uefi
+        let res_val_default = server.call_tool("aios.fs_layout.validate", &json!({}));
+        assert_eq!(res_val_default.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_val_default.get("valid").and_then(|v| v.as_bool()), Some(true));
+
+        // 5. aios.fs_layout.validate - invalid inline layout (no root mount)
+        let res_val_bad = server.call_tool("aios.fs_layout.validate", &json!({
+            "layout": {
+                "id": "bad",
+                "name": "Bad",
+                "description": "desc",
+                "target_disk_min_bytes": 1000,
+                "partitions": [],
+                "mounts": [],
+                "directories": [],
+                "created_at": "2026-09-16T00:00:00Z"
+            }
+        }));
+        assert_eq!(res_val_bad.get("ok").and_then(|v| v.as_bool()), Some(false));
+        assert_eq!(res_val_bad.get("valid").and_then(|v| v.as_bool()), Some(false));
+
+        // 6. aios.fs_layout.fstab - default
+        let res_fstab = server.call_tool("aios.fs_layout.fstab", &json!({}));
+        assert_eq!(res_fstab.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert!(res_fstab.get("fstab").and_then(|v| v.as_str()).unwrap().contains("/boot/efi"));
+
+        // 7. aios.fs_layout.list discovery and execution
+        assert!(tools.iter().any(|t| t.get("name").and_then(|v| v.as_str()) == Some("aios.fs_layout.list")));
+        let res_list = server.call_tool("aios.fs_layout.list", &json!({}));
+        assert_eq!(res_list.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_list.get("count").and_then(|v| v.as_u64()), Some(2));
+        assert_eq!(res_list.get("active_layout_id").and_then(|v| v.as_str()), Some("aios-uefi-standard-v1"));
+
+        // 8. aios.fs_layout.probe discovery and execution
+        assert!(tools.iter().any(|t| t.get("name").and_then(|v| v.as_str()) == Some("aios.fs_layout.probe")));
+        let res_probe_ok = server.call_tool("aios.fs_layout.probe", &json!({
+            "layout_id": "aios-uefi-standard-v1",
+            "target_disk_bytes": 100_u64 * 1024 * 1024 * 1024
+        }));
+        assert_eq!(res_probe_ok.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_probe_ok.pointer("/evaluation/is_viable").and_then(|v| v.as_bool()), Some(true));
+
+        let res_probe_fail = server.call_tool("aios.fs_layout.probe", &json!({
+            "layout_id": "aios-uefi-standard-v1",
+            "target_disk_bytes": 10_u64 * 1024 * 1024 * 1024
+        }));
+        assert_eq!(res_probe_fail.get("ok").and_then(|v| v.as_bool()), Some(false));
+        assert_eq!(res_probe_fail.pointer("/evaluation/is_viable").and_then(|v| v.as_bool()), Some(false));
+
+        // 9. aios.fs_layout.diff discovery and execution
+        assert!(tools.iter().any(|t| t.get("name").and_then(|v| v.as_str()) == Some("aios.fs_layout.diff")));
+        let res_diff = server.call_tool("aios.fs_layout.diff", &json!({
+            "source_id": "aios-uefi-standard-v1",
+            "target_id": "aios-container-minimal-v1"
+        }));
+        assert_eq!(res_diff.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_diff.pointer("/diff/destructive").and_then(|v| v.as_bool()), Some(true));
+
+        // 10. T-01534: the four mutation interfaces are declared and each requires
+        // store_path (no canonical default store exists yet).
+        for name in [
+            "aios.fs_layout.register",
+            "aios.fs_layout.set_active",
+            "aios.fs_layout.remove",
+            "aios.fs_layout.import_fstab",
+        ] {
+            let entry = tools
+                .iter()
+                .find(|t| t.get("name").and_then(|v| v.as_str()) == Some(name))
+                .unwrap_or_else(|| panic!("manifest is missing {}", name));
+            let required = entry
+                .pointer("/inputSchema/required")
+                .and_then(|v| v.as_array())
+                .unwrap_or_else(|| panic!("{} has no required list", name));
+            assert!(
+                required.iter().any(|v| v.as_str() == Some("store_path")),
+                "{} must require store_path: {:?}",
+                name,
+                required
+            );
+        }
+
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let tmp_dir = std::env::temp_dir().join(format!(
+            "aios-mcp-fs-layout-{}-{}",
+            std::process::id(),
+            nanos
+        ));
+        std::fs::create_dir_all(&tmp_dir).unwrap();
+        let store_path = tmp_dir.join("store.json").to_string_lossy().to_string();
+
+        // Ungranted mutation is refused by the PEP gate, and nothing is written.
+        let res_ungranted = server.call_tool(
+            "aios.fs_layout.remove",
+            &json!({ "layout_id": "mcp-lab-v1", "store_path": store_path }),
+        );
+        assert_eq!(res_ungranted.get("ok").and_then(|v| v.as_bool()), Some(false));
+        assert_eq!(res_ungranted.get("gate").and_then(|v| v.as_str()), Some("pep"));
+        assert!(!std::path::Path::new(&store_path).exists(), "refusal must not write the store");
+
+        // A mutation without store_path is refused even with a grant.
+        let layout_scope = aiosh_core::types::GrantScope {
+            tools: vec!["aios.fs_layout.*".into()],
+            ..Default::default()
+        };
+        let layout_grant = server
+            .pep
+            .create(&layout_scope, 3600, "agent:test", &server.constitution_rev)
+            .expect("layout grant");
+        let grant_id = &layout_grant.grant_id;
+        let res_no_store = server.call_tool(
+            "aios.fs_layout.remove",
+            &json!({ "layout_id": "mcp-lab-v1", "grant_id": grant_id }),
+        );
+        assert_eq!(res_no_store.get("ok").and_then(|v| v.as_bool()), Some(false));
+        assert!(
+            res_no_store
+                .get("error")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .contains("store_path is required"),
+            "missing store_path must be explicit: {:?}",
+            res_no_store
+        );
+
+        // Granted register → get by id → set_active → probe default → import → remove.
+        let mut custom = serde_json::to_value(
+            aiosh_core::fs_layout::FilesystemLayoutSpec::standard_uefi(),
+        )
+        .unwrap();
+        custom["id"] = json!("mcp-lab-v1");
+        custom["name"] = json!("MCP Lab Layout");
+        let res_reg = server.call_tool(
+            "aios.fs_layout.register",
+            &json!({ "layout": custom, "store_path": store_path, "grant_id": grant_id }),
+        );
+        assert_eq!(res_reg.get("ok").and_then(|v| v.as_bool()), Some(true), "{:?}", res_reg);
+        assert_eq!(res_reg.get("id").and_then(|v| v.as_str()), Some("mcp-lab-v1"));
+
+        // Duplicate register is refused and leaves the persisted store unchanged.
+        let before = std::fs::read(&store_path).unwrap();
+        let res_dup = server.call_tool(
+            "aios.fs_layout.register",
+            &json!({ "layout": custom, "store_path": store_path, "grant_id": grant_id }),
+        );
+        assert_eq!(res_dup.get("ok").and_then(|v| v.as_bool()), Some(false));
+        assert!(std::fs::read(&store_path).unwrap() == before, "refusal must not rewrite the store");
+
+        // Persistence is real: the bytes on disk reload into a store holding the layout.
+        let reloaded = aiosh_core::fs_layout_service::FilesystemLayoutService::load_from_path(
+            std::path::Path::new(&store_path),
+        )
+        .expect("reload persisted store");
+        assert!(reloaded.store.get_layout("mcp-lab-v1").is_some());
+
+        // `get` now reaches stored layouts by id.
+        let res_get = server.call_tool(
+            "aios.fs_layout.get",
+            &json!({ "layout_id": "mcp-lab-v1", "store_path": store_path }),
+        );
+        assert_eq!(res_get.get("ok").and_then(|v| v.as_bool()), Some(true), "{:?}", res_get);
+        assert_eq!(res_get.pointer("/layout/id").and_then(|v| v.as_str()), Some("mcp-lab-v1"));
+        let res_get_missing = server.call_tool(
+            "aios.fs_layout.get",
+            &json!({ "layout_id": "ghost", "store_path": store_path }),
+        );
+        assert_eq!(res_get_missing.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        let res_active = server.call_tool(
+            "aios.fs_layout.set_active",
+            &json!({ "layout_id": "mcp-lab-v1", "store_path": store_path, "grant_id": grant_id }),
+        );
+        assert_eq!(res_active.get("ok").and_then(|v| v.as_bool()), Some(true), "{:?}", res_active);
+        assert_eq!(res_active.get("previous_active").and_then(|v| v.as_str()), Some("aios-uefi-standard-v1"));
+        assert_eq!(res_active.get("active").and_then(|v| v.as_str()), Some("mcp-lab-v1"));
+        assert_eq!(res_active.get("destructive_transition").and_then(|v| v.as_bool()), Some(false));
+
+        // `probe` without an explicit id now evaluates the *active* layout (spec D-5).
+        let res_probe_default = server.call_tool(
+            "aios.fs_layout.probe",
+            &json!({ "store_path": store_path, "target_disk_bytes": 128_u64 * 1024 * 1024 * 1024 }),
+        );
+        assert_eq!(res_probe_default.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(
+            res_probe_default.pointer("/evaluation/layout_id").and_then(|v| v.as_str()),
+            Some("mcp-lab-v1")
+        );
+
+        // import_fstab inherits from the active layout and persists one write.
+        let res_import = server.call_tool(
+            "aios.fs_layout.import_fstab",
+            &json!({
+                "layout_id": "mcp-fstab-v1",
+                "name": "MCP Fstab Layout",
+                "fstab": "/dev/sda2 / ext4 defaults 0 1\n",
+                "store_path": store_path,
+                "grant_id": grant_id
+            }),
+        );
+        assert_eq!(res_import.get("ok").and_then(|v| v.as_bool()), Some(true), "{:?}", res_import);
+        assert_eq!(res_import.get("mounts").and_then(|v| v.as_u64()), Some(1));
+
+        // The active layout and the built-in presets cannot be removed.
+        let res_rm_active = server.call_tool(
+            "aios.fs_layout.remove",
+            &json!({ "layout_id": "mcp-lab-v1", "store_path": store_path, "grant_id": grant_id }),
+        );
+        assert!(
+            res_rm_active.get("error").and_then(|v| v.as_str()).unwrap_or_default()
+                .contains("cannot remove active layout")
+        );
+        let res_rm_builtin = server.call_tool(
+            "aios.fs_layout.remove",
+            &json!({ "layout_id": "aios-uefi-standard-v1", "store_path": store_path, "grant_id": grant_id }),
+        );
+        assert!(
+            res_rm_builtin.get("error").and_then(|v| v.as_str()).unwrap_or_default()
+                .contains("built-in canonical layout")
+        );
+
+        let res_rm = server.call_tool(
+            "aios.fs_layout.remove",
+            &json!({ "layout_id": "mcp-fstab-v1", "store_path": store_path, "grant_id": grant_id }),
+        );
+        assert_eq!(res_rm.get("ok").and_then(|v| v.as_bool()), Some(true), "{:?}", res_rm);
+        assert_eq!(res_rm.get("removed").and_then(|v| v.as_bool()), Some(true));
+
+        // T-01534 (F-1 hardening): a directory named by `spec` is refused by type
+        // instead of being read, exactly as the hardened CLI does.
+        let res_dir_spec = server.call_tool(
+            "aios.fs_layout.validate",
+            &json!({ "spec": tmp_dir.to_string_lossy().to_string() }),
+        );
+        assert_eq!(res_dir_spec.get("ok").and_then(|v| v.as_bool()), Some(false));
+        assert!(
+            res_dir_spec.get("error").and_then(|v| v.as_str()).unwrap_or_default()
+                .contains("is a directory"),
+            "directory spec must be refused by type: {:?}",
+            res_dir_spec
+        );
+
+        // The explicit inline-payload guard is defence in depth: over stdio the 1 MiB
+        // transport line cap rejects the request first, so this bound matters for
+        // in-process callers. It must still fail loudly.
+        let oversize = "a".repeat(MAX_INLINE_LAYOUT_BYTES + 1);
+        let res_oversize = server.call_tool("aios.fs_layout.validate", &json!({ "spec": oversize }));
+        assert_eq!(res_oversize.get("ok").and_then(|v| v.as_bool()), Some(false));
+        assert!(
+            res_oversize.get("error").and_then(|v| v.as_str()).unwrap_or_default()
+                .contains("exceeds 1 MiB limit"),
+            "oversize inline spec must be rejected: {:?}",
+            res_oversize
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+    }
+
+    /// Every argument each `aios.fs_layout.*` arm reads, declared once so the advertised
+    /// `inputSchema` cannot drift from the implementation again (T-01535 defect 1: the
+    /// widened `get` advertised neither `layout_id` nor `store_path`).
+    const FS_LAYOUT_TOOL_ARGUMENTS: &[(&str, &[&str])] = &[
+        ("aios.fs_layout.get", &["layout_id", "profile", "store_path", "grant_id"]),
+        ("aios.fs_layout.validate", &["spec", "layout", "store_path", "grant_id"]),
+        ("aios.fs_layout.fstab", &["profile", "spec", "grant_id"]),
+        ("aios.fs_layout.list", &["store_path", "grant_id"]),
+        ("aios.fs_layout.probe", &["layout_id", "target_disk_bytes", "store_path", "grant_id"]),
+        ("aios.fs_layout.diff", &["source_id", "target_id", "store_path", "grant_id"]),
+        ("aios.fs_layout.register", &["layout", "spec", "store_path", "grant_id"]),
+        ("aios.fs_layout.set_active", &["layout_id", "store_path", "grant_id"]),
+        ("aios.fs_layout.remove", &["layout_id", "store_path", "grant_id"]),
+        (
+            "aios.fs_layout.import_fstab",
+            &["layout_id", "name", "fstab", "base_layout_id", "store_path", "grant_id"],
+        ),
+    ];
+
+    /// The manifest must advertise exactly the arguments the arms accept — every
+    /// parameter the body reads appears as a property, and nothing else does (the
+    /// tools all set `additionalProperties: false`).
+    #[test]
+    fn test_mcp_fs_layout_manifest_matches_accepted_arguments() {
+        let server = Server::open();
+        let tools = server.tool_manifest();
+        assert_eq!(FS_LAYOUT_TOOL_ARGUMENTS.len(), 10, "the surface is ten tools");
+        for (name, accepted) in FS_LAYOUT_TOOL_ARGUMENTS {
+            let entry = tools
+                .iter()
+                .find(|t| t.get("name").and_then(|v| v.as_str()) == Some(*name))
+                .unwrap_or_else(|| panic!("manifest is missing {}", name));
+            let props = entry
+                .pointer("/inputSchema/properties")
+                .and_then(|v| v.as_object())
+                .unwrap_or_else(|| panic!("{} has no properties object", name));
+            let advertised: Vec<&str> = props.keys().map(|k| k.as_str()).collect();
+            for arg in accepted.iter() {
+                assert!(
+                    advertised.contains(arg),
+                    "{}: accepted argument '{}' is not advertised; schema has {:?}",
+                    name,
+                    arg,
+                    advertised
+                );
+            }
+            assert_eq!(
+                advertised.len(),
+                accepted.len(),
+                "{}: manifest advertises {:?} but the arm accepts {:?}",
+                name,
+                advertised,
+                accepted
+            );
+            assert_eq!(
+                entry.pointer("/inputSchema/additionalProperties"),
+                Some(&json!(false)),
+                "{} must keep additionalProperties: false",
+                name
+            );
+        }
+    }
+
+    /// Spec §9: the audit target is the layout id for per-layout operations. Both
+    /// accepted `register` input forms must record it — the spec-path form used to
+    /// write `None` because the id is only known after parsing.
+    #[test]
+    fn test_mcp_fs_layout_register_audit_target_is_layout_id() {
+        let mut server = Server::open();
+        let tmp_dir = std::env::temp_dir().join(format!(
+            "aios-mcp-audit-target-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&tmp_dir).unwrap();
+        let store_path = tmp_dir.join("store.json").to_string_lossy().to_string();
+
+        let scope = aiosh_core::types::GrantScope {
+            tools: vec!["aios.fs_layout.*".into()],
+            ..Default::default()
+        };
+        let grant = server
+            .pep
+            .create(&scope, 3600, "agent:test", &server.constitution_rev)
+            .unwrap();
+
+        let mut layout = serde_json::to_value(
+            aiosh_core::fs_layout::FilesystemLayoutSpec::standard_uefi(),
+        )
+        .unwrap();
+        layout["id"] = json!("audit-target-spec-v1");
+        layout["name"] = json!("Audit Target Spec");
+        let spec_file = tmp_dir.join("spec.json");
+        std::fs::write(&spec_file, serde_json::to_string(&layout).unwrap()).unwrap();
+
+        let res_spec = server.call_tool(
+            "aios.fs_layout.register",
+            &json!({
+                "spec": spec_file.to_string_lossy().to_string(),
+                "store_path": store_path,
+                "grant_id": grant.grant_id
+            }),
+        );
+        assert_eq!(res_spec.get("ok").and_then(|v| v.as_bool()), Some(true), "{:?}", res_spec);
+
+        layout["id"] = json!("audit-target-inline-v1");
+        let res_inline = server.call_tool(
+            "aios.fs_layout.register",
+            &json!({
+                "layout": layout,
+                "store_path": store_path,
+                "grant_id": grant.grant_id
+            }),
+        );
+        assert_eq!(res_inline.get("ok").and_then(|v| v.as_bool()), Some(true), "{:?}", res_inline);
+
+        for (form, res) in [("spec path", res_spec), ("inline layout", res_inline)] {
+            let expected_id = res.get("id").and_then(|v| v.as_str()).unwrap().to_string();
+            let audit_id = res.get("audit_id").and_then(|v| v.as_i64()).unwrap();
+            let row = server
+                .ring
+                .tail(500)
+                .unwrap()
+                .into_iter()
+                .find(|r| r.id == audit_id)
+                .unwrap_or_else(|| panic!("audit row {} not found", audit_id));
+            assert_eq!(row.tool, "aios.fs_layout.register");
+            assert_eq!(
+                row.target.as_deref(),
+                Some(expected_id.as_str()),
+                "{} form recorded audit target {:?}, expected '{}'",
+                form,
+                row.target,
+                expected_id
+            );
+        }
+
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+    }
+
+    /// Spec D-7: `set_active` must *report* a destructive transition. The suite only
+    /// ever asserted the benign `false` case (T-01535 defect 3), so shrinking a
+    /// partition and re-activating is pinned here.
+    #[test]
+    fn test_mcp_fs_layout_set_active_reports_destructive_transition() {
+        let mut server = Server::open();
+        let tmp_dir = std::env::temp_dir().join(format!(
+            "aios-mcp-destructive-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&tmp_dir).unwrap();
+        let store_path = tmp_dir.join("store.json").to_string_lossy().to_string();
+
+        let scope = aiosh_core::types::GrantScope {
+            tools: vec!["aios.fs_layout.*".into()],
+            ..Default::default()
+        };
+        let grant = server
+            .pep
+            .create(&scope, 3600, "agent:test", &server.constitution_rev)
+            .unwrap();
+
+        // The UEFI preset ends in a swap partition; a quarter-size copy of every
+        // partition is a shrink, which is destructive by `diff_layouts`.
+        let mut shrink = serde_json::to_value(
+            aiosh_core::fs_layout::FilesystemLayoutSpec::standard_uefi(),
+        )
+        .unwrap();
+        shrink["id"] = json!("shrink-swap-v1");
+        shrink["name"] = json!("Shrunk Swap");
+        for part in shrink["partitions"].as_array_mut().unwrap() {
+            let size = part["size_mib"].as_u64().unwrap();
+            part["size_mib"] = json!(size / 4);
+        }
+        let res_reg = server.call_tool(
+            "aios.fs_layout.register",
+            &json!({ "layout": shrink, "store_path": store_path, "grant_id": grant.grant_id }),
+        );
+        assert_eq!(res_reg.get("ok").and_then(|v| v.as_bool()), Some(true), "{:?}", res_reg);
+
+        let res_shrink = server.call_tool(
+            "aios.fs_layout.set_active",
+            &json!({
+                "layout_id": "shrink-swap-v1",
+                "store_path": store_path,
+                "grant_id": grant.grant_id
+            }),
+        );
+        assert_eq!(res_shrink.get("ok").and_then(|v| v.as_bool()), Some(true), "{:?}", res_shrink);
+        assert_eq!(
+            res_shrink.get("destructive_transition").and_then(|v| v.as_bool()),
+            Some(true),
+            "shrinking every partition must be reported as destructive: {:?}",
+            res_shrink
+        );
+
+        // A same-shape switch back to the preset is benign, proving the verdict is
+        // computed from the transition rather than hard-coded true.
+        let res_benign = server.call_tool(
+            "aios.fs_layout.set_active",
+            &json!({
+                "layout_id": "aios-uefi-standard-v1",
+                "store_path": store_path,
+                "grant_id": grant.grant_id
+            }),
+        );
+        assert_eq!(
+            res_benign.get("destructive_transition").and_then(|v| v.as_bool()),
+            Some(false),
+            "shrunk -> preset only regrows partitions, so it is not destructive: {:?}",
+            res_benign
+        );
+
+        let res_back = server.call_tool(
+            "aios.fs_layout.set_active",
+            &json!({
+                "layout_id": "shrink-swap-v1",
+                "store_path": store_path,
+                "grant_id": grant.grant_id
+            }),
+        );
+        assert_eq!(
+            res_back.get("destructive_transition").and_then(|v| v.as_bool()),
+            Some(true),
+            "preset -> shrunk is destructive: {:?}",
+            res_back
+        );
+
+        let _ = std::fs::remove_dir_all(&tmp_dir);
     }
 }
 

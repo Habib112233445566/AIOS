@@ -138,6 +138,10 @@ pub fn is_irreversible(tool: &str) -> bool {
         || tool.starts_with("evidence.record")
         || tool.starts_with("aios.evidence.set")
         || tool.starts_with("evidence.set")
+        || tool.starts_with("aios.session.action")
+        || tool.starts_with("session.action")
+        || tool.starts_with("aios.session.create")
+        || tool.starts_with("session.create")
         || tool == "system.reboot"
         || tool == "system.shutdown"
 }
