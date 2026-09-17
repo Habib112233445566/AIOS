@@ -620,21 +620,27 @@ surface end to end (register → set-active → probe → diff → fstab → ref
     "blocked by grant `scope.paths`" as a path-identity signal first, not a policy bug. This is the
     same spelling-versus-identity distinction the canonicalisation in `T-01537` (F-1/F-7) closed for
     aliases of an existing path; a spelling the process cannot resolve is outside that closure.
-21. **A `.` Is Not a Usable `--allow` Entry (and Fails Open Off Windows)**: `.` looks like the
-    obvious way to say "this directory", and `aiosh grant create --allow .` is accepted and recorded
-    without complaint — but the entry authorizes nothing. Normalisation drops `.` components, so the
-    key for `.` is the **empty string**, and a path is matched against an entry only when the path's
-    key *equals* the entry's or *starts with* `<entry>/`. Reproduced on Windows: a grant created
-    with `--allow .` refuses its own directory's store for **both** a relative (`layouts.json`) and an
-    absolute argument — `path subject 'layouts.json' blocked by grant scope.paths`. That is
-    fail-closed and therefore safe, but silently useless. The *mirror* behaviour (source-derived, not
-    reproduced here — no POSIX host in this task) is worse: on POSIX the comparison degenerates to
-    `starts_with("/")`, which every absolute key satisfies, so `--allow .` would authorize the whole
-    filesystem, and a `--deny .` entry would deny it. **Use a named directory instead of `.`**
-    (`--allow demo` with `demo/...` arguments, as §5.12 and the index example do) or an absolute
-    directory with absolute arguments; never rely on `.` to confine, and never rely on `.` to deny.
-    The entry/argument frames must also match (relative entry with relative argument, absolute with
-    absolute) for the containment test to fire. Not yet fixed in `pep::normalize_path_str`.
+21. **A `.` Entry Means the Working Directory**: `.` is the obvious way to say "this directory", and
+    `aiosh grant create --allow .` is accepted and recorded — but the entry *used* to authorize
+    nothing. Normalisation dropped `.` components, so the key for `.` was the **empty string**, and a
+    path matched an entry only when the path's key *equalled* the entry's or *started with*
+    `<entry>/`. That was fail-closed but useless on Windows — `--allow .` refused its own directory's
+    store for both a relative (`layouts.json`) and an absolute argument, `path subject 'layouts.json'
+    blocked by grant scope.paths` — and **fail-open** wherever the target key is root-relative, since
+    containment on `""` degenerates to `starts_with("/")`. That fail-open was never POSIX-only:
+    any key the process could not resolve (`/…/secret.json`) satisfied it on Windows too.
+    `pep::normalize_path_str` now keys `.` (and `./`, `a/..`) to the working directory, keeps a
+    leading `..` as the real parent instead of collapsing it to the current directory, and the
+    matcher refuses an empty key in both directions, so no spelling can turn an entry into a
+    wildcard. Measured over the real binaries with `AIOSH_HOME` isolated: `--allow .` lets a
+    `register` write `layouts.json` **and** an absolute `…\demo\layouts.json`, while `../outside/…`
+    and an absolute path outside it are refused with nothing written; with `--deny .` a store in the
+    working directory is refused and a store outside it is allowed. A relative entry and a relative
+    argument are anchored to the working directory too, so the two no longer have to be spelled in
+    the same frame (`.`, `demo`, `demo/x.json` and the absolute forms now compare consistently).
+    The **Python** and **TypeScript** matchers (`audit_client.py:path_allowed`,
+    `pep.ts:pathAllowed`) are still purely lexical: they compare strings, so `.` matches no target
+    there — fail-closed, never fail-open.
 
 ---
 
