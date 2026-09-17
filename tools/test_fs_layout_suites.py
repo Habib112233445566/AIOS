@@ -10,7 +10,8 @@ Criteria:
   FL6: filesystem layout cross-surface CLI <-> MCP integration parity
   FL7: filesystem layout CLI hardening proof (non-regular paths, bounded reads, atomic,
        leak-free persistence)
-  FL8: filesystem layout MCP contract (advertised inputSchema, audit target, destructive verdict)
+  FL8: filesystem layout MCP contract (advertised inputSchema, audit target, destructive verdict,
+       grant scope.paths confinement and canonical alias matching, nested-injection refusal)
 """
 
 from __future__ import annotations
@@ -136,7 +137,8 @@ def test_fl8_mcp_contract() -> bool:
     return _run_python_script(
         ROOT / "code" / "aiosh-mcp" / "tests" / "test_fs_layout_mcp_contract.py",
         "FL8",
-        "filesystem layout MCP contract (advertised schema, audit target, destructive verdict)",
+        "filesystem layout MCP contract (advertised schema, audit target, destructive verdict, "
+        "grant scope.paths confinement and canonical alias matching, nested-injection refusal)",
     )
 
 

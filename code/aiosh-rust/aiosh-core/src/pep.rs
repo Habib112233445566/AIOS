@@ -53,7 +53,100 @@ pub fn normalize_path_str(p: &str) -> String {
     }
 }
 
+/// Attempts `resolve_existing_prefix` will make before keying a path lexically.
+/// Each attempt is one `canonicalize` that fails fast once the path stops existing, so
+/// this only bounds the work a hostile, very deep path can ask for.
+const MAX_CANONICAL_ASCENTS: usize = 64;
+
+/// Canonical, comparable form of a path for `scope.paths` matching.
+///
+/// The allow/deny lists are strings, so a deny entry only survives contact with an
+/// adversary if both sides are first reduced to the form the **filesystem** resolves them
+/// to. Otherwise one directory can be spelled several ways and the denied spelling loses
+/// (T-01537 S-18/S-19):
+///
+/// * **case** — a case-insensitive filesystem has one `C:\Secret`, not two;
+/// * **8.3 short names** — `C:\PROGRA~1` *is* `C:\Program Files`;
+/// * **trailing dots/spaces** — Windows drops them from a component;
+/// * **symlinks/junctions** — a link to a denied directory is that directory.
+///
+/// The longest **existing** prefix is therefore resolved through the filesystem, and only
+/// the tail that does not exist yet is kept lexically — and that tail is the normal case,
+/// because a `store_path` usually names a file that is about to be created. Case folding
+/// and dot/space stripping are applied **only** where the platform aliases them: POSIX
+/// paths stay case- and space-sensitive, so no legitimate Linux or macOS name is refused
+/// on Windows' account.
+///
+/// Deliberately stricter than the write path in one place: trailing dots/spaces are
+/// stripped from *every* component, including intermediate ones Windows would treat as
+/// distinct names. Over-matching a deny entry fails closed, which is the safe direction.
+pub fn canonical_path_key(p: &str) -> String {
+    let mut key = normalize_path_str(p);
+    #[cfg(windows)]
+    {
+        key = key
+            .split('/')
+            .map(|seg| seg.trim_end_matches(['.', ' ']))
+            .collect::<Vec<_>>()
+            .join("/");
+    }
+    let key = resolve_existing_prefix(&key);
+    #[cfg(windows)]
+    {
+        return key.to_lowercase();
+    }
+    #[cfg(not(windows))]
+    key
+}
+
+/// Replace the longest existing prefix of an already separator-normalized path with its
+/// filesystem-resolved form, re-appending the non-existent tail. Returns the input
+/// unchanged when nothing along the path resolves (which is why a purely lexical
+/// comparison still holds for paths that do not exist yet on either side).
+fn resolve_existing_prefix(normalized: &str) -> String {
+    let mut tail: Vec<String> = Vec::new();
+    let mut head = normalized.to_string();
+    for _ in 0..MAX_CANONICAL_ASCENTS {
+        if let Ok(real) = std::fs::canonicalize(&head) {
+            let mut out = canonical_to_key(&real.to_string_lossy());
+            for seg in tail.iter().rev() {
+                if !out.ends_with('/') {
+                    out.push('/');
+                }
+                out.push_str(seg);
+            }
+            return out;
+        }
+        // Ascend one component, but never above a root or a drive prefix: `C:` alone
+        // means "current directory on C:", which is not the same place as `C:\`.
+        match head.rfind('/') {
+            Some(i) if i > 0 && !head[..i].ends_with(':') => {
+                tail.push(head[i + 1..].to_string());
+                head.truncate(i);
+            }
+            _ => break,
+        }
+    }
+    normalized.to_string()
+}
+
+/// Strip the extended-length prefix `std::fs::canonicalize` returns on Windows and
+/// normalize separators, so keys from resolved and unresolved paths stay comparable.
+fn canonical_to_key(real: &str) -> String {
+    let s = real.replace('\\', "/");
+    if let Some(rest) = s.strip_prefix("//?/UNC/") {
+        format!("//{rest}")
+    } else if let Some(rest) = s.strip_prefix("//?/") {
+        rest.to_string()
+    } else {
+        s
+    }
+}
+
 /// Path-based allow/deny check. Deny always wins.
+///
+/// Comparison happens on [`canonical_path_key`], so spelling the same location differently
+/// (case, 8.3 short name, trailing dot/space, symlink) cannot move it across a deny entry.
 pub fn path_allowed(target: Option<&str>, paths: &PathScope) -> bool {
     if paths.allow.is_empty() && paths.deny.is_empty() {
         return true;
@@ -62,11 +155,11 @@ pub fn path_allowed(target: Option<&str>, paths: &PathScope) -> bool {
         Some(t) => t,
         None => return false,
     };
-    let norm_target = normalize_path_str(target);
+    let key_target = canonical_path_key(target);
     for p in &paths.deny {
-        let norm_p = normalize_path_str(p);
-        if norm_target == norm_p
-            || norm_target.starts_with(&format!("{}/", norm_p.trim_end_matches('/')))
+        let key_p = canonical_path_key(p);
+        if key_target == key_p
+            || key_target.starts_with(&format!("{}/", key_p.trim_end_matches('/')))
         {
             return false;
         }
@@ -76,9 +169,9 @@ pub fn path_allowed(target: Option<&str>, paths: &PathScope) -> bool {
         return true;
     }
     for p in &paths.allow {
-        let norm_p = normalize_path_str(p);
-        if norm_target == norm_p
-            || norm_target.starts_with(&format!("{}/", norm_p.trim_end_matches('/')))
+        let key_p = canonical_path_key(p);
+        if key_target == key_p
+            || key_target.starts_with(&format!("{}/", key_p.trim_end_matches('/')))
         {
             return true;
         }
@@ -142,6 +235,16 @@ pub fn is_irreversible(tool: &str) -> bool {
         || tool.starts_with("session.action")
         || tool.starts_with("aios.session.create")
         || tool.starts_with("session.create")
+        // T-01537 S-3: the four state-changing Filesystem Layout tools persist to a
+        // caller-named store, so they belong to the irreversible family. They were
+        // reachable *only* because every call site also passes `require_grant = true`;
+        // listing them here makes the PEP itself refuse an unauthenticated mutation
+        // instead of depending on each caller remembering the flag. The read-only
+        // `aios.fs_layout.*` tools stay reversible, so they are matched exactly.
+        || tool == "aios.fs_layout.register"
+        || tool == "aios.fs_layout.set_active"
+        || tool == "aios.fs_layout.remove"
+        || tool == "aios.fs_layout.import_fstab"
         || tool == "system.reboot"
         || tool == "system.shutdown"
 }
@@ -297,11 +400,47 @@ impl PepStore {
     }
 
     /// Authoritative gate. Returns Ok(()) or Err(reason).
+    ///
+    /// [`check`](Self::check) for the common case where the call touches no
+    /// filesystem path of its own. See [`check_with_paths`](Self::check_with_paths)
+    /// for why that distinction exists.
     pub fn check(
         &self,
         grant_id: Option<&str>,
         tool: &str,
         target: Option<&str>,
+    ) -> Result<(), String> {
+        self.check_with_paths(grant_id, tool, target, &[])
+    }
+
+    /// Authoritative gate, extended with the **filesystem paths the call will
+    /// actually touch** (T-01537 S-1).
+    ///
+    /// `target` is the value the audit rows are attributed to, and for tools whose
+    /// operated-on object *is* a path (e.g. `pentest.aircrack-ng --capture`) it is
+    /// also what `scope.paths` governs. That conflates two different things, and the
+    /// `fs_layout` mutation surface is where the conflation bites: its audit target is
+    /// a layout **id** (spec §9), so a `scope.paths` allow-list could never constrain
+    /// the layout **store file** the call writes — and for `register`'s `spec` form the
+    /// target is `None`, which skipped the path check entirely, so the same grant
+    /// refused the inline form and silently authorized the spec form.
+    ///
+    /// `path_subjects` therefore carries the paths that identify themselves, and the
+    /// rule is deliberately either/or: **if a call declares subjects, `scope.paths`
+    /// governs those and `target` is treated as an attribution label, not a path.** A
+    /// call that declares none keeps the historical reading of `target` unchanged. The
+    /// alternative — checking both — is incoherent, because an opaque id such as
+    /// `aios-uefi-standard-v1` can never be inside a directory allow-list, so a
+    /// path-scoped grant would refuse `set_active`/`remove`/`import_fstab` no matter how
+    /// correct their store path was. A grant with no `scope.paths` set is unaffected
+    /// either way, because `path_allowed` treats an empty allow+deny list as
+    /// unrestricted.
+    pub fn check_with_paths(
+        &self,
+        grant_id: Option<&str>,
+        tool: &str,
+        target: Option<&str>,
+        path_subjects: &[&str],
     ) -> Result<(), String> {
         match grant_id {
             None => {
@@ -353,11 +492,25 @@ impl PepStore {
                             target.unwrap()
                         ));
                     }
-                } else if target.is_some() && !path_allowed(target, &g.scope.paths) {
+                } else if target.is_some()
+                    && path_subjects.is_empty()
+                    && !path_allowed(target, &g.scope.paths)
+                {
                     return Err(format!(
                         "target '{}' blocked by grant scope.paths",
                         target.unwrap()
                     ));
+                }
+                // The paths this call will really write or read. Checked even when
+                // `target` is `None` (register's `spec` form), which is exactly the
+                // hole this closes.
+                for subject in path_subjects {
+                    if !path_allowed(Some(subject), &g.scope.paths) {
+                        return Err(format!(
+                            "path subject '{}' blocked by grant scope.paths",
+                            subject
+                        ));
+                    }
                 }
                 Ok(())
             }
@@ -483,6 +636,195 @@ mod tests {
         assert!(s
             .check(Some(&g.grant_id), "pentest.aircrack-ng", Some("/etc/passwd"))
             .is_err());
+    }
+
+    // ---- T-01537 S-1: path subjects are checked, not just the audit target ----
+
+    fn fs_layout_grant(paths: PathScope) -> (PepStore, String) {
+        let s = store();
+        let sc = GrantScope {
+            tools: vec!["aios.fs_layout.*".into()],
+            paths,
+            ..Default::default()
+        };
+        let g = s.create(&sc, 3600, "agent:test", "abc123").unwrap();
+        (s, g.grant_id)
+    }
+
+    #[test]
+    fn path_subjects_are_blocked_outside_allow_list() {
+        let (s, gid) = fs_layout_grant(PathScope {
+            allow: vec!["/srv/layouts".into()],
+            deny: vec![],
+        });
+        // The write target of a mutation is a policy subject.
+        assert!(s
+            .check_with_paths(
+                Some(&gid),
+                "aios.fs_layout.register",
+                None,
+                &["/srv/layouts/store.json"]
+            )
+            .is_ok());
+        assert!(s
+            .check_with_paths(
+                Some(&gid),
+                "aios.fs_layout.register",
+                None,
+                &["/etc/evil.json"]
+            )
+            .is_err());
+        // A denied subject wins even when an allowed sibling is present.
+        assert!(s
+            .check_with_paths(
+                Some(&gid),
+                "aios.fs_layout.import_fstab",
+                Some("layout-id"),
+                &["/srv/layouts/store.json", "/root/secrets.json"]
+            )
+            .is_err());
+        // With subjects declared, those govern: an in-scope store is allowed even
+        // though the audit target is a layout id that is not a path. Checking both
+        // would make every path-scoped grant unusable for this surface.
+        assert!(s
+            .check_with_paths(
+                Some(&gid),
+                "aios.fs_layout.set_active",
+                Some("aios-uefi-standard-v1"),
+                &["/srv/layouts/store.json"]
+            )
+            .is_ok());
+        // Documented pre-fix hole, pinned so it cannot silently return: with no
+        // subjects and a `None` target the path check is skipped entirely.
+        assert!(s
+            .check_with_paths(Some(&gid), "aios.fs_layout.register", None, &[])
+            .is_ok());
+    }
+
+    #[test]
+    fn path_subjects_leave_unscoped_grants_alone() {
+        let (s, gid) = fs_layout_grant(PathScope::default());
+        assert!(s
+            .check_with_paths(
+                Some(&gid),
+                "aios.fs_layout.register",
+                None,
+                &["/anywhere/at/all/store.json"]
+            )
+            .is_ok());
+        // The legacy 3-arg entry point keeps its exact behaviour.
+        assert!(s.check(Some(&gid), "aios.fs_layout.register", None).is_ok());
+    }
+
+    // ---- T-01537 S-3: fs_layout mutations are irreversible to the PEP itself ----
+
+    #[test]
+    fn fs_layout_mutations_require_a_grant_without_the_call_site_flag() {
+        let s = store();
+        for tool in [
+            "aios.fs_layout.register",
+            "aios.fs_layout.set_active",
+            "aios.fs_layout.remove",
+            "aios.fs_layout.import_fstab",
+        ] {
+            assert!(
+                s.check(None, tool, None).is_err(),
+                "{} must be irreversible",
+                tool
+            );
+        }
+        // Read-only siblings stay ungated.
+        for tool in [
+            "aios.fs_layout.get",
+            "aios.fs_layout.list",
+            "aios.fs_layout.validate",
+            "aios.fs_layout.fstab",
+            "aios.fs_layout.probe",
+            "aios.fs_layout.diff",
+        ] {
+            assert!(
+                s.check(None, tool, None).is_ok(),
+                "{} must stay reversible",
+                tool
+            );
+        }
+    }
+
+    // ---- T-01537 S-18/S-19: scope.paths matching is canonical, not lexical ----
+
+    #[test]
+    fn path_keys_fold_platform_aliases() {
+        // Spellings the filesystem treats as one directory must not slip past a deny
+        // entry. These paths do not exist, so both sides stay lexical and the assertions
+        // are deterministic on any machine.
+        #[cfg(windows)]
+        {
+            let deny_only = PathScope {
+                allow: vec![],
+                deny: vec![r"C:\DenyDir".into()],
+            };
+            assert!(
+                !path_allowed(Some(r"c:\denydir\x.json"), &deny_only),
+                "case alias must still match the deny entry"
+            );
+            assert!(
+                !path_allowed(Some(r"C:\DenyDir. \x.json"), &deny_only),
+                "trailing dot/space alias must still match the deny entry"
+            );
+            assert!(!path_allowed(Some(r"C:\DenyDir\sub\..\x.json"), &deny_only));
+            // And the allow list agrees, so a scoped grant is not refused for spelling
+            // its own directory in a different case (the fail-closed half of the bug).
+            let allow_only = PathScope {
+                allow: vec![r"C:\AllowedDir".into()],
+                deny: vec![],
+            };
+            assert!(path_allowed(Some(r"c:\alloweddir\store.json"), &allow_only));
+        }
+        #[cfg(not(windows))]
+        {
+            // POSIX names are case- and space-sensitive: those are different files, and
+            // Windows' aliasing must not leak into POSIX policy decisions.
+            assert!(path_allowed(
+                Some("/DenyDir/x.json"),
+                &PathScope { allow: vec![], deny: vec!["/denydir".into()] }
+            ));
+            assert!(path_allowed(
+                Some("/DenyDir /x.json"),
+                &PathScope { allow: vec![], deny: vec!["/DenyDir".into()] }
+            ));
+        }
+    }
+
+    #[test]
+    fn path_keys_resolve_an_existing_prefix() {
+        // 8.3 short names and symlinks can only be expanded by asking the filesystem, so
+        // the key for a not-yet-existing tail must be built from the *resolved* form of
+        // its longest existing prefix. That single property is what stops a short-name
+        // spelling from escaping a deny entry.
+        let dir = std::env::temp_dir();
+        let tail = dir.join("pep-key-probe").join("nested").join("store.json");
+        let key_dir = canonical_path_key(&dir.to_string_lossy());
+        let key_tail = canonical_path_key(&tail.to_string_lossy());
+        assert!(
+            key_tail.starts_with(&format!("{}/", key_dir.trim_end_matches('/'))),
+            "non-existent tail {} must stay under the resolved prefix {}",
+            key_tail,
+            key_dir
+        );
+
+        let deny_dir = PathScope {
+            allow: vec![],
+            deny: vec![dir.to_string_lossy().to_string()],
+        };
+        assert!(
+            !path_allowed(Some(&tail.to_string_lossy()), &deny_dir),
+            "a store below a denied existing directory must be denied"
+        );
+        let allow_dir = PathScope {
+            allow: vec![dir.to_string_lossy().to_string()],
+            deny: vec![],
+        };
+        assert!(path_allowed(Some(&tail.to_string_lossy()), &allow_dir));
     }
 
     #[test]

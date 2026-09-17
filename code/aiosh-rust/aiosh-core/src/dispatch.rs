@@ -48,6 +48,12 @@ impl DispatchResult {
 /// Run the gate and (on refusal) write the refusal row. Returns the
 /// verdict; on gate-pass the caller writes the outcome row via
 /// `commit()`.
+///
+/// `path_subjects` are the filesystem paths the call will really touch; they are
+/// checked against the grant's `scope.paths` in addition to `target`. Pass `&[]`
+/// when the call touches no path of its own (see `PepStore::check_with_paths` for
+/// why the fs_layout mutation surface cannot rely on `target` for this).
+#[allow(clippy::too_many_arguments)]
 pub fn dispatch(
     ring: &mut AuditRing,
     pep: &PepStore,
@@ -55,6 +61,7 @@ pub fn dispatch(
     command: &str,
     args: &serde_json::Value,
     target: Option<&str>,
+    path_subjects: &[&str],
     grant_id: Option<&str>,
     require_grant: bool,
     actor_id: &str,
@@ -114,7 +121,7 @@ pub fn dispatch(
     }
 
     // Gate #2 — PEP grant.
-    let mut verdict = pep.check(grant_id, tool, target);
+    let mut verdict = pep.check_with_paths(grant_id, tool, target, path_subjects);
     if require_grant && grant_id.is_none() {
         verdict = Err(format!("tool '{}' requires explicit PEP grant", tool));
     }
@@ -231,12 +238,13 @@ where
     F: FnMut() -> Result<serde_json::Value, String>,
 {
     recorded_call_with_body_target(
-        ring, pep, tool, command, args, target, grant_id, require_grant, actor_id, actor,
+        ring, pep, tool, command, args, target, &[], grant_id, require_grant, actor_id, actor,
         move || (f(), None),
     )
 }
 
-/// [`recorded_call`] for a tool whose body can resolve the audit `target` itself.
+/// [`recorded_call`] for a tool whose body can resolve the audit `target` itself, and
+/// whose gate must also weigh the filesystem paths the call will touch.
 ///
 /// The row's target has exactly **one** resolution point — `body_target.or(pre_gate)` —
 /// and that one value is used for every row the call writes:
@@ -253,6 +261,14 @@ where
 /// while the body reports the id it parsed on **both** outcome paths. That matters for
 /// forensics: a duplicate id is refused by the store *after* the spec is parsed, and that
 /// refusal is precisely the row an operator wants to find by layout.
+///
+/// `path_subjects` (T-01537 S-1) are the paths the call will really write or read. They
+/// are separate from `target` on purpose: for this surface `target` is a layout **id**
+/// (spec §9), which `scope.paths` cannot meaningfully govern, so a grant that confined
+/// writes to one directory used to be silently ignored — and skipped entirely for
+/// `spec`-form `register`, whose pre-gate target is `None`. A body that only has its id
+/// to report (the other three mutations) passes `None` here and relies on its
+/// pre-gate id, which is already the right audit target.
 #[allow(clippy::too_many_arguments)]
 pub fn recorded_call_with_body_target<F>(
     ring: &mut AuditRing,
@@ -261,6 +277,7 @@ pub fn recorded_call_with_body_target<F>(
     command: &str,
     args: &serde_json::Value,
     target: Option<&str>,
+    path_subjects: &[&str],
     grant_id: Option<&str>,
     require_grant: bool,
     actor_id: &str,
@@ -271,7 +288,10 @@ where
     F: FnMut() -> TargetAwareBodyResult,
 {
     let pre_gate = target;
-    let verdict = dispatch(ring, pep, tool, command, args, pre_gate, grant_id, require_grant, actor_id, actor);
+    let verdict = dispatch(
+        ring, pep, tool, command, args, pre_gate, path_subjects, grant_id, require_grant, actor_id,
+        actor,
+    );
     if !verdict.ok {
         // The gate already wrote the refusal row, with `pre_gate`.
         return verdict.to_json();
@@ -366,6 +386,7 @@ mod tests {
             "nmap shodan.io",
             &json!({"target": "shodan.io"}),
             Some("shodan.io"),
+            &[],
             Some(&g.grant_id),
             false,
             DEFAULT_ACTOR_ID,
@@ -388,6 +409,7 @@ mod tests {
             "nmap 10.0.0.5",
             &json!({"target": "10.0.0.5"}),
             Some("10.0.0.5"),
+            &[],
             None,
             false,
             DEFAULT_ACTOR_ID,
@@ -414,6 +436,7 @@ mod tests {
             "nmap 10.0.0.5",
             &json!({"target": "10.0.0.5"}),
             Some("10.0.0.5"),
+            &[],
             Some(&g.grant_id),
             false,
             DEFAULT_ACTOR_ID,
