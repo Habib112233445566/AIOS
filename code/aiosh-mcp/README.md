@@ -36,8 +36,18 @@ Implements **ADR-0035 §D-2** (MCP as the only tool-call protocol).
 | `aios.session.policy` | ✓     |        | Evaluates session specifications or stores against UserSessionSecurityPolicy (SSP1..SSP7) |
 | `aios.session.stats`  | ✓     |        | Generates telemetry, metrics, and state distribution report (SSO1..SSO6) |
 | `aios.session.check`  | ✓     | ✓¹    | Validates on-disk user session store integrity and optionally performs non-destructive recovery (SSR1..SSR5) |
+| `aios.fs_layout.get`  | ✓     |       | Stored layout by `layout_id`, or a built-in preset by `profile` |
+| `aios.fs_layout.list` | ✓     |       | Lists the store's layouts (default: the seeded built-in presets) |
+| `aios.fs_layout.validate` | ✓ |       | Runs `FL1..FL5` over `spec`/`layout`; never reads the store |
+| `aios.fs_layout.fstab` | ✓    |       | Renders `/etc/fstab` from `spec`/`profile` |
+| `aios.fs_layout.probe` | ✓    |       | Evaluates a layout against `target_disk_bytes` (default 64 GiB) |
+| `aios.fs_layout.diff` | ✓     |       | Differential comparison; reports `destructive` |
+| `aios.fs_layout.register` |   | ✓     | Registers a layout profile — **requires grant + `store_path`** |
+| `aios.fs_layout.set_active` | | ✓     | Moves the active-layout pointer — **requires grant + `store_path`** |
+| `aios.fs_layout.remove` |     | ✓     | Deletes a non-active, non-built-in layout — **requires grant + `store_path`** |
+| `aios.fs_layout.import_fstab` | | ✓   | Builds a layout from fstab text — **requires grant + `store_path`** |
 
-¹ The pentest, service action, and recovery tools write an audit row through the same recorded dispatch helper; in Sprint 0 the row is written synchronously.
+¹ The pentest, service action, and recovery tools write an audit row through the same recorded dispatch helper; in Sprint 0 the row is written synchronously. Every `aios.fs_layout.*` call that reaches the gate writes exactly one hash-chained row too — on success, on a body refusal, and on a gate refusal alike (an unknown tool name is refused before the ring and leaves no row).
 
 ## Service Supervision Tools (`aios.service.*`)
 
@@ -447,6 +457,56 @@ Generates comprehensive observability telemetry and distribution metrics across 
   }
 }
 ```
+
+## Filesystem Layout Tools (`aios.fs_layout.*`)
+
+Ten tools over the `aiosh-core::fs_layout` subsystem: target-disk layout profiles (partitions, mount
+points, FHS directories, `/etc/fstab`) validated against `FL1..FL5` / `CS1..CS5`. The six read-only
+tools need no grant; the four **mutations** (`register`, `set_active`, `remove`, `import_fstab`) each
+require a PEP grant **and** an explicit `store_path`, because no canonical default store exists yet.
+An ungranted mutation is refused before the body runs, and the refusal names the gate.
+
+`scope.paths` on the grant governs the paths a call touches — the store it writes and the `spec`/
+`fstab` document it reads — and matching is canonical, so a deny entry holds against case, 8.3
+short-name, trailing dot/space and device-spelling aliases of the same location.
+
+Full tool reference, result-envelope contract, and the honest limitations: **§5 and §6 of
+[`docs/filesystem_layout.md`](../../docs/filesystem_layout.md)**.
+
+Requires `aiosh` and `aiosh-mcp` on `PATH` (see **Running** below) and `python3`.
+
+```bash
+# Isolate the demo's audit ring so a copy-pasted example never writes to your real one.
+export AIOSH_HOME="$PWD/.aios-demo"; mkdir -p "$AIOSH_HOME" demo
+
+# Mint a grant scoped to the demo directory. Use a named relative directory (not `.`) and keep
+# ONE spelling frame for both the grant and the calls: mixing frames (or using an MSYS-style /tmp
+# path on Windows) can refuse an in-scope call — see docs/filesystem_layout.md §6.20–§6.21.
+GRANT=$(aiosh grant create --to agent:fs-layout-demo --tools 'aios.fs_layout.*' --allow demo \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["grant_id"])')
+
+# Derive a spec from the canonical container preset.
+aiosh layout show aios-container-minimal-v1 --json | python3 -c \
+  'import json,sys; s=json.load(sys.stdin)["data"]; s["id"]="lab-vm-v1"; s["name"]="Lab VM"; print(json.dumps(s))' \
+  > demo/layout.json
+
+# requests.jsonl: one JSON-RPC object per line — list, register, probe, then a refusal.
+cat > requests.jsonl <<EOF
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"aios.fs_layout.list","arguments":{"store_path":"demo/layouts.json"}}}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"aios.fs_layout.register","arguments":{"spec":"demo/layout.json","store_path":"demo/layouts.json","grant_id":"$GRANT"}}}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"aios.fs_layout.probe","arguments":{"layout_id":"lab-vm-v1","target_disk_bytes":214748364800,"store_path":"demo/layouts.json"}}}
+{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"aios.fs_layout.register","arguments":{"spec":"demo/layout.json","store_path":"demo/layouts.json"}}}
+EOF
+aiosh-mcp < requests.jsonl
+```
+
+Request 4 carries no `grant_id`, so it answers with the gate refusal rather than registering:
+`{"ok":false,"gate":"pep","reason":"tool 'aios.fs_layout.register' requires explicit PEP grant",...}`
+with `isError: true` — and no store write. Two further contracts are worth knowing before writing a
+client: the rejected shape of a mutation is also explicit (`{"ok":false,"error":"cannot remove
+active layout 'x'; switch active layout first"}`), and `"additionalProperties": false` in the schema
+is advisory — an undeclared argument such as `"dry_run": true` is currently **ignored** rather than
+refused, so a mutation it accompanies still happens.
 
 ## Running
 

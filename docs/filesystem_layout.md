@@ -16,8 +16,8 @@ Phase 1 of AIOS establishes the foundational Linux base operating system and boo
 ```mermaid
 graph TD
     subgraph ExecutionPlanes["Execution Planes"]
-        CLI["aiosh layout CLI (list, show, validate, fstab, probe, diff)"]
-        MCP["aios.fs_layout.* MCP Tools (get, validate, fstab, list, probe, diff)"]
+        CLI["aiosh layout CLI (list, show, validate, fstab, probe, diff, register, set-active, remove, import-fstab)"]
+        MCP["aios.fs_layout.* MCP Tools (6 read-only + 4 gated mutations: register, set_active, remove, import_fstab)"]
     end
 
     subgraph CoreEngine["Filesystem Layout Subsystem (aiosh-core)"]
@@ -233,6 +233,56 @@ hash-chained row to the SQLite audit ring at `$AIOSH_HOME/audit.db`.
 
 ## 5. MCP Tool Reference (`aios.fs_layout.*`)
 
+MCP is the only tool-call protocol AIOS exposes (ADR-0035 §D-2), so this is the surface an agent
+uses; `aiosh layout` (§4) is the operator equivalent. The Filesystem Layout component exposes **ten**
+tools — six read-only and four that mutate a layout store.
+
+Every call is one JSON-RPC 2.0 object per line on stdio:
+
+```json
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"aios.fs_layout.list","arguments":{}}}
+```
+
+and every call answers in the standard result envelope described in §5.11.
+
+### 5.0 Surface at a Glance
+
+| Tool | Effect | Grant | `store_path` | Audit target |
+|---|---|---|---|---|
+| `aios.fs_layout.get` | reads a stored layout or a built-in preset | optional | optional | layout id |
+| `aios.fs_layout.list` | reads the store | optional | optional | active layout id |
+| `aios.fs_layout.validate` | validates a document (never reads the store) | optional | bound-checked only | layout id |
+| `aios.fs_layout.fstab` | renders `/etc/fstab` from a document | optional | — | layout id |
+| `aios.fs_layout.probe` | evaluates a layout against a target disk size | optional | optional | layout id |
+| `aios.fs_layout.diff` | differential comparison of two layouts | optional | optional | source → target ids |
+| `aios.fs_layout.register` | **writes** a new layout into the store | **required** | **required** | new layout id |
+| `aios.fs_layout.set_active` | **writes** the active-layout pointer | **required** | **required** | layout id |
+| `aios.fs_layout.remove` | **writes** by deleting a layout | **required** | **required** | layout id |
+| `aios.fs_layout.import_fstab` | **writes** a layout imported from fstab text | **required** | **required** | new layout id |
+
+Four rules govern the mutating half; each is enforced in code, not by convention:
+
+1. **A PEP grant is required, twice over.** The call site passes `require_grant = true` *and* the
+   four ids are listed in `pep::is_irreversible`, so an unauthenticated mutation is refused by the
+   policy engine itself even if a call site ever forgot the flag.
+2. **`store_path` is mandatory.** No canonical default store exists yet (the configuration sub-epic
+   `T-01541..` owns that default), so a mutation without an explicit path is **refused** rather than
+   performed against a throw-away in-memory store whose discard the caller could not see. This is
+   the deliberate difference from the CLI, which does mutate in memory (§6.7).
+3. **`scope.paths` governs the paths the call touches** — the store it writes plus the `spec`/`fstab`
+   document it reads when that names an existing file — not the layout id the row is attributed to.
+   Matching is *canonical*: case, 8.3 short names, trailing dot/space and device/extended-length
+   spellings of the same location all resolve to one policy key, so a deny entry cannot be evaded by
+   re-spelling it. The entry and the argument must also be written in the same frame (relative with
+   relative, absolute with absolute), and `.` is not a usable entry (§6.21). Reads stay ungated
+   (§6.16).
+4. **There is no dry-run.** An accepted mutation persists immediately; `aios.fs_layout.probe` and
+   `aios.fs_layout.diff` are the read-only ways to evaluate a change first.
+
+The four mutations declare `required` arguments in their schemas (`store_path`; plus `layout_id` or
+`layout_id`+`name`+`fstab`), so a client can pre-assemble a valid call. Note that argument
+*validation* is narrower than the schema suggests in one respect — see §6.15.
+
 ### 5.1 `aios.fs_layout.list`
 ```json
 {
@@ -312,6 +362,179 @@ hash-chained row to the SQLite audit ring at `$AIOSH_HOME/audit.db`.
 }
 ```
 
+### 5.7 `aios.fs_layout.register`  *(mutation — grant + `store_path` required)*
+
+```json
+{
+  "name": "aios.fs_layout.register",
+  "arguments": {
+    "spec": "/path/to/layout.json",
+    "store_path": "/path/to/layouts.json",
+    "grant_id": "gr_..."
+  }
+}
+```
+
+Registers one new profile. `layout` (an inline JSON object) takes precedence over `spec` (a path to a
+regular file, or inline JSON). `register_layout` re-runs the full `FL1..FL5` validation and refuses a
+duplicate id. The row is attributed to the **new layout id on both outcome paths** (a duplicate-id
+refusal is still findable by layout), except for a *pre-gate* refusal — a call with no grant cannot
+name the id, because resolving it would mean parsing the caller's path before authorization.
+
+```json
+{
+ "audit_id": 4,
+ "active_layout_id": "aios-uefi-standard-v1",
+ "id": "lab-vm-v1",
+ "ok": true,
+ "registered": true,
+ "tool": "aios.fs_layout.register"
+}
+```
+
+### 5.8 `aios.fs_layout.set_active`  *(mutation — grant + `store_path` required)*
+
+```json
+{
+  "name": "aios.fs_layout.set_active",
+  "arguments": { "layout_id": "lab-vm-v1", "store_path": "/path/to/layouts.json", "grant_id": "gr_..." }
+}
+```
+
+Moves the active-layout pointer to an already-registered id and **persists** it. The destructive
+verdict of the transition is *reported, never blocked*: `destructive_transition` is `true` when the
+move removes or shrinks partitions, changes a filesystem, or repoints `/`, and `null` when it cannot be
+computed (an empty previous id). Use `aios.fs_layout.diff` to inspect the delta before committing.
+
+```json
+{
+ "audit_id": 5,
+ "active": "lab-vm-v1",
+ "destructive_transition": true,
+ "ok": true,
+ "previous_active": "aios-uefi-standard-v1",
+ "tool": "aios.fs_layout.set_active"
+}
+```
+
+### 5.9 `aios.fs_layout.remove`  *(mutation — grant + `store_path` required)*
+
+```json
+{
+  "name": "aios.fs_layout.remove",
+  "arguments": { "layout_id": "lab-vm-v1", "store_path": "/path/to/layouts.json", "grant_id": "gr_..." }
+}
+```
+
+Deletes a profile. Refused for the **active** layout and for the two built-in canonical presets, so
+the store can never be left without a usable active layout by this path:
+
+```json
+{
+ "audit_id": 12,
+ "error": "cannot remove active layout 'lab-vm-v1'; switch active layout first",
+ "ok": false,
+ "tool": "aios.fs_layout.remove"
+}
+```
+
+### 5.10 `aios.fs_layout.import_fstab`  *(mutation — grant + `store_path` required)*
+
+```json
+{
+  "name": "aios.fs_layout.import_fstab",
+  "arguments": {
+    "layout_id": "lab-vm-v2",
+    "name": "Imported from fstab",
+    "fstab": "/path/to/fstab.sample",
+    "store_path": "/path/to/layouts.json",
+    "grant_id": "gr_..."
+  }
+}
+```
+
+Builds a new profile whose mount rows come from the fstab document (`fstab` names a regular file or
+carries inline content) while partitions and directories are inherited from `base_layout_id` — or,
+when that is absent, from the store's **active** layout. At most 128 mount rows; a malformed row is
+refused by line number rather than skipped. The imported profile's `created_at` is a fixed import
+timestamp, not the wall clock.
+
+### 5.11 Result Envelope, Refusals and Audit Rows
+
+Every call — read or mutation, accepted or refused — answers with **one** JSON-RPC result carrying a
+structured envelope, and every call that reaches the gate writes **exactly one** hash-chained row to
+`$AIOSH_HOME/audit.db`. There is no silent-failure path: a refusal is an explicit object with
+`ok:false` and a reason, not an empty read. The one exception to the row rule is an unknown tool
+name, which is refused *before* the gate and leaves no row at all (last case below).
+
+**Success** (`isError: false`):
+
+```json
+{ "ok": true, "tool": "aios.fs_layout.list", "audit_id": 3, "count": 2, "active_layout_id": "aios-uefi-standard-v1", "layouts": [ ... ] }
+```
+
+**Body refusal** — the call was authorized but the operation was invalid. `isError: true`:
+
+```json
+{ "ok": false, "tool": "aios.fs_layout.remove", "audit_id": 12, "error": "cannot remove active layout 'lab-vm-v1'; switch active layout first" }
+```
+
+**Gate refusal** — the classifier or the policy engine stopped the call before the body ran. Note the
+`gate` and `policy_revision` fields in place of `error`. `isError: true`:
+
+```json
+{ "ok": false, "tool": "aios.fs_layout.register", "audit_id": 13, "gate": "pep", "policy_revision": "sprint-2-rule-pack-v1", "reason": "tool 'aios.fs_layout.register' requires explicit PEP grant" }
+```
+
+**Unknown tool** — refused before the gate, so there is no per-tool envelope **and no audit row**;
+this is the only request on this surface that leaves no forensic record:
+
+```json
+{ "ok": false, "error": "unknown tool: aios.fs_layout.nope" }
+```
+
+The `audit_id` carried by the three envelopes above is the row's key, which makes a call and its
+forensic record joinable — and its absence is exactly how you recognise the no-row case. Check chain
+integrity with `aiosh audit verify --json` (`data.ok`), and read rows with
+`aiosh audit tail --json -n <n>`.
+
+### 5.12 Copy-Pasteable End-to-End MCP Session
+
+Executed verbatim on this repository's build (see the `T-01539` evidence file, §2). One line of
+JSON-RPC per request; the server answers one line per request.
+
+Run from the repository root; it creates `demo/` and `.aios-demo/` under the current directory. The
+paths are deliberately **relative and identically spelled** on the grant and the call, and the allow
+entry names the sub-directory rather than `.` — see the spelling caveats in §6.20–§6.21 before
+substituting other paths:
+
+```bash
+export AIOSH_HOME="$PWD/.aios-demo"; mkdir -p "$AIOSH_HOME" demo
+export PATH="$PWD/code/aiosh-rust/target/debug:$PATH"
+
+# 1. Mint a grant scoped to the directory the store and spec will live in.
+GRANT=$(aiosh grant create --to agent:fs-layout-demo --tools 'aios.fs_layout.*' --allow demo \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["grant_id"])')
+echo "grant: $GRANT"
+
+# 2. Derive a spec from the canonical container preset.
+aiosh layout show aios-container-minimal-v1 --json | python3 -c \
+  'import json,sys; s=json.load(sys.stdin)["data"]; s["id"]="lab-vm-v1"; s["name"]="Lab VM"; print(json.dumps(s))' \
+  > demo/layout.json
+
+# 3. Drive the MCP server over stdio: register, then list.
+{
+  printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"aios.fs_layout.register\",\"arguments\":{\"spec\":\"demo/layout.json\",\"store_path\":\"demo/layouts.json\",\"grant_id\":\"$GRANT\"}}}"
+  printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/call\",\"params\":{\"name\":\"aios.fs_layout.list\",\"arguments\":{\"store_path\":\"demo/layouts.json\"}}}"
+} | aiosh-mcp
+```
+
+The first response registers the profile with a new `audit_id`; the second reports `count: 3`
+(the two built-in presets plus `lab-vm-v1`). Omitting `grant_id` from the first call turns it into the
+PEP refusal shown in §5.11 — the layout is then **not** written, which is the behaviour to rely on
+when testing a client. The `T-01534`/`T-01537`/`T-01538`/`T-01539` evidence files walk the same
+surface end to end (register → set-active → probe → diff → fstab → refused removal).
+
 ---
 
 ## 6. Constraints & Known Limitations
@@ -327,6 +550,91 @@ hash-chained row to the SQLite audit ring at `$AIOSH_HOME/audit.db`.
 9. **Crash Residue and Recovery**: Persistence stages bytes in a sibling `.<name>.tmp.<pid>.<nanos>.<n>` file, flushes it to stable storage, then renames it over the store — so the destination is always either the old or the new *complete* document, never truncated. If the **rename** (not the write) fails, the staged file is deliberately preserved and its path is named in the error; use that file to recover the state that could not be installed. A crash between write and rename can leave one inert staged file beside the store, which is safe to delete. Names are unguessable and created with `O_CREAT | O_EXCL`, and no sweep-by-pattern is offered, because a pattern-based unlink would reintroduce an attacker-influenced deletion primitive.
 10. **Windows DOS Device Names**: `Path::new("NUL").exists()` is false on Windows, so `--store NUL` takes the documented "store file missing → canonical presets" path. Nothing is read from or written to the device.
 11. **Platform Coverage of the Hardening Proofs**: The FIFO / character-device, read-only-directory, and symlink-at-destination proofs in the CLI hardening suite are POSIX-only and are reported as `SKIP` on Windows. The equivalent core properties (rename-failure preservation, atomic replacement with no residue, non-regular-file rejection with a read-time cap) are asserted on every platform — see [T-01528](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01528-cli-surface-hardening.md) §3.2.
+12. **Write-Side Ceiling (10 MiB) and the Sealed-Store Consequence**: the store that is written must
+    also be ≤ 10 MiB — the serialized bytes are measured *before* anything is staged, and a larger
+    store is refused with an explicit error naming the read ceiling, leaving the existing store
+    untouched. This closed a real defect (a store could previously be saved past its own read
+    ceiling and then never loaded again, while the call reported success). **The gap that remains:**
+    a store that is *already* over the ceiling — written before this bound existed, or by another
+    writer — cannot be loaded by any tool, and since every tool loads before writing, **no tool can
+    repair it**. Recovery is external: delete it, or edit it down with `python3 -c '...'`/an editor,
+    then continue. There is no `aiosh` repair command for this case.
+13. **Staged-Residue Cap, and Its Known Evasion**: a failed atomic replace deliberately preserves its
+    staged `.<name>.tmp.<pid>.<nanos>.<n>` file (it may be the only complete copy of the caller's
+    state) and names it in the error. At most 8 such files are tolerated beside one destination before
+    staging is refused, so repeated failures cannot fill the directory; nothing is ever auto-deleted,
+    because a sweep-by-pattern would reintroduce an attacker-influenced deletion primitive. **Known
+    gap (found by the `T-01539` adversarial verification):** the cap is keyed on the *spelled* file
+    name, so spellings of the same location each get their own quota — case variants (`STORE.JSON`),
+    trailing dot/space, and 8.3 short names all evaded it during probing, accumulating 32 staged files
+    around one physical destination where 8 is the cap. The mirror image also holds: two genuinely
+    different stores whose names nest (`s.json` and `s.json.tmp`) share a prefix, so one store's
+    residue can refuse an unrelated store that has none. Treat 8 as a floor, not a guarantee; not yet
+    fixed.
+14. **Bounded Replace Retry, and What It Does Not Bound**: a failing final rename is retried at most
+    5 times with a doubling backoff (20 ms → 160 ms, budget 5 s) and only for errors that look
+    transient (`PermissionDenied`/`WouldBlock`; Windows `5`/`32`/`33`; POSIX `EBUSY`/`ETXTBSY`/
+    `EAGAIN`/`EINTR`). Two caveats stated rather than implied: on Windows a **permanent** condition
+    (a read-only destination file) reports the same `os error 5` as a momentary lock, so it is retried
+    before being refused (~0.4 s observed, error still surfaced, never masked); and a syscall blocked
+    inside the kernel (an unresponsive network mount) is not interruptible from this layer, so the
+    budget bounds the retry loop, not the syscall.
+15. **Undeclared Arguments Are Ignored, Not Refused**: all ten tools advertise
+    `"additionalProperties": false`, but the server does not enforce it — an unknown key is silently
+    ignored and the call proceeds. This is not harmless in one direction: an agent sending
+    `{"dry_run": true}` to `aios.fs_layout.register` gets a **real, persisted mutation**. Do not rely
+    on the schema for typo or vocabulary protection; check the tool table in §5.0.
+16. **Read Tools Are Ungated, and CLI-Written Text Is Not Classified**: `get`, `list`, `validate`,
+    `fstab`, `probe` and `diff` run with `require_grant = false`, and `validate`/`fstab` accept a
+    caller-named `spec` document. The read is bounded and type-checked (regular files only, ≤ 10 MiB,
+    and only content that parses as a layout is returned), so this is a local information-disclosure
+    surface rather than an escape — but an operator who wants it constrained **cannot express that with
+    a grant today**, because an ungated call consults no grant. Separately, text written into a store
+    by the operator CLI bypasses the classifier, and `get`/`list` echo it back; rendering neutralizes
+    control characters, while `--json` output and the store stay faithful by design.
+17. **Single-Writer Assumption (MCP)**: as with the CLI (§6.8) there is no cross-process lock on the
+    store. Two writers that share a `store_path` can in principle lose one update (last rename wins);
+    in 12/12 probed trials both concurrent writers reported success and **both** updates survived, and
+    no trial produced a store over the ceiling — but the read-modify-write window is structural, so
+    serialize writers per store rather than relying on that observation.
+18. **Audit-Ring Durability Is a Platform Property, Not a Layout One**: every fs_layout call writes
+    exactly one hash-chained row (success, body refusal and gate refusal alike — but **not** an
+    unknown tool name, which is refused before the ring and leaves no row, §5.11) and
+    `aiosh audit verify` stayed `ok` across this surface's probes. The ring's *cross-cutting* defects
+    under concurrency — a forked chain, a row that can be lost after a mutation, a panic on a busy
+    ring (`F-02`/`F-06`/`F-16` of the 2026-09-18 security audit) — belong to `dispatch`/`audit` and
+    are shared by ~130 tools; they remain open there, not fixed here.
+19. **Payload Ceilings**: an inline `layout`/`spec`/`fstab` document is capped at 1 MiB
+    (`MAX_INLINE_LAYOUT_BYTES`), the transport rejects a request line beyond 1 MiB, and a document read
+    from disk is capped at 10 MiB *during* the read. All three are refusals with named reasons, not
+    truncations.
+20. **A Path Must Mean One Thing to the Process That Runs the Tool**: `scope.paths` matching is
+    canonical *relative to the filesystem the binary sees*. Two spellings that look equivalent to a
+    shell are not necessarily equivalent to a native process — under Git Bash/MSYS, `$PWD` is
+    `/tmp/...` or `/c/...`, which a native Windows binary resolves against its own notion of the
+    current drive (a `/tmp/...` path can mean `C:\tmp\...`, a different directory entirely). Passing
+    such a spelling as `--allow` and then the same spelling as a tool argument therefore produces an
+    out-of-scope refusal for a path the caller believes is inside the grant, and the tool never
+    touches the file. **Use one spelling that resolves to the intended location for the binary** —
+    the examples in §5.12 use bare relative paths for exactly this reason — and treat an unexpected
+    "blocked by grant `scope.paths`" as a path-identity signal first, not a policy bug. This is the
+    same spelling-versus-identity distinction the canonicalisation in `T-01537` (F-1/F-7) closed for
+    aliases of an existing path; a spelling the process cannot resolve is outside that closure.
+21. **A `.` Is Not a Usable `--allow` Entry (and Fails Open Off Windows)**: `.` looks like the
+    obvious way to say "this directory", and `aiosh grant create --allow .` is accepted and recorded
+    without complaint — but the entry authorizes nothing. Normalisation drops `.` components, so the
+    key for `.` is the **empty string**, and a path is matched against an entry only when the path's
+    key *equals* the entry's or *starts with* `<entry>/`. Reproduced on Windows: a grant created
+    with `--allow .` refuses its own directory's store for **both** a relative (`layouts.json`) and an
+    absolute argument — `path subject 'layouts.json' blocked by grant scope.paths`. That is
+    fail-closed and therefore safe, but silently useless. The *mirror* behaviour (source-derived, not
+    reproduced here — no POSIX host in this task) is worse: on POSIX the comparison degenerates to
+    `starts_with("/")`, which every absolute key satisfies, so `--allow .` would authorize the whole
+    filesystem, and a `--deny .` entry would deny it. **Use a named directory instead of `.`**
+    (`--allow demo` with `demo/...` arguments, as §5.12 and the index example do) or an absolute
+    directory with absolute arguments; never rely on `.` to confine, and never rely on `.` to deny.
+    The entry/argument frames must also match (relative entry with relative argument, absolute with
+    absolute) for the containment test to fire. Not yet fixed in `pep::normalize_path_str`.
 
 ---
 
@@ -367,3 +675,19 @@ hash-chained row to the SQLite audit ring at `$AIOSH_HOME/audit.db`.
 - `T-01528`: [CLI Surface Hardening](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01528-cli-surface-hardening.md)
 - `T-01529`: [CLI Surface Documentation](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01529-cli-surface-documentation.md)
 - `T-01530`: [CLI Surface Verification](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01530-cli-surface-verification-evidenc.md)
+
+### Sub-Epic 4: Filesystem Layout MCP/API Surface (T-01531..T-01540)
+
+This is the sub-epic that produced everything in §5: the ten-tool surface, its authorization model
+(§5.0), the persistence hardening of §6.12–§6.14, and the limitations in §6.15–§6.21.
+
+- `T-01531`: [MCP/API Surface Research](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01531-mcp-api-surface-research.md)
+- `T-01532`: [MCP/API Surface Specification](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01532-mcp-api-surface-specification.md)
+- `T-01533`: [MCP/API Surface Scaffold](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01533-mcp-api-surface-scaffold.md)
+- `T-01534`: [MCP/API Surface Implementation](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01534-mcp-api-surface-implementation.md)
+- `T-01535`: [MCP/API Surface Unit Tests](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01535-mcp-api-surface-unit-test.md)
+- `T-01536`: [MCP/API Surface Integration](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01536-mcp-api-surface-integration.md)
+- `T-01537`: [MCP/API Surface Security Review](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01537-mcp-api-surface-security-review.md) — the authorization model of §5.0 (policy path subjects, canonical matching, nested-injection refusal)
+- `T-01538`: [MCP/API Surface Hardening](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01538-mcp-api-surface-hardening.md) — the persistence bounds of §6.12–§6.14
+- `T-01539`: [MCP/API Surface Documentation](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01539-mcp-api-surface-documentation.md) — this guide's §5 and §6
+- `T-01540`: MCP/API Surface Verification & Evidence *(the task that follows: re-runs the suites at this component's head and closes the sub-epic)*
