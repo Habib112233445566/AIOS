@@ -3250,41 +3250,46 @@ impl Server {
                     .and_then(|v| v.get("id"))
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
-                let f = move || -> Result<Value, String> {
-                    let store_path = require_fs_layout_store_path(arguments)?;
-                    let spec = if let Some(ref val) = layout_val {
-                        ensure_inline_payload_bounded(val, "layout")?;
-                        serde_json::from_value::<aiosh_core::fs_layout::FilesystemLayoutSpec>(val.clone())
-                            .map_err(|e| format!("invalid layout JSON: {}", e))?
-                    } else if let Some(ref s) = spec_opt {
-                        let content = read_layout_document_input(s, "spec file", "spec")?;
-                        aiosh_core::fs_layout::FilesystemLayoutSpec::from_json(&content)?
-                    } else {
-                        return Err("register requires a 'layout' object or a 'spec' string".into());
-                    };
-                    let layout_id = spec.id.clone();
-                    let mut service = resolve_fs_layout_service(&Some(store_path.clone()))?;
-                    // `register_layout` validates FL1..FL5 and refuses duplicate ids.
-                    service.store_mut().register_layout(spec)?;
-                    service.save_to_path(std::path::Path::new(&store_path))?;
-                    Ok(json!({
-                        "ok": true,
-                        "tool": "aios.fs_layout.register",
-                        "id": layout_id,
-                        "registered": true,
-                        "active_layout_id": service.store.active_layout_id
-                    }))
+                let f = move || -> dispatch::TargetAwareBodyResult {
+                    // Spec §9: the audit target is the layout id for a per-layout
+                    // operation. `target_opt` can only carry the id for the inline form
+                    // (the `spec` form needs a parse, and parsing stays behind the gate),
+                    // so the body resolves the id as soon as it has parsed the spec and
+                    // reports it on BOTH outcome paths — a duplicate-id refusal happens
+                    // after that parse and must still be findable by layout.
+                    let mut resolved: Option<String> = None;
+                    let outcome = (|| -> Result<Value, String> {
+                        let store_path = require_fs_layout_store_path(arguments)?;
+                        let spec = if let Some(ref val) = layout_val {
+                            ensure_inline_payload_bounded(val, "layout")?;
+                            serde_json::from_value::<aiosh_core::fs_layout::FilesystemLayoutSpec>(val.clone())
+                                .map_err(|e| format!("invalid layout JSON: {}", e))?
+                        } else if let Some(ref s) = spec_opt {
+                            let content = read_layout_document_input(s, "spec file", "spec")?;
+                            aiosh_core::fs_layout::FilesystemLayoutSpec::from_json(&content)?
+                        } else {
+                            return Err("register requires a 'layout' object or a 'spec' string".into());
+                        };
+                        let layout_id = spec.id.clone();
+                        resolved = Some(layout_id.clone());
+                        let mut service = resolve_fs_layout_service(&Some(store_path.clone()))?;
+                        // `register_layout` validates FL1..FL5 and refuses duplicate ids.
+                        service.store_mut().register_layout(spec)?;
+                        service.save_to_path(std::path::Path::new(&store_path))?;
+                        Ok(json!({
+                            "ok": true,
+                            "tool": "aios.fs_layout.register",
+                            "id": layout_id,
+                            "registered": true,
+                            "active_layout_id": service.store.active_layout_id
+                        }))
+                    })();
+                    (outcome, resolved)
                 };
-                dispatch::recorded_call_with_resolved_target(
+                dispatch::recorded_call_with_body_target(
                     &mut self.ring, &self.pep,
                     "aios.fs_layout.register", "Register Filesystem Layout profile", arguments,
                     target_opt.as_deref(), grant_id, true, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR,
-                    // Spec §9: the audit target is the layout id for per-layout operations.
-                    // The id is only knowable after parsing, and parsing must stay behind
-                    // the gate, so the row target is resolved from the body's result.
-                    // Both accepted input forms (`spec` path or inline `layout`) then
-                    // record the same id instead of `None` for the path form.
-                    &|body: &Value| body.get("id").and_then(|v| v.as_str()).map(|s| s.to_string()),
                     f,
                 )
             }
@@ -6087,8 +6092,11 @@ mod tests {
     }
 
     /// Spec §9: the audit target is the layout id for per-layout operations. Both
-    /// accepted `register` input forms must record it — the spec-path form used to
-    /// write `None` because the id is only known after parsing.
+    /// accepted `register` input forms must record it **on every row the tool body
+    /// writes** — success *and* body refusal. The spec-path form used to write `None`
+    /// on both, and after the first fix still wrote `None` on a refusal, which is the
+    /// row an operator most needs to find by layout (a duplicate-id attempt left no
+    /// layout-queryable row at all).
     #[test]
     fn test_mcp_fs_layout_register_audit_target_is_layout_id() {
         let mut server = Server::open();
@@ -6142,26 +6150,75 @@ mod tests {
         );
         assert_eq!(res_inline.get("ok").and_then(|v| v.as_bool()), Some(true), "{:?}", res_inline);
 
-        for (form, res) in [("spec path", res_spec), ("inline layout", res_inline)] {
-            let expected_id = res.get("id").and_then(|v| v.as_str()).unwrap().to_string();
-            let audit_id = res.get("audit_id").and_then(|v| v.as_i64()).unwrap();
+        /// Assert the row the tool wrote carries the layout id as its target.
+        fn assert_row_target(
+            server: &Server,
+            form: &str,
+            res: &serde_json::Value,
+            expected_outcome: &str,
+            expected_target: &str,
+        ) {
+            let audit_id = res
+                .get("audit_id")
+                .and_then(|v| v.as_i64())
+                .unwrap_or_else(|| panic!("{}: no audit_id in {:?}", form, res));
             let row = server
                 .ring
                 .tail(500)
                 .unwrap()
                 .into_iter()
                 .find(|r| r.id == audit_id)
-                .unwrap_or_else(|| panic!("audit row {} not found", audit_id));
+                .unwrap_or_else(|| panic!("{}: audit row {} not found", form, audit_id));
             assert_eq!(row.tool, "aios.fs_layout.register");
+            assert_eq!(row.outcome, expected_outcome, "{}: {:?}", form, row);
             assert_eq!(
                 row.target.as_deref(),
-                Some(expected_id.as_str()),
-                "{} form recorded audit target {:?}, expected '{}'",
+                Some(expected_target),
+                "{} recorded audit target {:?}, expected '{}'",
                 form,
                 row.target,
-                expected_id
+                expected_target
             );
         }
+
+        assert_row_target(&server, "spec path (success)", &res_spec, "ok", "audit-target-spec-v1");
+        assert_row_target(&server, "inline layout (success)", &res_inline, "ok", "audit-target-inline-v1");
+
+        // Re-registering the same ids is refused by the store *after* the spec is
+        // parsed, so both refusal rows must still name the layout they tried to add.
+        let dup_spec = server.call_tool(
+            "aios.fs_layout.register",
+            &json!({
+                "spec": spec_file.to_string_lossy().to_string(),
+                "store_path": store_path,
+                "grant_id": grant.grant_id
+            }),
+        );
+        assert_eq!(dup_spec.get("ok").and_then(|v| v.as_bool()), Some(false), "{:?}", dup_spec);
+        assert_row_target(
+            &server,
+            "spec path (duplicate refusal)",
+            &dup_spec,
+            "error",
+            "audit-target-spec-v1",
+        );
+
+        let dup_inline = server.call_tool(
+            "aios.fs_layout.register",
+            &json!({
+                "layout": layout,
+                "store_path": store_path,
+                "grant_id": grant.grant_id
+            }),
+        );
+        assert_eq!(dup_inline.get("ok").and_then(|v| v.as_bool()), Some(false), "{:?}", dup_inline);
+        assert_row_target(
+            &server,
+            "inline layout (duplicate refusal)",
+            &dup_inline,
+            "error",
+            "audit-target-inline-v1",
+        );
 
         let _ = std::fs::remove_dir_all(&tmp_dir);
     }

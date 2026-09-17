@@ -207,6 +207,10 @@ pub fn commit(
     .expect("audit row write failed")
 }
 
+/// What a target-aware tool body returns: its outcome, plus the audit `target` the body
+/// managed to resolve (`None` when it never got far enough to know one).
+pub type TargetAwareBodyResult = (Result<serde_json::Value, String>, Option<String>);
+
 /// Run a non-pentest MCP function behind the authoritative gate and
 /// append exactly one result row after it returns (mirrors
 /// `server.py:_recorded_call`).
@@ -221,34 +225,36 @@ pub fn recorded_call<F>(
     require_grant: bool,
     actor_id: &str,
     actor: &str,
-    f: F,
+    mut f: F,
 ) -> serde_json::Value
 where
     F: FnMut() -> Result<serde_json::Value, String>,
 {
-    recorded_call_with_resolved_target(
+    recorded_call_with_body_target(
         ring, pep, tool, command, args, target, grant_id, require_grant, actor_id, actor,
-        &|_: &serde_json::Value| None,
-        f,
+        move || (f(), None),
     )
 }
 
-/// [`recorded_call`] for a tool whose audit `target` is only knowable *after* the body
-/// has run.
+/// [`recorded_call`] for a tool whose body can resolve the audit `target` itself.
 ///
-/// `resolve_target` is handed the body's successful result and may return the target to
-/// record; returning `None` falls back to the pre-gate `target`. This exists for
-/// `aios.fs_layout.register`, which accepts either an inline layout object or a path to
-/// a spec file: the layout id (the audit target required by the spec) can only be known
-/// after parsing, and that parse must happen **after** authorization — reading the file
-/// before the gate would let an unauthorized caller trigger the read, and would let a
-/// FIFO named by `spec` stall the single-threaded request loop before policy was
-/// consulted.
+/// The row's target has exactly **one** resolution point — `body_target.or(pre_gate)` —
+/// and that one value is used for every row the call writes:
 ///
-/// The pre-gate `target` is still what the classifier and PEP see, and it is what a
-/// refusal row records; only the post-gate outcome row can be enriched.
+/// * the gate's refusal row is written with `pre_gate` (the body never ran, so there is
+///   nothing to resolve; for `aios.fs_layout.register` that is an inline layout's id);
+/// * the success row **and** the body-failure row both record the body-resolved target
+///   when the body produced one, and `pre_gate` only when it did not.
+///
+/// `aios.fs_layout.register` needs this because its layout id is knowable only after
+/// parsing `spec`, and that parse must stay behind the gate — reading the file before
+/// authorization would let an ungranted caller trigger a bounded read of an
+/// attacker-chosen path. `pre_gate` can therefore only carry an id that needed no I/O,
+/// while the body reports the id it parsed on **both** outcome paths. That matters for
+/// forensics: a duplicate id is refused by the store *after* the spec is parsed, and that
+/// refusal is precisely the row an operator wants to find by layout.
 #[allow(clippy::too_many_arguments)]
-pub fn recorded_call_with_resolved_target<F>(
+pub fn recorded_call_with_body_target<F>(
     ring: &mut AuditRing,
     pep: &PepStore,
     tool: &str,
@@ -259,17 +265,23 @@ pub fn recorded_call_with_resolved_target<F>(
     require_grant: bool,
     actor_id: &str,
     actor: &str,
-    resolve_target: &dyn Fn(&serde_json::Value) -> Option<String>,
     mut f: F,
 ) -> serde_json::Value
 where
-    F: FnMut() -> Result<serde_json::Value, String>,
+    F: FnMut() -> TargetAwareBodyResult,
 {
-    let verdict = dispatch(ring, pep, tool, command, args, target, grant_id, require_grant, actor_id, actor);
+    let pre_gate = target;
+    let verdict = dispatch(ring, pep, tool, command, args, pre_gate, grant_id, require_grant, actor_id, actor);
     if !verdict.ok {
+        // The gate already wrote the refusal row, with `pre_gate`.
         return verdict.to_json();
     }
-    match f() {
+
+    let (outcome, body_target) = f();
+    // The single resolution point for every row written past the gate.
+    let row_target = body_target.or_else(|| pre_gate.map(|s| s.to_string()));
+
+    match outcome {
         Ok(mut raw) => {
             if !raw.is_object() {
                 raw = serde_json::json!({"ok": true, "result": raw});
@@ -284,8 +296,6 @@ where
             } else {
                 raw.get("error").and_then(|v| v.as_str()).map(|s| s.to_string())
             };
-            // A body may resolve a target the gate could not know before running.
-            let row_target = resolve_target(&raw).or_else(|| target.map(|s| s.to_string()));
             let row = commit(
                 ring, tool, command, args, row_target.as_deref(), grant_id, outcome, detail.as_deref(),
                 actor_id, actor, &verdict,
@@ -296,7 +306,7 @@ where
         }
         Err(detail) => {
             let row = commit(
-                ring, tool, command, args, target, grant_id, "error", Some(&detail),
+                ring, tool, command, args, row_target.as_deref(), grant_id, "error", Some(&detail),
                 actor_id, actor, &verdict,
             );
             serde_json::json!({

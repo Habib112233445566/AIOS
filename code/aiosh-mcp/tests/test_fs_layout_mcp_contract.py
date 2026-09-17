@@ -12,7 +12,15 @@ C1 argument-contract  every argument an arm reads is advertised in `inputSchema`
                       `validate.store_path`, which were missing from the manifest.
 C2 audit target       `register` records the layout id as the audit target for
                       BOTH accepted input forms (`spec` path and inline `layout`),
-                      per spec §9 — the spec-path form used to log `None`.
+                      on the success row **and** on a body refusal, per spec §9 —
+                      the spec-path form used to log `None` on both, and after the
+                      first fix still logged `None` on a refusal, which left a
+                      duplicate-id attempt with no layout-queryable row.
+                      Documented boundary: a *pre-gate* refusal (no PEP grant)
+                      cannot name a spec-file layout id, because resolving it would
+                      require parsing the caller's path before authorization — the
+                      F-1/FIFO hazard T-01531 closed. That boundary is asserted here
+                      so it stays a decision rather than an untested accident.
 C3 destructive verdict `set_active` reports `destructive_transition: true` for a
                       partition shrink and `false` when the transition only grows.
 C4 negative cases     ungranted mutation, missing store_path, oversize store_path
@@ -211,18 +219,49 @@ def test_c2_register_audit_target_both_forms():
                                    {"layout": inline_layout, "store_path": store, "grant_id": grant})
         assert res_inline.get("ok") is True, f"inline register failed: {res_inline}"
 
+        # A pre-gate refusal: the caller supplies no grant, so the gate refuses before
+        # the body runs and no layout id can be resolved without an unauthorized read.
+        ungranted_spec = call_mcp_tool("aios.fs_layout.register",
+                                       {"spec": str(spec_file), "store_path": store})
+        assert ungranted_spec.get("ok") is False, ungranted_spec
+
+        # Refusal rows: re-registering the same ids is refused by the store *after* the
+        # spec is parsed, so both refusal rows must still name the layout they tried to
+        # add — this is the half of defect 2 the first pass missed (only `Ok` consulted
+        # the body-resolved target).
+        dup_spec = call_mcp_tool("aios.fs_layout.register",
+                                 {"spec": str(spec_file), "store_path": store, "grant_id": grant})
+        assert dup_spec.get("ok") is False, f"duplicate spec register must be refused: {dup_spec}"
+        dup_inline = call_mcp_tool("aios.fs_layout.register",
+                                   {"layout": inline_layout, "store_path": store, "grant_id": grant})
+        assert dup_inline.get("ok") is False, f"duplicate inline register must be refused: {dup_inline}"
+
         rows = {row["id"]: row for row in audit_rows() if row.get("tool") == "aios.fs_layout.register"}
-        for form, res in (("spec path", res_spec), ("inline layout", res_inline)):
-            layout_id = res["id"]
+
+        def assert_row(form, res, expected_target, expected_outcome):
             audit_id = res.get("audit_id")
             assert audit_id in rows, f"{form}: audit row {audit_id} not found; rows={sorted(rows)}"
             row = rows[audit_id]
-            assert row.get("target") == layout_id, (
-                f"{form}: audit target is {row.get('target')!r}, expected the layout id {layout_id!r}"
+            assert row.get("tool") == "aios.fs_layout.register", row
+            assert row.get("outcome") == expected_outcome, (
+                f"{form}: outcome {row.get('outcome')!r}, expected {expected_outcome!r}"
             )
-            assert row.get("outcome") == "ok", f"{form}: outcome {row.get('outcome')!r}"
+            assert row.get("target") == expected_target, (
+                f"{form}: audit target is {row.get('target')!r}, expected {expected_target!r}"
+            )
 
-        print("PASS: C2 register records the layout id as the audit target for both input forms")
+        assert_row("spec path (success)", res_spec, "contract-spec-v1", "ok")
+        assert_row("inline layout (success)", res_inline, "contract-inline-v1", "ok")
+        assert_row("spec path (duplicate refusal)", dup_spec, "contract-spec-v1", "error")
+        assert_row("inline layout (duplicate refusal)", dup_inline, "contract-inline-v1", "error")
+
+        # Documented boundary (see module docstring C2): the pre-gate refusal ran no
+        # body, so it carries no layout id. Asserted explicitly so the asymmetry is a
+        # recorded decision, not a silent hole a later green run could hide.
+        assert_row("spec path (pre-gate refusal)", ungranted_spec, None, "refused")
+
+        print("PASS: C2 register records the layout id as the audit target for both input "
+              "forms, on success and on body refusal (pre-gate boundary asserted)")
 
 
 # ---------------------------------------------------------------------------
