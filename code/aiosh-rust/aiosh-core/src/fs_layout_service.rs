@@ -20,6 +20,52 @@ pub const MAX_LAYOUT_DOC_BYTES: u64 = 10 * 1024 * 1024;
 /// Bounded number of attempts used when creating an exclusive temporary file.
 const MAX_TEMP_ATTEMPTS: u32 = 8;
 
+// ---------------------------------------------------------------------
+// T-01538 hardening: bounded replace retry, bounded staged-file growth.
+// ---------------------------------------------------------------------
+
+/// Bounded attempts for the final atomic replacement step.
+///
+/// A replace can fail for *transient* reasons on a live system: on Windows a
+/// scanner, indexer, backup agent, or plain reader holding the destination open
+/// surfaces as `ERROR_ACCESS_DENIED` (a sharing violation, which Rust reports as
+/// `PermissionDenied`), and POSIX has `EBUSY`/`ETXTBSY`. One attempt therefore
+/// converts a momentary condition into a hard failure that also strands a staged
+/// file, so the replace is retried — but strictly bounded, and only for errors a
+/// retry can plausibly clear.
+pub const MAX_REPLACE_ATTEMPTS: u32 = 5;
+
+/// Wall-clock budget for the whole replace-retry envelope (milliseconds).
+///
+/// This bounds *our retry loop*, not a single syscall: a `rename`/`sync_all` that
+/// blocks inside the kernel (an unresponsive network mount, say) is not
+/// interruptible from here, and the server is single-threaded, so the honest claim
+/// is "no unbounded retrying", not "no unbounded syscall".
+const REPLACE_RETRY_BUDGET_MS: u64 = 5_000;
+
+/// Base backoff between replace attempts (milliseconds), doubled each round.
+const REPLACE_RETRY_BASE_MS: u64 = 20;
+
+/// Ceiling on staged (`.tmp`) files preserved beside one store.
+///
+/// A replace that cannot succeed preserves its staged file on purpose (it may be
+/// the only complete copy of the state). Repeated failing calls would then grow the
+/// directory without limit, so staging is refused once this many are already
+/// sitting there. Nothing is ever deleted: a staged file beside a *different*
+/// writer's store is that writer's data, and this code cannot tell them apart.
+pub const MAX_STAGED_KEEP: usize = 8;
+
+/// Largest serialized store this service will commit to disk.
+///
+/// Deliberately the *same* ceiling the reader enforces ([`MAX_LAYOUT_DOC_BYTES`]).
+/// Nothing used to bound the write side, and layout registration is not capped, so a
+/// store could be grown past 10 MiB and saved successfully — after which
+/// [`FilesystemLayoutService::load_from_path`] rejects it forever with a size error.
+/// The mutation still reported success, so the operator learned their store had become
+/// unreadable only on the next load. Refusing the oversized write makes the failure
+/// explicit, reported, and *before* the point of no return: the existing store stays
+/// exactly as it was, still readable, and no staged file is created.
+
 /// Why a layout document could not be read from disk.
 ///
 /// Distinct variants exist so callers can map each failure onto its own explicit
@@ -158,6 +204,66 @@ pub fn read_bounded_text_file(
     String::from_utf8(buf).map_err(|_| {
         LayoutDocReadError::NotUtf8(format!("{} '{}' is not valid UTF-8", label, path.display()))
     })
+}
+
+/// Staged (`.tmp`) files preserved beside `dest` by earlier failed replacements.
+///
+/// The name shape is owned by [`create_exclusive_temp`] (`.<stem>.tmp.<pid>...`), and
+/// only that prefix is counted, so stores sharing one directory (a common `.aios/`)
+/// cannot trip each other's cap. A listing failure is reported rather than treated as
+/// "no residue": the caller is about to write into that directory anyway, and a guard
+/// that silently reports zero would be the same class of dishonesty this cap exists
+/// to prevent.
+fn staged_siblings(dest: &Path) -> Result<Vec<PathBuf>, String> {
+    let dir = match dest.parent() {
+        Some(p) if !p.as_os_str().is_empty() => p.to_path_buf(),
+        _ => PathBuf::from("."),
+    };
+    let stem = dest
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "layout-store".to_string());
+    let prefix = format!(".{}.tmp.", stem);
+
+    let entries = match fs::read_dir(&dir) {
+        Ok(e) => e,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => {
+            return Err(format!(
+                "failed to inspect '{}' for staged store files: {}",
+                dir.display(),
+                e
+            ))
+        }
+    };
+
+    let mut staged: Vec<PathBuf> = Vec::new();
+    for entry in entries {
+        // A single unreadable entry must not abort a save that is otherwise fine.
+        let Ok(entry) = entry else { continue };
+        let name = entry.file_name();
+        if name.to_string_lossy().starts_with(&prefix) {
+            staged.push(entry.path());
+        }
+    }
+    staged.sort();
+    Ok(staged)
+}
+
+/// True for replace errors a bounded retry can plausibly clear.
+///
+/// Deliberately narrow: a retry loop that swallowed permanent failures (a missing
+/// parent directory, a destination that is a directory, a read-only volume) would
+/// only delay the same error. Output caps and the wall-clock budget do the bounding;
+/// this predicate decides what is *worth* another attempt.
+fn is_transient_replace_error(e: &std::io::Error) -> bool {
+    use std::io::ErrorKind;
+    if matches!(e.kind(), ErrorKind::PermissionDenied | ErrorKind::WouldBlock) {
+        return true;
+    }
+    // Windows: ERROR_ACCESS_DENIED (5), ERROR_SHARING_VIOLATION (32), ERROR_LOCK_VIOLATION (33).
+    // POSIX: EBUSY (16), ETXTBSY (26), EAGAIN (11), EINTR (4).
+    matches!(e.raw_os_error(), Some(5 | 32 | 33 | 16 | 26 | 11 | 4))
 }
 
 /// Creates a temporary file beside `dest` for atomic replacement.
@@ -692,6 +798,12 @@ impl FilesystemLayoutService {
     /// 3. a failed rename **preserves** the staged file and names it in the error,
     ///    because that file is the only complete copy of the state we were asked to
     ///    persist — silently deleting it would destroy the caller's data.
+    ///
+    /// T-01538 hardening adds two bounds around those properties: a store larger than
+    /// the reader's own ceiling is **refused** rather than written into unreadability
+    /// (see [`MAX_LAYOUT_DOC_BYTES`]), and the final replace is retried a bounded number
+    /// of times for *transient* errors only (see [`MAX_REPLACE_ATTEMPTS`]), so a
+    /// momentarily-locked destination no longer turns into a stranded staged file.
     pub fn save_to_path(&self, path: &Path) -> Result<(), String> {
         let path_str = path.to_string_lossy();
         if path_str.is_empty() || path_str.contains('\0') || path_str.chars().any(|c| c.is_control()) {
@@ -701,6 +813,20 @@ impl FilesystemLayoutService {
         let json_str = serde_json::to_string_pretty(&self.store)
             .map_err(|e| format!("failed to serialize filesystem layout store: {}", e))?;
 
+        // Refuse to write a store the reader would reject (T-01538). Checked on the
+        // serialized bytes and before anything is staged, so the destination and the
+        // directory are untouched on refusal.
+        if json_str.len() as u64 > MAX_LAYOUT_DOC_BYTES {
+            return Err(format!(
+                "refusing to save filesystem layout store '{}': serialized store is {} bytes, which exceeds the {} MiB \
+                 read ceiling, so the result could never be loaded again — remove or split registered layouts before retrying \
+                 (the existing store on disk is unchanged)",
+                path.display(),
+                json_str.len(),
+                MAX_LAYOUT_DOC_BYTES / (1024 * 1024)
+            ));
+        }
+
         if let Some(parent) = path.parent() {
             if !parent.as_os_str().is_empty() {
                 fs::create_dir_all(parent)
@@ -708,30 +834,81 @@ impl FilesystemLayoutService {
             }
         }
 
+        // Bound how much staged residue this store can accumulate (T-01538).
+        let staged = staged_siblings(path)?;
+        if staged.len() >= MAX_STAGED_KEEP {
+            return Err(format!(
+                "refusing to stage another store file: {} preserved temporary file(s) already sit beside '{}' \
+                 (cap {}); resolve the failed replacements named by the earlier errors (for example '{}') before retrying",
+                staged.len(),
+                path.display(),
+                MAX_STAGED_KEEP,
+                staged[0].display()
+            ));
+        }
+
         let (tmp_path, mut file) = create_exclusive_temp(path)?;
 
         if let Err(e) = file.write_all(json_str.as_bytes()).and_then(|()| file.sync_all()) {
             // Nothing usable was staged: drop the partial temporary file so a later
-            // run cannot pick up a truncated store.
+            // run cannot pick up a truncated store. If even *that* fails the operator
+            // has to be told, because a truncated staged file left behind is exactly
+            // the silent residue this path exists to prevent (T-01538).
             drop(file);
-            let _ = fs::remove_file(&tmp_path);
-            return Err(format!(
-                "failed to write temporary store file '{}': {}",
-                tmp_path.display(),
-                e
-            ));
+            return Err(match fs::remove_file(&tmp_path) {
+                Ok(()) => format!(
+                    "failed to write temporary store file '{}': {}",
+                    tmp_path.display(),
+                    e
+                ),
+                Err(cleanup) => format!(
+                    "failed to write temporary store file '{}': {} (and the partial file could not be removed: {} \
+                     — delete '{}' manually)",
+                    tmp_path.display(),
+                    e,
+                    cleanup,
+                    tmp_path.display()
+                ),
+            });
         }
         drop(file);
 
         // `fs::rename` already replaces an existing destination on both POSIX and
         // Windows, so the destination must not be removed beforehand: doing so would
         // open exactly the window this atomicity is supposed to prevent.
-        if let Err(e) = fs::rename(&tmp_path, path) {
+        //
+        // T-01538: bounded, transient-only retry (see [`MAX_REPLACE_ATTEMPTS`]). The
+        // explicit failure below — which names the preserved staged file — is what a
+        // caller gets when either bound is reached, so a retry can never turn a
+        // reportable failure into a silent one.
+        let deadline =
+            std::time::Instant::now() + std::time::Duration::from_millis(REPLACE_RETRY_BUDGET_MS);
+        let mut attempt = 0u32;
+        let mut backoff_ms = REPLACE_RETRY_BASE_MS;
+        let replace_err = loop {
+            match fs::rename(&tmp_path, path) {
+                Ok(()) => break None,
+                Err(e) => {
+                    attempt += 1;
+                    if !is_transient_replace_error(&e)
+                        || attempt >= MAX_REPLACE_ATTEMPTS
+                        || std::time::Instant::now() >= deadline
+                    {
+                        break Some(e);
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(backoff_ms));
+                    backoff_ms = backoff_ms.saturating_mul(2);
+                }
+            }
+        };
+        if let Some(e) = replace_err {
             return Err(format!(
-                "failed to atomically replace store file '{}' from '{}': {} (the fully-written new store was preserved at '{}' for manual recovery)",
+                "failed to atomically replace store file '{}' from '{}': {} after {} attempt(s) \
+                 (the fully-written new store was preserved at '{}' for manual recovery)",
                 path.display(),
                 tmp_path.display(),
                 e,
+                attempt,
                 tmp_path.display()
             ));
         }

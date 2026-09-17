@@ -284,7 +284,8 @@ fn test_fs_layout_service_hardening_mount_caps_and_path_hygiene() {
 // ---------------------------------------------------------------------------
 
 use aiosh_core::fs_layout_service::{
-    read_bounded_text_file, LayoutDocReadError, MAX_LAYOUT_DOC_BYTES,
+    read_bounded_text_file, LayoutDocReadError, MAX_LAYOUT_DOC_BYTES, MAX_REPLACE_ATTEMPTS,
+    MAX_STAGED_KEEP,
 };
 use std::path::PathBuf;
 
@@ -402,6 +403,165 @@ fn test_fs_layout_reads_reject_non_regular_files_and_oversize_documents() {
         read_bounded_text_file(&bin, MAX_LAYOUT_DOC_BYTES, "layout store file"),
         Err(LayoutDocReadError::NotUtf8(_))
     ));
+
+    let _ = std::fs::remove_dir_all(&tmp_dir);
+}
+
+// ---------------------------------------------------------------------------
+// T-01538 hardening: bounded replace retry, bounded staged residue, and a write-side
+// size ceiling that matches the reader's.
+// ---------------------------------------------------------------------------
+
+/// A store larger than the reader's ceiling must be refused, not written.
+///
+/// Nothing bounded the write side, so a store could be grown past
+/// `MAX_LAYOUT_DOC_BYTES` and saved successfully — and that file is then rejected by
+/// `load_from_path` *forever*. The mutation reported success, so the store silently
+/// became unreadable. The refusal must be explicit, must leave the previous store on
+/// disk exactly as it was, and must not stage a file.
+#[test]
+fn test_fs_layout_save_refuses_store_larger_than_reader_ceiling() {
+    let tmp_dir = fresh_dir("oversize-write");
+    let store_file = tmp_dir.join("fs_layouts.json");
+
+    // Baseline: a normal store that is readable.
+    let service = FilesystemLayoutService::new();
+    assert!(service.save_to_path(&store_file).is_ok());
+    let baseline = std::fs::read(&store_file).unwrap();
+    assert!(FilesystemLayoutService::load_from_path(&store_file).is_ok());
+
+    // Grow the store past the ceiling. `DirectorySpec::description` is free text with
+    // no length bound of its own, so one registered layout is enough to exceed 10 MiB.
+    let mut oversized = FilesystemLayoutService::new();
+    let mut spec = FilesystemLayoutSpec::minimal_container();
+    spec.id = "oversized-v1".to_string();
+    spec.name = "Oversized".to_string();
+    spec.directories.push(aiosh_core::fs_layout::DirectorySpec {
+        path: "/var/lib/aios/oversized".to_string(),
+        mode: 0o750,
+        owner: "root".to_string(),
+        group: "root".to_string(),
+        description: "x".repeat(MAX_LAYOUT_DOC_BYTES as usize + 4096),
+        symlink_target: None,
+    });
+    // The layout validates (that is the point): the *write* is what must stop it.
+    assert!(oversized.store_mut().register_layout(spec).is_ok());
+
+    let err = oversized.save_to_path(&store_file).unwrap_err();
+    assert!(
+        err.contains("exceeds") && err.contains("read ceiling"),
+        "oversized save must be refused by the read ceiling, got: {}",
+        err
+    );
+    assert!(err.contains("unchanged"), "refusal must state the store is unchanged: {}", err);
+
+    // The pre-existing store is untouched and still loadable: a refused write must not
+    // be able to destroy the state it declined to replace.
+    assert_eq!(std::fs::read(&store_file).unwrap(), baseline);
+    assert!(FilesystemLayoutService::load_from_path(&store_file).is_ok());
+    assert!(
+        staged_siblings(&tmp_dir, "fs_layouts.json").is_empty(),
+        "a refused oversized save must not stage a file"
+    );
+
+    let _ = std::fs::remove_dir_all(&tmp_dir);
+}
+
+/// A replace that keeps failing must not grow the directory without limit.
+///
+/// Every failed replace deliberately preserves its staged file — it is the only
+/// complete copy of the state. Without a cap, a destination that is permanently
+/// unwritable turns each call into another stranded file. The cap is checked *before*
+/// staging, so the refusal itself adds no residue.
+#[test]
+fn test_fs_layout_save_refuses_to_stage_past_the_residue_cap() {
+    let tmp_dir = fresh_dir("staged-cap");
+
+    // Simulate the residue of MAX_STAGED_KEEP earlier failed replacements. The names
+    // match `create_exclusive_temp`'s own shape, so they are the files a real cap must
+    // count (and a *differently* named store's staged files must not be counted).
+    let mut pre = 0usize;
+    for i in 0..MAX_STAGED_KEEP {
+        std::fs::write(tmp_dir.join(format!(".fs_layouts.json.tmp.{}.{}.{}", std::process::id(), i, i)), b"{}")
+            .unwrap();
+        pre += 1;
+    }
+    // A sibling store's staged file shares the directory but not the prefix.
+    std::fs::write(tmp_dir.join(".other-store.json.tmp.1.1.0"), b"{}").unwrap();
+
+    let service = FilesystemLayoutService::new();
+    let err = service.save_to_path(&tmp_dir.join("fs_layouts.json")).unwrap_err();
+    assert!(
+        err.contains(&format!("cap {}", MAX_STAGED_KEEP)) && err.contains("refusing to stage"),
+        "the residue cap must be enforced with the cap named, got: {}",
+        err
+    );
+    assert_eq!(pre, MAX_STAGED_KEEP);
+
+    // Refusal added nothing, and the unrelated store's staged file was neither counted
+    // against this store nor deleted.
+    assert_eq!(
+        staged_siblings(&tmp_dir, "fs_layouts.json").len(),
+        MAX_STAGED_KEEP,
+        "refusing to stage must not itself stage a file"
+    );
+    assert!(tmp_dir.join(".other-store.json.tmp.1.1.0").exists());
+
+    // Removing the residue restores normal operation, so the cap is a bound and not a
+    // permanent lockout.
+    for entry in staged_siblings(&tmp_dir, "fs_layouts.json") {
+        std::fs::remove_file(entry).unwrap();
+    }
+    assert!(service.save_to_path(&tmp_dir.join("fs_layouts.json")).is_ok());
+
+    let _ = std::fs::remove_dir_all(&tmp_dir);
+}
+
+/// The replace retry is bounded and always reports how many attempts it made.
+///
+/// Platform behaviour differs (POSIX reports `EISDIR` for a directory destination,
+/// Windows reports a sharing violation that the predicate classes as transient), so
+/// this pins the *contract* rather than an attempt count: at least one attempt, never
+/// more than the bound, always an explicit error naming the preserved staged file, and
+/// no extra residue from the retries themselves.
+#[test]
+fn test_fs_layout_replace_retry_is_bounded_and_reported() {
+    let tmp_dir = fresh_dir("replace-bounded");
+
+    // A non-empty directory at the destination fails the rename on every platform.
+    let blocked = tmp_dir.join("fs_layouts.json");
+    std::fs::create_dir_all(&blocked).unwrap();
+    std::fs::write(blocked.join("keep"), b"x").unwrap();
+
+    let service = FilesystemLayoutService::new();
+    let started = std::time::Instant::now();
+    let err = service.save_to_path(&blocked).unwrap_err();
+    let elapsed = started.elapsed();
+
+    assert!(err.contains("attempt(s)"), "error must report its attempt count: {}", err);
+    assert!(err.contains("preserved at"), "error must name the preserved staged file: {}", err);
+
+    let attempts: u32 = err
+        .split("after ")
+        .nth(1)
+        .and_then(|tail| tail.split_whitespace().next())
+        .and_then(|n| n.parse().ok())
+        .unwrap_or_else(|| panic!("could not parse the attempt count from: {}", err));
+    assert!(
+        (1..=MAX_REPLACE_ATTEMPTS).contains(&attempts),
+        "attempts must be bounded by {} but the error reported {}",
+        MAX_REPLACE_ATTEMPTS,
+        attempts
+    );
+
+    // Retries reuse the one staged file, so they cannot multiply residue.
+    assert_eq!(staged_siblings(&tmp_dir, "fs_layouts.json").len(), 1);
+    // And the whole envelope stays inside its stated budget (backoff only, no sleep loop).
+    assert!(
+        elapsed < std::time::Duration::from_secs(5),
+        "replace retry took {:?}, which is not bounded by the retry budget",
+        elapsed
+    );
 
     let _ = std::fs::remove_dir_all(&tmp_dir);
 }
