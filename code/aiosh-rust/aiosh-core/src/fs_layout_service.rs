@@ -13,6 +13,7 @@ use crate::fs_layout::{
     validate_filesystem_layout, DirectorySpec, FilesystemLayoutSpec, FsType, MountPointSpec,
     PartitionSpec, PartitionType,
 };
+use crate::fs_layout_service_key;
 
 /// Hard ceiling for any layout store or layout spec document accepted from disk (10 MiB).
 pub const MAX_LAYOUT_DOC_BYTES: u64 = 10 * 1024 * 1024;
@@ -46,7 +47,7 @@ const REPLACE_RETRY_BUDGET_MS: u64 = 5_000;
 /// Base backoff between replace attempts (milliseconds), doubled each round.
 const REPLACE_RETRY_BASE_MS: u64 = 20;
 
-/// Ceiling on staged (`.tmp`) files preserved beside one store.
+/// Ceiling on staged (`.tmp`) files preserved beside one physical store destination.
 ///
 /// A replace that cannot succeed preserves its staged file on purpose (it may be
 /// the only complete copy of the state). Repeated failing calls would then grow the
@@ -54,6 +55,19 @@ const REPLACE_RETRY_BASE_MS: u64 = 20;
 /// sitting there. Nothing is ever deleted: a staged file beside a *different*
 /// writer's store is that writer's data, and this code cannot tell them apart.
 pub const MAX_STAGED_KEEP: usize = 8;
+
+/// Residue is charged to a **canonical destination key**, not the spelled name.
+///
+/// The first cut of this cap counted `.tmp` files by their `.<spelled-name>.tmp.` prefix
+/// (T-01538 H-2), so spellings of one physical destination each got their own quota: case
+/// variants (`STORE.JSON`), 8.3 short names (`LAYOUT~1.JSON`), trailing dot/space and a
+/// nesting prefix together accumulated 32 staged files around one destination where 8 was
+/// the cap — found by the T-01539 adversarial verification. Resolution of those aliases
+/// needs the filesystem, so the keyer [`fs_layout_service_key::canonical_store_key`] is the
+/// one `pep::canonical_path_key` already trusts: it resolves the longest existing prefix
+/// (which is exactly what defeats 8.3 short names and case) and falls back to lexical
+/// normalization when nothing along the path exists yet (a staged file usually names a
+/// destination about to be created).
 
 /// Largest serialized store this service will commit to disk.
 ///
@@ -206,24 +220,32 @@ pub fn read_bounded_text_file(
     })
 }
 
-/// Staged (`.tmp`) files preserved beside `dest` by earlier failed replacements.
+/// Staged (`.tmp`) files preserved beside `dest`'s **physical destination** by earlier
+/// failed replacements.
 ///
-/// The name shape is owned by [`create_exclusive_temp`] (`.<stem>.tmp.<pid>...`), and
-/// only that prefix is counted, so stores sharing one directory (a common `.aios/`)
-/// cannot trip each other's cap. A listing failure is reported rather than treated as
-/// "no residue": the caller is about to write into that directory anyway, and a guard
-/// that silently reports zero would be the same class of dishonesty this cap exists
-/// to prevent.
+/// Two spellings of one destination must share one quota, so the group identity is the
+/// canonical destination key, not the spelled name: every candidate staged file is
+/// re-anchored to the destination it was staged for (strip the `.<name>.tmp.*` prefix,
+/// canonicalize `<dir>/<name>`) and the returned list is the group matching `dest`. That
+/// closes the spelling evasion the T-01539 adversarial verification proved - case variants,
+/// 8.3 short names, trailing dot/space and a nesting prefix each drew their own budget and
+/// accumulated 32 staged files around one physical destination - and it closes the mirror
+/// image too: two stores whose *spelled* names nest (`s.json`, `s.json.tmp`) key to
+/// different destinations, so one cannot trip the other's cap.
+///
+/// Aliases can only be collapsed by asking the filesystem, so the keyer is
+/// [`fs_layout_service_key::canonical_store_key`] - the same existing-prefix resolution
+/// `pep::canonical_path_key` uses. Stores sharing one directory (a common `.aios/`) still
+/// cannot trip each other's cap: only the files whose implied destination equals `dest`'s
+/// are counted. A listing failure is reported rather than treated as "no residue": the
+/// caller is about to write into that directory anyway, and a guard that silently reports
+/// zero would be the same class of dishonesty this cap exists to prevent.
 fn staged_siblings(dest: &Path) -> Result<Vec<PathBuf>, String> {
     let dir = match dest.parent() {
         Some(p) if !p.as_os_str().is_empty() => p.to_path_buf(),
         _ => PathBuf::from("."),
     };
-    let stem = dest
-        .file_name()
-        .map(|n| n.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "layout-store".to_string());
-    let prefix = format!(".{}.tmp.", stem);
+    let dest_key = fs_layout_service_key::canonical_store_key(dest);
 
     let entries = match fs::read_dir(&dir) {
         Ok(e) => e,
@@ -241,8 +263,16 @@ fn staged_siblings(dest: &Path) -> Result<Vec<PathBuf>, String> {
     for entry in entries {
         // A single unreadable entry must not abort a save that is otherwise fine.
         let Ok(entry) = entry else { continue };
-        let name = entry.file_name();
-        if name.to_string_lossy().starts_with(&prefix) {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        // The gate is the staged *shape* (leading dot, `tmp` marker, numeric pid/nanos/
+        // attempt fields), never the spelled store name: a case-alias spelling of this
+        // destination must be considered too, or it draws a fresh budget of its own.
+        // Group identity is the recovered destination key: spellings of this destination
+        // key alike, and a different destination keys differently.
+        let Some(implied) = fs_layout_service_key::staged_file_destination(&name, &dir) else {
+            continue;
+        };
+        if Some(&implied) == dest_key.as_ref() {
             staged.push(entry.path());
         }
     }

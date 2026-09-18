@@ -7,6 +7,7 @@
 use chrono::Utc;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::Value;
+use std::path::Path;
 
 use crate::canonical::{canonical, sha256_hex};
 use crate::types::{GrantScope, PathScope};
@@ -201,6 +202,71 @@ fn fold_windows_component_aliases(p: &str) -> String {
         })
         .collect();
     format!("{}{}", prefix, folded.join("/"))
+}
+
+/// Canonical key for the **physical destination** a layout-store staged file belongs to.
+/// Re-exported at the crate root as `fs_layout_service_key` so the residue cap and the
+/// policy matcher share one implementation of "what is this path's physical identity".
+/// shared with `fs_layout_service::staged_siblings` so one destination has one residue
+/// budget however it is spelled (the T-01539 adversarial finding: case variants, 8.3 short
+/// names, trailing dot/space and a nesting prefix pooled 32 staged files around one
+/// destination under an 8-file cap). Deliberately *not* anchored: a staged file may name a
+/// destination that does not exist yet, where working-directory anchoring would be a guess,
+/// and callers always pass absolute paths from a directory listing. [`canonical_path_key`]
+/// stays anchored for policy matching; this is the un-anchored core of it.
+///
+/// The empty key cannot occur (a spelling that collapses to nothing returns `.`), and a
+/// `None` (unmappable device path) is "count nothing", which fails closed.
+pub fn canonical_store_key(p: &Path) -> Option<String> {
+    canonical_key_unanchored(&p.to_string_lossy())
+}
+
+/// Recover the implied original destination of one `.<name>.tmp.<pid>.<nanos>.<n>` staged
+/// file, as a canonical key in `dir`. The staged-name shape is owned by
+/// `fs_layout_service::create_exclusive_temp`; this is its exact inverse, so a nested
+/// spelling is not misattributed: the last three dot-separated fields must be numeric
+/// (pid, nanos, attempt), the field before them must be the `tmp` marker, and everything
+/// before that is the destination's own name - dots included (`s.json` staged for one
+/// destination and `s.json.tmp` staged for another parse to two different destinations).
+/// Names not of the staged shape yield `None` and are ignored.
+pub fn staged_file_destination(staged_name: &str, dir: &Path) -> Option<String> {
+    let body = staged_name.strip_prefix('.')?;
+    let comps: Vec<&str> = body.split('.').collect();
+    if comps.len() < 5 {
+        return None;
+    }
+    let numeric =
+        |c: &&str| !c.is_empty() && c.chars().all(|ch| ch.is_ascii_digit());
+    if !comps[comps.len() - 3..].iter().all(numeric) {
+        return None;
+    }
+    let before = &comps[..comps.len() - 3];
+    if *before.last()? != "tmp" {
+        return None;
+    }
+    let stem_comps = &before[..before.len() - 1];
+    if stem_comps.is_empty() {
+        return None;
+    }
+    canonical_key_unanchored(&dir.join(stem_comps.join(".")).to_string_lossy())
+}
+
+/// [`canonical_path_key`] without [`anchor_relative_key`]: policy matching anchors a
+/// relative spelling to the working directory because the OS resolves it there; residue
+/// accounting does not, because a staged file's destination is passed absolute from a
+/// directory listing and a nonexistent destination has no location to anchor to.
+fn canonical_key_unanchored(p: &str) -> Option<String> {
+    let stripped = strip_device_prefix(p)?;
+    #[cfg(windows)]
+    let stripped = fold_windows_component_aliases(&stripped);
+    let key = normalize_path_str(&stripped);
+    let key = resolve_existing_prefix(&key);
+    #[cfg(windows)]
+    {
+        return Some(key.to_lowercase());
+    }
+    #[cfg(not(windows))]
+    Some(key)
 }
 
 /// The device/extended-length prefixes a caller may supply, longest first, all lowercase
@@ -1302,6 +1368,77 @@ mod tests {
             .expect("keyable");
         let plain = canonical_path_key(r"C:\pep-t01539-no-such-dir\secret.json").expect("keyable");
         assert_eq!(padded, plain, "a dots-only component must not change the key");
+    }
+
+    // ---- T-01539 adversarial residue finding: one physical destination, one budget ----
+
+    #[test]
+    fn store_destination_keys_collapse_spelling_aliases() {
+        // Case aliases: one physical destination, one key (Windows folds case).
+        #[cfg(windows)]
+        {
+            let a = canonical_store_key(Path::new(r"C:\Layouts\store.json")).expect("keyable");
+            let b = canonical_store_key(Path::new(r"c:\layouts\STORE.JSON")).expect("keyable");
+            assert_eq!(a, b, "case variants of one destination must key alike");
+            // Trailing dot/space components are dropped by Windows itself.
+            let c = canonical_store_key(Path::new(r"C:\Layouts\. \store.json")).expect("keyable");
+            assert_eq!(a, c, "trailing dot/space components must not change the key");
+        }
+        // POSIX keeps case: these are genuinely different destinations, and must key
+        // differently (no Windows folding leaks into POSIX policy).
+        #[cfg(not(windows))]
+        {
+            let a = canonical_store_key(Path::new("/layouts/store.json")).expect("keyable");
+            let b = canonical_store_key(Path::new("/layouts/STORE.JSON")).expect("keyable");
+            assert_ne!(a, b, "POSIX case differences are distinct destinations");
+        }
+        // Nested *spelled* names are different destinations — the mirror image of the
+        // evasion, which the old prefix grouping got wrong in the other direction.
+        let plain = canonical_store_key(Path::new("/layouts/s.json")).expect("keyable");
+        let nested = canonical_store_key(Path::new("/layouts/s.json.tmp")).expect("keyable");
+        assert_ne!(plain, nested, "s.json and s.json.tmp are different destinations");
+        // A `.`/`..` component must not degenerate: `.` inside a path is dropped, and the
+        // result is never the empty key (the empty key covered every root-relative target
+        // under containment — the degeneracy this keyer must not recreate). These paths do
+        // not exist, so both sides stay lexical and the assertions are deterministic.
+        let dotted = canonical_store_key(Path::new("/layouts/./s.json")).expect("keyable");
+        assert_eq!(dotted, plain, "`./` in a destination must not change the key");
+        // A bare `.` / `..` destination must never key to the empty string. What it keys
+        // to instead is host-dependent — on Windows `.` resolves through its existing
+        // prefix to the working directory, on POSIX it stays `.` — so the invariant pinned
+        // here is the one the matcher needs: keyable and never empty (an empty key was the
+        // degeneracy that made a `.` entry cover every root-relative target).
+        for spelling in [".", "..", "./", "a/.."] {
+            assert!(!canonical_store_key(Path::new(spelling))
+                .unwrap_or_else(|| panic!("{spelling:?} must be keyable"))
+                .is_empty(),
+                "{spelling:?} must never key to the empty string");
+        }
+    }
+
+    #[test]
+    fn staged_destination_names_recover_the_original_destination() {
+        let dir = Path::new("/layouts");
+        assert_eq!(
+            staged_file_destination(".store.json.tmp.123.456.0", dir).as_deref(),
+            canonical_store_key(&dir.join("store.json")).as_deref(),
+            "a staged file must recover its original destination's key"
+        );
+        assert_eq!(
+            staged_file_destination(".s.json.tmp.tmp.1.1.0", dir).as_deref(),
+            canonical_store_key(&dir.join("s.json.tmp")).as_deref(),
+            "the numeric tail marks the staged suffix, so a staged file for the nested destination `s.json.tmp` keys apart from `s.json`"
+        );
+        // Not the staged shape: ignored, never charged.
+        assert_eq!(staged_file_destination("store.json", dir), None);
+        assert_eq!(staged_file_destination(".tmp.x", dir), None);
+        // The `..` component is *kept* by the keyer (it is the parent, not nothing), so a
+        // name starting with dots does not match the staged shape at all.
+        assert_eq!(
+            staged_file_destination(".store.json.tmp.1.2.3", &Path::new("/layouts").join(".")).as_deref(),
+            canonical_store_key(Path::new("/layouts/store.json")).as_deref(),
+            "a `.` component in the directory must not change the recovered destination"
+        );
     }
 
     #[test]

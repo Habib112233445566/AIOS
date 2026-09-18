@@ -45,7 +45,15 @@ pub mod evidence_config;
 pub mod evidence_service;
 pub mod fs_layout;
 pub mod fs_layout_service;
+pub mod fs_layout_service_key {
+    //! Residue-grouping keys shared with `fs_layout_service` (kept beside `pep` so both
+    //! the policy matcher and the residue cap resolve spelling aliases through one
+    //! implementation of "what is this path's physical identity").
+    pub use super::pep::{canonical_store_key, staged_file_destination};
+}
+
 pub mod handoff;
+
 pub mod handoff_config;
 pub mod handoff_service;
 pub mod ledger;

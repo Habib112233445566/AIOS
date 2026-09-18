@@ -559,18 +559,24 @@ surface end to end (register → set-active → probe → diff → fstab → ref
     writer — cannot be loaded by any tool, and since every tool loads before writing, **no tool can
     repair it**. Recovery is external: delete it, or edit it down with `python3 -c '...'`/an editor,
     then continue. There is no `aiosh` repair command for this case.
-13. **Staged-Residue Cap, and Its Known Evasion**: a failed atomic replace deliberately preserves its
+13. **Staged-Residue Cap, Keyed on the Physical Destination**: a failed atomic replace deliberately preserves its
     staged `.<name>.tmp.<pid>.<nanos>.<n>` file (it may be the only complete copy of the caller's
     state) and names it in the error. At most 8 such files are tolerated beside one destination before
     staging is refused, so repeated failures cannot fill the directory; nothing is ever auto-deleted,
-    because a sweep-by-pattern would reintroduce an attacker-influenced deletion primitive. **Known
-    gap (found by the `T-01539` adversarial verification):** the cap is keyed on the *spelled* file
-    name, so spellings of the same location each get their own quota — case variants (`STORE.JSON`),
-    trailing dot/space, and 8.3 short names all evaded it during probing, accumulating 32 staged files
-    around one physical destination where 8 is the cap. The mirror image also holds: two genuinely
-    different stores whose names nest (`s.json` and `s.json.tmp`) share a prefix, so one store's
-    residue can refuse an unrelated store that has none. Treat 8 as a floor, not a guarantee; not yet
-    fixed.
+    because a sweep-by-pattern would reintroduce an attacker-influenced deletion primitive. The cap is
+    charged to a **canonical destination key**, not the spelled name: the first cut keyed on the
+    *spelled* file name and was evadable by spelling (case variants, trailing dot/space, 8.3 short
+    names, and a nesting prefix together accumulated 32 staged files around one destination where 8 was
+    the cap — found by the `T-01539` adversarial verification, fixed after it). Staged files are now
+    re-anchored to the destination they were staged for and grouped by
+    `fs_layout_service_key::canonical_store_key`, the same existing-prefix filesystem resolution the
+    `scope.paths` matcher trusts, so aliases of one destination share one budget in both directions;
+    genuinely different stores whose *spelled* names nest (`s.json`, `s.json.tmp`) key apart and cannot
+    trip each other's cap. Two honest boundaries: where the volume itself distinguishes spellings
+    (8.3 short names disabled, as on the development host) those are genuinely different destinations
+    and get their own budget by design — the filesystem, not this code, decides what is an alias; and
+    a directory-listing failure is reported rather than treated as "no residue", since a guard that
+    silently reports zero would be the same class of dishonesty this cap exists to prevent.
 14. **Bounded Replace Retry, and What It Does Not Bound**: a failing final rename is retried at most
     5 times with a doubling backoff (20 ms → 160 ms, budget 5 s) and only for errors that look
     transient (`PermissionDenied`/`WouldBlock`; Windows `5`/`32`/`33`; POSIX `EBUSY`/`ETXTBSY`/
