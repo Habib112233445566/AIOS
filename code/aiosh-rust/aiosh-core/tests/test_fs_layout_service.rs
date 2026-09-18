@@ -517,6 +517,128 @@ fn test_fs_layout_save_refuses_to_stage_past_the_residue_cap() {
     let _ = std::fs::remove_dir_all(&tmp_dir);
 }
 
+/// One physical destination = one residue budget, however it is spelled.
+///
+/// The T-01539 adversarial verification proved the first cut of this cap was keyed on the
+/// *spelled* store name, so spellings of one destination each drew their own quota - case
+/// variants, 8.3 short names, trailing dot/space and a nesting prefix pooled 32 staged
+/// files around one destination where 8 was the cap. The cap must charge residue to the
+/// canonical destination: here 8 staged files are planted under *mixed-case* spellings of
+/// one destination, and the plain-spelling save is then refused because the shared budget
+/// is spent - which is exactly what the old spelling-keyed cap did not do. Reverting the
+/// grouping to the spelled prefix makes this test fail (the plain spelling would see zero
+/// residue of its own and save successfully).
+#[test]
+fn test_fs_layout_residue_cap_is_keyed_on_the_physical_destination() {
+    let tmp_dir = fresh_dir("alias-cap");
+    let aliases: Vec<String> = if cfg!(windows) {
+        // One physical destination, several case spellings (the filesystem folds case).
+        vec![
+            "fs_layouts.json".to_string(),
+            "FS_LAYOUTS.JSON".to_string(),
+            "Fs_Layouts.Json".to_string(),
+        ]
+    } else {
+        // POSIX keeps case, so there the alias set is the one spelling.
+        vec!["fs_layouts.json".to_string()]
+    };
+
+    // Plant MAX_STAGED_KEEP staged files across the alias spellings of one destination,
+    // in `create_exclusive_temp`'s own name shape.
+    let mut planted = 0usize;
+    'outer: for spelling in &aliases {
+        let stem = spelling.trim_end_matches(".json");
+        for i in 0..MAX_STAGED_KEEP {
+            if planted >= MAX_STAGED_KEEP {
+                break 'outer;
+            }
+            std::fs::write(
+                tmp_dir.join(format!(".{spelling}.tmp.{}.{}.{}", std::process::id(), i, i)),
+                b"{}",
+            )
+            .unwrap();
+            planted += 1;
+            let _ = stem;
+        }
+    }
+    assert_eq!(planted, MAX_STAGED_KEEP);
+
+    let service = FilesystemLayoutService::new();
+    let plain_dest = tmp_dir.join("fs_layouts.json");
+
+    // The plain spelling must now be refused: its physical destination is saturated.
+    let err = service.save_to_path(&plain_dest).unwrap_err();
+    assert!(
+        err.contains("refusing to stage") && err.contains(&format!("cap {}", MAX_STAGED_KEEP)),
+        "a saturated destination must be refused under any spelling, got: {err}"
+    );
+    // ...and the refusal must not itself stage anything, on any spelling.
+    for spelling in &aliases {
+        let err = service.save_to_path(&tmp_dir.join(spelling)).unwrap_err();
+        assert!(
+            err.contains("refusing to stage"),
+            "spelling {spelling} of a saturated destination must be refused, got: {err}"
+        );
+    }
+
+    // A genuinely different store in the same directory keeps its own budget and saves.
+    let other = tmp_dir.join("other-store.json");
+    assert!(
+        service.save_to_path(&other).is_ok(),
+        "a different destination must keep its own budget"
+    );
+
+    // The other store's residue is not charged to the saturated destination either.
+    std::fs::write(tmp_dir.join(".other-store.json.tmp.9.9.0"), b"{}").unwrap();
+    let err = service.save_to_path(&plain_dest).unwrap_err();
+    assert!(err.contains("refusing to stage"), "still saturated: {err}");
+
+    // Nothing was ever deleted: every planted file plus the other store's residue exists.
+    let residue: Vec<_> = std::fs::read_dir(&tmp_dir)
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n.starts_with(".fs_layouts.json.tmp.") || n.starts_with(".other-store.json.tmp."))
+        .collect();
+    assert_eq!(residue.len(), MAX_STAGED_KEEP + 1, "residue must never be deleted");
+
+    let _ = std::fs::remove_dir_all(&tmp_dir);
+}
+
+/// The mirror image of the alias evasion: two stores whose *spelled* names nest must not
+/// share a budget. The old prefix grouping had this bug in the other direction - the
+/// prefix `.fs_layouts.json.tmp.` matched files staged for BOTH `fs_layouts.json` and the
+/// distinct destination `fs_layouts.json.tmp`, so saturating one locked out the other.
+#[test]
+fn test_fs_layout_nested_store_spellings_keep_separate_budgets() {
+    let tmp_dir = fresh_dir("nested-cap");
+
+    // Saturate the distinct destination `fs_layouts.json.tmp` (staged files whose
+    // recovered destination is `<dir>/fs_layouts.json.tmp`).
+    for i in 0..MAX_STAGED_KEEP {
+        std::fs::write(
+            tmp_dir.join(format!(".fs_layouts.json.tmp.tmp.{}.{}.{}", std::process::id(), i, i)),
+            b"{}",
+        )
+        .unwrap();
+    }
+
+    let service = FilesystemLayoutService::new();
+    // `fs_layouts.json` - a DIFFERENT physical destination - must save normally.
+    assert!(
+        service.save_to_path(&tmp_dir.join("fs_layouts.json")).is_ok(),
+        "a store whose name nests another's must keep its own budget"
+    );
+    // And the nested-spelling destination is still saturated, as intended.
+    let err = service.save_to_path(&tmp_dir.join("fs_layouts.json.tmp")).unwrap_err();
+    assert!(
+        err.contains("refusing to stage"),
+        "the saturated nested-spelling destination must still be capped: {err}"
+    );
+
+    let _ = std::fs::remove_dir_all(&tmp_dir);
+}
+
 /// The replace retry is bounded and always reports how many attempts it made.
 ///
 /// Platform behaviour differs (POSIX reports `EISDIR` for a directory destination,
