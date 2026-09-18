@@ -31,6 +31,17 @@ pub fn tool_glob_match(tool: &str, globs: &[String]) -> bool {
 }
 
 /// Lexically normalize path to collapse redundant slashes and `.` / `..` traversal components.
+///
+/// A **relative** path that collapses to nothing (`.`, `./`, `a/..`) names the current
+/// directory, and is returned as `.` — never as the empty string. The empty string is not a
+/// usable key: as a `scope.paths` entry it made the containment test
+/// `key_target.starts_with("/")`, which every absolute POSIX key satisfies, so a `.` entry
+/// authorized the whole filesystem — while on Windows the same entry matched nothing at all
+/// and refused its own directory (T-01539 §6.21).
+///
+/// A leading `..` is likewise kept rather than dropped: with nothing above it to cancel, it
+/// names the real parent directory, and quietly resolving it to the current directory would
+/// let `deny: [".."]` miss the parent entirely.
 pub fn normalize_path_str(p: &str) -> String {
     let p_clean = p.replace('\\', "/");
     let is_abs = p_clean.starts_with('/');
@@ -40,14 +51,22 @@ pub fn normalize_path_str(p: &str) -> String {
             continue;
         }
         if seg == ".." {
-            parts.pop();
-        } else {
-            parts.push(seg);
+            // `..` cancels the last real component; with none left (or only other `..`s)
+            // there is nothing above it to cancel, so on a relative path it survives.
+            if matches!(parts.last(), Some(&last) if last != "..") {
+                parts.pop();
+            } else if !is_abs {
+                parts.push("..");
+            }
+            continue;
         }
+        parts.push(seg);
     }
     let joined = parts.join("/");
     if is_abs {
         format!("/{}", joined)
+    } else if joined.is_empty() {
+        ".".to_string()
     } else {
         joined
     }
@@ -80,21 +99,27 @@ const MAX_CANONICAL_ASCENTS: usize = 64;
 ///
 /// Deliberately stricter than the write path in one place: trailing dots/spaces are
 /// stripped from *every* component, including intermediate ones Windows would treat as
-/// distinct names. Over-matching a deny entry fails closed, which is the safe direction.
+/// distinct names, and a component that is nothing but dots or spaces is dropped outright
+/// (see [`fold_windows_component_aliases`]). Over-matching a deny entry fails closed, which
+/// is the safe direction; the traversal components `.` and `..` are exempt, because they are
+/// not names.
+///
+/// One consequence of keying the way the filesystem resolves a path: a relative spelling
+/// keys to the absolute location it resolves to, so an entry and an argument no longer have
+/// to be spelled in the same frame (`demo` vs `demo/store.json` vs an absolute path under
+/// either) to compare equal. A spelling that collapses to nothing keys to the working
+/// directory, never to the empty string — an empty key is not a path, and as a policy entry
+/// it would cover the whole filesystem on POSIX (T-01539 §6.21).
 ///
 /// Returns `None` when the spelling cannot be mapped into the filesystem namespace at all
 /// (see [`strip_device_prefix`]); callers must treat that as **denied**, never as "no
 /// entry matched".
 pub fn canonical_path_key(p: &str) -> Option<String> {
-    let mut key = normalize_path_str(&strip_device_prefix(p)?);
+    let stripped = strip_device_prefix(p)?;
     #[cfg(windows)]
-    {
-        key = key
-            .split('/')
-            .map(|seg| seg.trim_end_matches(['.', ' ']))
-            .collect::<Vec<_>>()
-            .join("/");
-    }
+    let stripped = fold_windows_component_aliases(&stripped);
+    let key = normalize_path_str(&stripped);
+    let key = anchor_relative_key(key);
     let key = resolve_existing_prefix(&key);
     #[cfg(windows)]
     {
@@ -102,6 +127,80 @@ pub fn canonical_path_key(p: &str) -> Option<String> {
     }
     #[cfg(not(windows))]
     Some(key)
+}
+
+/// Anchor a key that does not name a location on its own to the working directory.
+///
+/// The OS resolves a relative spelling against the process working directory, so
+/// `store.json` and `<working directory>/store.json` are one file and must key alike. Without
+/// this, a `.` entry keys to the working directory while a relative argument stays relative,
+/// and the entry refuses the very files it names — the frames-must-match trap.
+///
+/// Drive-relative spellings (`C:store.json`) are deliberately left alone: Windows resolves
+/// those against the current directory *of that drive*, which is not the working directory in
+/// general, and anchoring them here would name a location the caller never meant.
+///
+/// The working directory is only consulted for a relative spelling, and if it cannot be read
+/// at all the key is left relative (and so matched only by an equally relative entry) — the
+/// pre-existing fail-closed behaviour.
+fn anchor_relative_key(key: String) -> String {
+    if is_self_contained_key(&key) {
+        return key;
+    }
+    match std::env::current_dir() {
+        Ok(dir) => normalize_path_str(&format!("{}/{}", dir.to_string_lossy(), key)),
+        Err(_) => key,
+    }
+}
+
+/// True when a normalized key names its location without help: root-relative (`/x`) or
+/// drive-prefixed (`C:/x`, `C:x`). A bare relative key (`x`, `.`, `..`) is not self-contained;
+/// see [`anchor_relative_key`].
+fn is_self_contained_key(key: &str) -> bool {
+    let b = key.as_bytes();
+    if matches!(b.first(), Some(b'/') | Some(b'\\')) {
+        return true;
+    }
+    b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':'
+}
+
+/// Fold the component aliases Windows itself folds, so two spellings of one name key alike:
+/// a component's trailing dots and spaces are not part of its name (`DenyDir. ` is
+/// `DenyDir`). Case folding is applied later, to the whole resolved key.
+///
+/// Two kinds of component are deliberately left alone:
+///
+/// * `.` and `..` are traversal components, not names. Folding them turned `.` into the
+///   empty key — the T-01539 §6.21 defect — and would turn `..`, the parent, into the
+///   current directory.
+/// * a component that is nothing *but* dots or spaces names nothing at all, so it is
+///   **dropped** rather than kept as an empty segment. Keeping it injected a doubled
+///   separator into the key (`a/.../b` stopped keying like `a/b`), so the padded spelling of
+///   a denied location walked past the deny entry — the spelling-evasion class T-01537
+///   S-22/S-23 closed. Dropping is the fail-closed direction: the key collapses onto the
+///   location the filesystem would have resolved, so it can only match *more* deny entries.
+#[cfg(windows)]
+fn fold_windows_component_aliases(p: &str) -> String {
+    let slashed = p.replace('\\', "/");
+    let (prefix, rest) = match slashed.strip_prefix('/') {
+        Some(rest) => ("/", rest),
+        None => ("", slashed.as_str()),
+    };
+    let folded: Vec<&str> = rest
+        .split('/')
+        .filter_map(|seg| {
+            if seg == "." || seg == ".." {
+                return Some(seg);
+            }
+            let trimmed = seg.trim_end_matches(['.', ' ']);
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        })
+        .collect();
+    format!("{}{}", prefix, folded.join("/"))
 }
 
 /// The device/extended-length prefixes a caller may supply, longest first, all lowercase
@@ -241,9 +340,7 @@ pub fn path_allowed(target: Option<&str>, paths: &PathScope) -> bool {
             Some(k) => k,
             None => continue,
         };
-        if key_target == key_p
-            || key_target.starts_with(&format!("{}/", key_p.trim_end_matches('/')))
-        {
+        if key_covers_target(&key_target, &key_p) {
             return false;
         }
     }
@@ -256,13 +353,27 @@ pub fn path_allowed(target: Option<&str>, paths: &PathScope) -> bool {
             Some(k) => k,
             None => continue,
         };
-        if key_target == key_p
-            || key_target.starts_with(&format!("{}/", key_p.trim_end_matches('/')))
-        {
+        if key_covers_target(&key_target, &key_p) {
             return true;
         }
     }
     false
+}
+
+/// Does one `scope.paths` entry key cover a target key — that is, is the target the entry's
+/// own directory, or something below it?
+///
+/// An empty key covers **nothing**, in either direction. That is the second half of the
+/// T-01539 §6.21 defect: containment on an empty entry degenerates to
+/// `key_target.starts_with("/")`, which on POSIX every absolute key satisfies, so one `.`
+/// entry authorized the whole filesystem. [`canonical_path_key`] no longer produces an empty
+/// key; this keeps the wildcard unreachable even if some future spelling does.
+fn key_covers_target(key_target: &str, key_entry: &str) -> bool {
+    if key_target.is_empty() || key_entry.is_empty() {
+        return false;
+    }
+    key_target == key_entry
+        || key_target.starts_with(&format!("{}/", key_entry.trim_end_matches('/')))
 }
 
 /// CIDR-aware network scope check. Hostname entries are exact-match.
@@ -970,6 +1081,227 @@ mod tests {
             ),
             "an unmappable device path must be denied, not merely unmatched"
         );
+    }
+
+    // ---- T-01539 §6.21: a `.` entry is the working directory, not the empty key ----
+
+    /// The test's working directory — cargo runs a test binary from its package root — plus
+    /// a file that really exists in it, so a `.` entry has something to cover.
+    fn cwd_and_real_file() -> (std::path::PathBuf, std::path::PathBuf) {
+        let dir = std::env::current_dir().expect("test has a working directory");
+        let file = dir.join("Cargo.toml");
+        assert!(
+            file.exists(),
+            "expected the package root as the working directory, saw {}",
+            dir.display()
+        );
+        (dir, file)
+    }
+
+    fn outside_cwd_file() -> std::path::PathBuf {
+        std::env::current_dir()
+            .expect("test has a working directory")
+            .parent()
+            .expect("working directory has a parent")
+            .join("pep-t01539-outside-probe.json")
+    }
+
+    #[test]
+    fn dot_spellings_key_to_the_working_directory() {
+        let (dir, _) = cwd_and_real_file();
+        let cwd_key = canonical_path_key(&dir.to_string_lossy()).expect("cwd is keyable");
+        assert!(!cwd_key.is_empty());
+        for spelling in [".", "./", ".//", "./.", ".\\"] {
+            let key = canonical_path_key(spelling).expect("a `.` spelling must be keyable");
+            assert!(
+                !key.is_empty(),
+                "{:?} keyed to the empty string, which is not a path",
+                spelling
+            );
+            assert_eq!(
+                key, cwd_key,
+                "{:?} must key like the working directory",
+                spelling
+            );
+        }
+        // The empty spelling has no location of its own; it must at least never become the
+        // empty key, which as a policy entry covered every absolute path on POSIX.
+        assert!(!canonical_path_key("")
+            .expect("the empty spelling is keyable")
+            .is_empty());
+    }
+
+    #[test]
+    fn dot_entry_covers_the_working_directory_and_not_the_parent() {
+        let (dir, file) = cwd_and_real_file();
+        let outside = outside_cwd_file();
+        let allow = PathScope {
+            allow: vec![".".into()],
+            deny: vec![],
+        };
+        assert!(
+            path_allowed(Some(&file.to_string_lossy()), &allow),
+            "`.` must cover a file in the working directory (absolute argument)"
+        );
+        assert!(
+            path_allowed(Some("Cargo.toml"), &allow),
+            "`.` must cover the same file spelled relatively"
+        );
+        assert!(
+            !path_allowed(Some(&outside.to_string_lossy()), &allow),
+            "`.` must not cover the parent directory"
+        );
+        // The deny direction is the one that has to be exact: a `.` entry that collapses to
+        // the empty key denies nothing at all on Windows and everything on POSIX.
+        let deny = PathScope {
+            allow: vec![],
+            deny: vec![".".into()],
+        };
+        assert!(!path_allowed(Some(&file.to_string_lossy()), &deny));
+        assert!(!path_allowed(Some("Cargo.toml"), &deny));
+        assert!(!path_allowed(Some(&dir.to_string_lossy()), &deny));
+        assert!(
+            path_allowed(Some(&outside.to_string_lossy()), &deny),
+            "deny `.` must not cover the parent directory"
+        );
+    }
+
+    #[test]
+    fn dot_entry_never_covers_a_root_relative_path() {
+        let allow = PathScope {
+            allow: vec![".".into()],
+            deny: vec![],
+        };
+        // Before the fix the entry keyed to "", and containment on "" is
+        // `key_target.starts_with("/")` — which every root-relative spelling satisfies. So
+        // this was never a POSIX-only fail-open: on any platform, the working directory's
+        // own entry authorized the whole filesystem.
+        for outside in [
+            "/pep-t01539-no-such-root/secret.json",
+            r"\pep-t01539-no-such-root\secret.json",
+        ] {
+            let key = canonical_path_key(outside).expect("root-relative spelling is keyable");
+            assert!(
+                key.starts_with('/'),
+                "{:?} resolved to {:?}; this case needs an unresolved root-relative spelling",
+                outside,
+                key
+            );
+            assert!(
+                !path_allowed(Some(outside), &allow),
+                "`.` must not cover {:?}",
+                outside
+            );
+        }
+    }
+
+    #[test]
+    fn an_empty_key_covers_nothing_on_any_platform() {
+        // Containment on an empty entry key degenerates to `key_target.starts_with("/")`,
+        // which every absolute POSIX key satisfies — one `.` entry used to authorize the
+        // whole filesystem. The matcher refuses an empty key in both directions now,
+        // whatever produces one.
+        assert!(!key_covers_target("/etc/passwd", ""));
+        assert!(!key_covers_target("/", ""));
+        assert!(!key_covers_target("c:/windows/system32", ""));
+        assert!(!key_covers_target("", ""));
+        assert!(!key_covers_target("", "/etc"));
+        // The containment test itself stays name-boundary aware.
+        assert!(key_covers_target("/tmp", "/tmp"));
+        assert!(key_covers_target("/tmp/ok", "/tmp"));
+        assert!(key_covers_target("/tmp/ok", "/tmp/"));
+        assert!(!key_covers_target("/tmpfoo", "/tmp"));
+        assert!(!key_covers_target("/tmp", "/tmp/ok"));
+    }
+
+    #[test]
+    fn parent_spellings_key_to_the_parent_not_the_working_directory() {
+        let (dir, _) = cwd_and_real_file();
+        let cwd_key = canonical_path_key(&dir.to_string_lossy()).expect("cwd is keyable");
+        let parent = dir.parent().expect("cwd has a parent").to_path_buf();
+        let parent_key = canonical_path_key(&parent.to_string_lossy()).expect("parent is keyable");
+        assert_ne!(parent_key, cwd_key, "the parent is not the working directory");
+        for spelling in ["..", "../", "..//", "..\\"] {
+            let key = canonical_path_key(spelling).expect("a parent spelling must be keyable");
+            assert_eq!(
+                key, parent_key,
+                "{:?} must key like the parent directory",
+                spelling
+            );
+        }
+        // Cancellation still works: `a/..` is the working directory.
+        assert_eq!(canonical_path_key("a/..").expect("keyable"), cwd_key);
+
+        // A `..` entry must cover the parent subtree and nothing above it. Collapsing `..`
+        // to nothing made it the working directory, so the deny silently missed the parent —
+        // and on POSIX it denied everything instead.
+        let deny = PathScope {
+            allow: vec![],
+            deny: vec!["..".into()],
+        };
+        let in_parent = parent.join("pep-t01539-nested-probe.json");
+        assert!(
+            !path_allowed(Some(&in_parent.to_string_lossy()), &deny),
+            "deny `..` must cover the parent directory"
+        );
+        let grandparent = parent.parent().expect("cwd has a grandparent");
+        let above = grandparent.join("pep-t01539-nested-probe.json");
+        assert!(
+            path_allowed(Some(&above.to_string_lossy()), &deny),
+            "deny `..` must not spill above the parent"
+        );
+    }
+
+    #[test]
+    fn entry_and_argument_need_not_share_a_spelling_frame() {
+        let (dir, file) = cwd_and_real_file();
+        let dotted = PathScope {
+            allow: vec![".".into()],
+            deny: vec![],
+        };
+        let absolute = PathScope {
+            allow: vec![dir.to_string_lossy().to_string()],
+            deny: vec![],
+        };
+        // Both frames of the same argument against both frames of the same entry: the OS
+        // resolves the relative spelling against the working directory, so the keys agree.
+        let args = ["Cargo.toml".to_string(), file.to_string_lossy().to_string()];
+        for arg in &args {
+            assert!(path_allowed(Some(arg.as_str()), &dotted), "`.` + {}", arg);
+            assert!(
+                path_allowed(Some(arg.as_str()), &absolute),
+                "absolute entry + {}",
+                arg
+            );
+        }
+        // A relative *name* entry still means that name, and only that name.
+        let named = PathScope {
+            allow: vec!["data".into()],
+            deny: vec![],
+        };
+        assert!(path_allowed(Some("data/store.json"), &named));
+        assert!(!path_allowed(Some("other/store.json"), &named));
+        assert!(!path_allowed(Some("datax/store.json"), &named));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_component_folds_keep_traversal_and_drop_nothing_names() {
+        let (dir, _) = cwd_and_real_file();
+        let cwd_key = canonical_path_key(&dir.to_string_lossy()).expect("cwd is keyable");
+        // `.`/`..` are traversal components, not names: the dot/space fold must not touch
+        // them, or `.` keys to the empty string and `..` keys to the working directory.
+        assert_eq!(canonical_path_key(".").expect("keyable"), cwd_key);
+        assert_ne!(canonical_path_key("..").expect("keyable"), cwd_key);
+        // A component that is nothing but dots or spaces names nothing, and must not survive
+        // as an empty segment: the doubled separator it injected stopped a padded spelling of
+        // a denied location from matching the deny entry.
+        assert!(!canonical_path_key("...").expect("keyable").is_empty());
+        assert!(!canonical_path_key("   ").expect("keyable").is_empty());
+        let padded = canonical_path_key(r"C:\pep-t01539-no-such-dir\...\secret.json")
+            .expect("keyable");
+        let plain = canonical_path_key(r"C:\pep-t01539-no-such-dir\secret.json").expect("keyable");
+        assert_eq!(padded, plain, "a dots-only component must not change the key");
     }
 
     #[test]
