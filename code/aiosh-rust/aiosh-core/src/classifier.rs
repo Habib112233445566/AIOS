@@ -336,38 +336,60 @@ fn pred_key(pred: &ArgPred) -> &'static str {
 /// prompt-injection fragments. Mirrors the legacy `_scan_arg_text_for_pi`.
 fn scan_arg_text_for_pi(args: &Value) -> Vec<(String, &'static str)> {
     let mut out = Vec::new();
-    let obj = match args {
-        Value::Object(m) => m,
-        _ => return out,
-    };
-    for (key, val) in obj {
-        match val {
-            Value::String(s) => {
-                let lower = s.to_lowercase();
-                for frag in PROMPT_INJECTION_FRAGMENTS {
-                    if lower.contains(frag) {
-                        out.push((key.clone(), frag));
-                        break;
-                    }
-                }
-            }
-            Value::Array(items) => {
-                for (i, el) in items.iter().enumerate() {
-                    if let Value::String(s) = el {
-                        let lower = s.to_lowercase();
-                        for frag in PROMPT_INJECTION_FRAGMENTS {
-                            if lower.contains(frag) {
-                                out.push((format!("{}[{}]", key, i), frag));
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
+    scan_value_for_pi(args, "", 0, &mut out);
     out
+}
+
+/// Depth bound for the prompt-injection walk. `serde_json` already refuses to build a
+/// document deeper than its own recursion limit, so this only bounds our own work (and
+/// keeps a hostile document from costing more than the parser already charged).
+const PI_SCAN_MAX_DEPTH: usize = 32;
+
+/// T-01537 S-2: walk **every** string in the argument value, not just the top-level ones.
+///
+/// The previous scan looked only at top-level strings and arrays of strings, so a payload
+/// nested inside an object argument was invisible to C-3 — while the same text one level up
+/// was refused. For the `fs_layout` surface that mattered: `register`'s inline `layout`
+/// object is exactly such a nested argument, its text fields (`name`, `description`, mount
+/// points/options) are persisted verbatim, and they are echoed back to the agent by `get`
+/// and `list`. A nested payload therefore became a *stored* injection channel. The path in
+/// the returned key is JSON-ish (`layout.name`, `mounts[0].options`) for triage.
+fn scan_value_for_pi(
+    value: &Value,
+    path: &str,
+    depth: usize,
+    out: &mut Vec<(String, &'static str)>,
+) {
+    if depth > PI_SCAN_MAX_DEPTH {
+        return;
+    }
+    match value {
+        Value::String(s) => {
+            let lower = s.to_lowercase();
+            for frag in PROMPT_INJECTION_FRAGMENTS {
+                if lower.contains(frag) {
+                    out.push((path.to_string(), frag));
+                    break;
+                }
+            }
+        }
+        Value::Array(items) => {
+            for (i, el) in items.iter().enumerate() {
+                scan_value_for_pi(el, &format!("{}[{}]", path, i), depth + 1, out);
+            }
+        }
+        Value::Object(map) => {
+            for (key, val) in map {
+                let child = if path.is_empty() {
+                    key.clone()
+                } else {
+                    format!("{}.{}", path, key)
+                };
+                scan_value_for_pi(val, &child, depth + 1, out);
+            }
+        }
+        _ => {}
+    }
 }
 
 #[derive(Debug, Clone, Default)]

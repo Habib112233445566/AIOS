@@ -23,8 +23,21 @@ Implements **ADR-0035 §D-2** (MCP as the only tool-call protocol).
 | `aios.service.get`    | ✓     |        | Retrieves detailed specification and runtime status of a service by canonical name |
 | `aios.service.action` |       | ✓     | Executes lifecycle action (`start`, `stop`, `restart`, `reload`, `enable`, `disable`, `mask`, `unmask`) |
 | `aios.service.order`  | ✓     |        | Computes topological startup sequence for a service and its dependency graph |
+| `aios.service.config` | ✓     |        | Inspects Init & Service Supervision configuration parameters (SC1..SC7) |
+| `aios.service.policy` | ✓     |        | Evaluates or inspects service security policies against specifications (SP1..SP6) |
+| `aios.service.stats`  | ✓     |        | Inspects service observability metrics, inventory distributions, and health telemetry (SO1..SO6) |
+| `aios.service.check`  | ✓     |        | Validates on-disk service store integrity and optionally performs non-destructive recovery (SR1..SR5) |
+| `aios.session.validate` | ✓   |        | Validates session ID, username syntax (SB1, SB2) or full `UserSessionSpec` against invariants (SB1..SB5) |
+| `aios.session.list`   | ✓     |        | Lists active/tracked user sessions with optional user, state, type, seat, limit filtering |
+| `aios.session.get`    | ✓     |        | Retrieves runtime status and specification of a session by ID |
+| `aios.session.action` |       | ✓     | Executes lifecycle action (`authenticate`, `activate`, `lock`, `unlock`, `terminate`) with seat arbitration |
+| `aios.session.create` |       | ✓     | Atomically provisions a new user or agent session with validation and capacity enforcement |
+| `aios.session.config` | ✓     |        | Inspects User Session Bootstrap configuration parameters and limits (SC1..SC7) |
+| `aios.session.policy` | ✓     |        | Evaluates session specifications or stores against UserSessionSecurityPolicy (SSP1..SSP7) |
+| `aios.session.stats`  | ✓     |        | Generates telemetry, metrics, and state distribution report (SSO1..SSO6) |
+| `aios.session.check`  | ✓     | ✓¹    | Validates on-disk user session store integrity and optionally performs non-destructive recovery (SSR1..SSR5) |
 
-¹ The pentest and service action tools write an audit row through the same recorded dispatch helper; in Sprint 0 the row is written synchronously.
+¹ The pentest, service action, and recovery tools write an audit row through the same recorded dispatch helper; in Sprint 0 the row is written synchronously.
 
 ## Service Supervision Tools (`aios.service.*`)
 
@@ -109,10 +122,331 @@ The Init & Service Supervision tools provide programmatic control over platform 
 }
 ```
 
+#### 6. Inspect Service Observability Metrics (`aios.service.stats`)
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 6,
+  "method": "tools/call",
+  "params": {
+    "name": "aios.service.stats",
+    "arguments": {}
+  }
+}
+```
+
+#### 7. Validate and Recover Service Store (`aios.service.check`)
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 7,
+  "method": "tools/call",
+  "params": {
+    "name": "aios.service.check",
+    "arguments": {
+      "store_path": "/var/lib/aios/services.json",
+      "auto_recover": true
+    }
+  }
+}
+```
+
+### User Session Bootstrap Tools
+
+#### Validate Session Identifier, Username, or Specification (`aios.session.validate`)
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "aios.session.validate",
+    "arguments": {
+      "session_id": "sess-01"
+    }
+  }
+}
+```
+Validate complete session specification against formal invariants (`SB1..SB5`):
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "tools/call",
+  "params": {
+    "name": "aios.session.validate",
+    "arguments": {
+      "spec": {
+        "session_id": "sess-01",
+        "username": "kali",
+        "uid": 1000,
+        "gid": 1000,
+        "session_type": "x11",
+        "session_class": "user",
+        "seat": "seat0",
+        "vtnr": 7,
+        "display": ":0",
+        "remote_host": null,
+        "environment": {
+          "XDG_RUNTIME_DIR": "/run/user/1000",
+          "DISPLAY": ":0"
+        }
+      }
+    }
+  }
+}
+```
+
+#### Query Tracked Sessions (`aios.session.list`)
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "method": "tools/call",
+  "params": {
+    "name": "aios.session.list",
+    "arguments": {
+      "state": "active",
+      "seat": "seat0"
+    }
+  }
+}
+```
+
+#### Inspect Session Specification & Status (`aios.session.get`)
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 4,
+  "method": "tools/call",
+  "params": {
+    "name": "aios.session.get",
+    "arguments": {
+      "session_id": "greeter-seat0"
+    }
+  }
+}
+```
+
+#### Execute Lifecycle Action (`aios.session.action`)
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 5,
+  "method": "tools/call",
+  "params": {
+    "name": "aios.session.action",
+    "arguments": {
+      "session_id": "sess-01",
+      "action": "activate"
+    }
+  }
+}
+```
+
+#### Provision Session (`aios.session.create`)
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 6,
+  "method": "tools/call",
+  "params": {
+    "name": "aios.session.create",
+    "arguments": {
+      "spec": {
+        "session_id": "sess-agent-01",
+        "username": "aios-agent",
+        "uid": 1001,
+        "gid": 1001,
+        "session_type": "ai_agent",
+        "session_class": "agent",
+        "seat": "seat0",
+        "vtnr": null,
+        "display": null,
+        "remote_host": null,
+        "environment": {
+          "AIOS_AGENT_MODE": "autonomous",
+          "AIOS_AGENT_ID": "agent-copilot"
+        }
+      },
+      "store_path": "/tmp/.aios/sessions.json"
+    }
+  }
+}
+```
+
+#### Validate or Recover Session Store (`aios.session.check`)
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 7,
+  "method": "tools/call",
+  "params": {
+    "name": "aios.session.check",
+    "arguments": {
+      "store_path": "/var/run/aios/sessions.json",
+      "auto_recover": true
+    }
+  }
+}
+```
+
+### CLI Command Examples (`aiosh session`)
+- Validate session spec: `aiosh session validate --spec /path/to/spec.json --json`
+- List active sessions: `aiosh session list --state active --seat seat0 --limit 50 --json`
+- Show session status: `aiosh session show greeter-seat0 --json`
+- Lock / Unlock session: `aiosh session action greeter-seat0 lock --json`
+- Create session: `aiosh session create --id sess-agent-01 --user aios-agent --type agent --seat seat0 --json`
+- Security policy: `aiosh session policy --policy /path/to/policy.json --store /path/to/store.json --json`
+- Telemetry & observability: `aiosh session stats --policy /path/to/policy.json --store /path/to/store.json --json`
+- Check store integrity: `aiosh session check [--store /path/to/store.json] [--json]`
+- Auto-recover store with quarantine: `aiosh session check --fix [--store /path/to/store.json] [--json]`
+- Recover shortcut: `aiosh session recover [--store /path/to/store.json] [--json]`
+
+### User Session Constraints & Invariants (CS1..CS5, SB1..SB5)
+- **Seat Mutual Exclusion (CS2)**: At most one session can hold `SessionScope::Foreground` on any physical/virtual seat (e.g. `seat0`). Activating a session automatically demotes prior foreground sessions on that seat to `SessionScope::Background`.
+- **State Monotonicity & Two-Stage Teardown (CS1)**: Terminated sessions (`state == Terminated`) are immutable and permanent; any subsequent action fails with an explicit error envelope. Active and Locked sessions follow a two-stage termination path: `terminate` transitions to `Terminating` (process cleanup), and a subsequent `terminate` finalizes transition to `Terminated`.
+- **Store & User Capacities (CS3, SB5)**: Maximum 32 active sessions per user (`MAX_SESSIONS_PER_USER`) and maximum 1,024 total tracked sessions in store (`MAX_TOTAL_SESSIONS`).
+- **Lock State Invariant (CS5)**: `state == Locked` strictly matches `locked == true`; `state == Active` strictly matches `locked == false`. Touching activity resets `idle_seconds` to 0 but never unlocks a session.
+- **Hardening Ceilings & Bounds**:
+  - Request line ceiling: 1 MiB (`1,048,576` bytes) transport-level limit.
+  - Specification payload ceiling: 1 MiB limit on inline JSON objects and strings in `validate` and `create`.
+  - Query bounds: `limit` parameter in `aios.session.list` strictly enforced to $[1 \dots 10,000]$.
+  - Path sanitization: `store_path` parameter strictly bounded to $\le 1024$ characters with zero control characters.
+  - Session identifier: strictly validated against `SB1` ($[1 \dots 64]$ chars, alphanumeric start, no slashes or traversal tokens).
+  - Atomic persistence: 10 MiB store limit (`MAX_SESSION_STORE_SIZE`), atomic rename via PID-isolated temporary files (`.tmp.<pid>.<nanos>`), and guaranteed tempfile cleanup on write/rename failure.
+
+### Evidence & Implementation Artifacts
+- **Research:** [`T-01431-mcp-api-surface-research.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01431-mcp-api-surface-research.md)
+- **Specification:** [`T-01432-mcp-api-surface-specification.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01432-mcp-api-surface-specification.md)
+- **Scaffold:** [`T-01433-mcp-api-surface-scaffold.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01433-mcp-api-surface-scaffold.md)
+- **Implementation:** [`T-01434-mcp-api-surface-implementation.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01434-mcp-api-surface-implementation.md)
+- **Unit Testing:** [`T-01435-mcp-api-surface-unit-test.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01435-mcp-api-surface-unit-test.md)
+- **Integration:** [`T-01436-mcp-api-surface-integration.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01436-mcp-api-surface-integration.md)
+- **Security Review:** [`T-01437-mcp-api-surface-security-review.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01437-mcp-api-surface-security-review.md)
+- **Hardening:** [`T-01438-mcp-api-surface-hardening.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01438-mcp-api-surface-hardening.md)
+- **Documentation:** [`T-01439-mcp-api-surface-documentation.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01439-mcp-api-surface-documentation.md)
+
+### Recovery & Validation Evidence Artifacts (SSR1..SSR5)
+- **Research:** [`T-01491-recovery-validation-research.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01491-recovery-validation-research.md)
+- **Specification:** [`T-01492-recovery-validation-specification.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01492-recovery-validation-specification.md)
+- **Scaffold:** [`T-01493-recovery-validation-scaffold.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01493-recovery-validation-scaffold.md)
+- **Implementation:** [`T-01494-recovery-validation-implementation.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01494-recovery-validation-implementation.md)
+- **Unit Testing:** [`T-01495-recovery-validation-unit-test.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01495-recovery-validation-unit-test.md)
+- **Integration:** [`T-01496-recovery-validation-integration.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01496-recovery-validation-integration.md)
+- **Security Review:** [`T-01497-recovery-validation-security-review.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01497-recovery-validation-security-review.md)
+- **Hardening:** [`T-01498-recovery-validation-hardening.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01498-recovery-validation-hardening.md)
+- **Documentation:** [`T-01499-recovery-validation-documentation.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01499-recovery-validation-documentation.md)
+
 ### Constraints & Known Limitations
 - **Name Format**: Service names are limited to 128 ASCII characters matching `^[a-zA-Z0-9][a-zA-Z0-9_\-\.]{0,126}\.service$`. Control characters are strictly rejected.
 - **Masking Invariant**: A service in `masked` mode cannot be started or enabled. Active services must be stopped before they can be masked.
 - **Persistence Boundary**: By default, tools operate on the active runtime store; passing `store_path` reads and atomically persists changes to the designated JSON file using PID-isolated temp files.
+### User Session Bootstrap Tools
+
+The User Session Bootstrap tools provide programmatic management, inspection, and security policy evaluation for interactive and autonomous AI agent sessions:
+
+#### `aios.session.validate`
+Validates session identifiers, user identity bounds, or full session specifications against invariants.
+
+#### `aios.session.list`
+Queries tracked user and agent sessions with optional filters (`session_type`, `state`, `username`, `seat`, `limit`).
+
+#### `aios.session.get`
+Retrieves detailed session status and specification by `session_id`.
+
+#### `aios.session.action`
+Executes lifecycle state transitions (`authenticate`, `activate`, `lock`, `unlock`, `terminate`) on a session. **PEP Gated**: Requires an explicit authorization grant (`require_grant: true`).
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 8,
+  "method": "tools/call",
+  "params": {
+    "name": "aios.session.action",
+    "arguments": {
+      "session_id": "sess-copilot-01",
+      "action": "lock",
+      "grant_id": "gr_eb284bdf79721da3"
+    }
+  }
+}
+```
+
+#### `aios.session.create`
+Bootstraps and initializes a new user or agent session specification. **PEP Gated**: Requires an explicit authorization grant (`require_grant: true`).
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 9,
+  "method": "tools/call",
+  "params": {
+    "name": "aios.session.create",
+    "arguments": {
+      "grant_id": "gr_eb284bdf79721da3",
+      "spec": {
+        "session_id": "sess-copilot-01",
+        "username": "kali",
+        "uid": 1000,
+        "gid": 1000,
+        "session_type": "ai_agent",
+        "session_class": "agent",
+        "seat": "seat0",
+        "environment": {
+          "AIOS_AGENT": "1"
+        }
+      }
+    }
+  }
+}
+```
+
+#### `aios.session.config`
+Inspects runtime session parameters, timeouts, and capacity ceilings.
+
+#### `aios.session.policy`
+Evaluates user session specifications or entire session stores against `UserSessionSecurityPolicy` (`SSP1..SSP7`):
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 10,
+  "method": "tools/call",
+  "params": {
+    "name": "aios.session.policy",
+    "arguments": {
+      "spec": {
+        "session_id": "agent-eval-01",
+        "username": "kali",
+        "uid": 1000,
+        "gid": 1000,
+        "session_type": "ai_agent",
+        "session_class": "agent",
+        "seat": "seat0"
+      }
+    }
+  }
+}
+```
+
+#### `aios.session.stats`
+Generates comprehensive observability telemetry and distribution metrics across tracked user and agent sessions (`SSO1..SSO6`):
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 11,
+  "method": "tools/call",
+  "params": {
+    "name": "aios.session.stats",
+    "arguments": {
+      "store_path": "/path/to/sessions.json"
+    }
+  }
+}
+```
 
 ## Running
 

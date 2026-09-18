@@ -53,7 +53,175 @@ pub fn normalize_path_str(p: &str) -> String {
     }
 }
 
+/// Attempts `resolve_existing_prefix` will make before keying a path lexically.
+/// Each attempt is one `canonicalize` that fails fast once the path stops existing, so
+/// this only bounds the work a hostile, very deep path can ask for.
+const MAX_CANONICAL_ASCENTS: usize = 64;
+
+/// Canonical, comparable form of a path for `scope.paths` matching.
+///
+/// The allow/deny lists are strings, so a deny entry only survives contact with an
+/// adversary if both sides are first reduced to the form the **filesystem** resolves them
+/// to. Otherwise one directory can be spelled several ways and the denied spelling loses
+/// (T-01537 S-18/S-19):
+///
+/// * **case** — a case-insensitive filesystem has one `C:\Secret`, not two;
+/// * **8.3 short names** — `C:\PROGRA~1` *is* `C:\Program Files`;
+/// * **trailing dots/spaces** — Windows drops them from a component;
+/// * **symlinks/junctions** — a link to a denied directory is that directory;
+/// * **device/extended prefixes** — `\\?\C:\Secret\x` and `C:\Secret\x` are one file.
+///
+/// The longest **existing** prefix is therefore resolved through the filesystem, and only
+/// the tail that does not exist yet is kept lexically — and that tail is the normal case,
+/// because a `store_path` usually names a file that is about to be created. Case folding
+/// and dot/space stripping are applied **only** where the platform aliases them: POSIX
+/// paths stay case- and space-sensitive, so no legitimate Linux or macOS name is refused
+/// on Windows' account.
+///
+/// Deliberately stricter than the write path in one place: trailing dots/spaces are
+/// stripped from *every* component, including intermediate ones Windows would treat as
+/// distinct names. Over-matching a deny entry fails closed, which is the safe direction.
+///
+/// Returns `None` when the spelling cannot be mapped into the filesystem namespace at all
+/// (see [`strip_device_prefix`]); callers must treat that as **denied**, never as "no
+/// entry matched".
+pub fn canonical_path_key(p: &str) -> Option<String> {
+    let mut key = normalize_path_str(&strip_device_prefix(p)?);
+    #[cfg(windows)]
+    {
+        key = key
+            .split('/')
+            .map(|seg| seg.trim_end_matches(['.', ' ']))
+            .collect::<Vec<_>>()
+            .join("/");
+    }
+    let key = resolve_existing_prefix(&key);
+    #[cfg(windows)]
+    {
+        return Some(key.to_lowercase());
+    }
+    #[cfg(not(windows))]
+    Some(key)
+}
+
+/// The device/extended-length prefixes a caller may supply, longest first, all lowercase
+/// because the input is lowercased before matching. Windows accepts `/` and `\`
+/// interchangeably in each, so both spellings are listed.
+const DEVICE_PREFIXES: [&str; 8] = [
+    "\\\\?\\unc\\",
+    "\\\\.\\unc\\",
+    "//?/unc/",
+    "//./unc/",
+    "\\\\?\\",
+    "\\\\.\\",
+    "//?/",
+    "//./",
+];
+
+/// Reduce a caller-supplied device/extended-length spelling to its ordinary form.
+///
+/// `std::fs::canonicalize` *returns* `\\?\`-prefixed paths and [`canonical_to_key`] strips
+/// that prefix from its **output** — but nothing stripped the mirror-image prefix a
+/// **caller** could *supply*. `\\?\C:\DenyDir\x.json` therefore normalized to
+/// `/?/C:/DenyDir/x.json`, which can never resolve, so the lexical fallback in
+/// [`resolve_existing_prefix`] compared that mangled key against the *resolved* key of a
+/// real deny entry, failed to match, and authorized the call — which then wrote into the
+/// denied directory (T-01537 S-22/S-23). Stripping the prefix on input puts both
+/// spellings in one namespace, so `\\?\C:\d\x`, `\\.\C:\d\x`, `\\?\UNC\s\sh\x` and
+/// the plain `C:\d\x` / `\\s\sh\x` all key alike, matching the only namespace
+/// `std::fs::canonicalize` knows.
+///
+/// Returns `None` for a path that is *still* in the device namespace once the prefixes are
+/// gone — `\\.\PhysicalDrive0`, `\\.\GLOBALROOT\Device\HarddiskVolume2\x`,
+/// `\\?\PIPE\name`. Those name no location a `scope.paths` entry could ever describe, so
+/// leaving them to fall through as an unmatchable key is exactly the fail-open this closes.
+/// A path that never had a device prefix is passed through unchanged, including a relative
+/// one, whose existing lexical behaviour is deliberate.
+fn strip_device_prefix(p: &str) -> Option<String> {
+    let mut current = p.to_string();
+    let mut stripped = false;
+    // Loop because the prefixes stack (`\\?\\\?\C:\x`): each pass shortens the string, so
+    // this terminates, and a single blind strip would leave the inner one to mangle the key.
+    loop {
+        let lower = current.to_ascii_lowercase();
+        let Some(prefix) = DEVICE_PREFIXES.iter().find(|pre| lower.starts_with(**pre)) else {
+            break;
+        };
+        let rest = current[prefix.len()..].to_string();
+        let rest_lower = rest.to_ascii_lowercase();
+        // `\\?\UNC\server\share\...` is the extended spelling of `\\server\share\...`.
+        current = if rest_lower.starts_with("unc/") || rest_lower.starts_with("unc\\") {
+            format!("\\\\{}", &rest[4..])
+        } else {
+            rest
+        };
+        stripped = true;
+    }
+    if stripped && !is_filesystem_addressable(&current) {
+        return None;
+    }
+    Some(current)
+}
+
+/// True when a stripped path still names something in the filesystem namespace rather than
+/// in the device namespace: absolute (`\dir` or `/dir`), or drive-absolute (`C:\dir`).
+/// A bare device name (`PhysicalDrive0`), a `GLOBALROOT` escape or a pipe is not.
+fn is_filesystem_addressable(p: &str) -> bool {
+    let b = p.as_bytes();
+    if matches!(b.first(), Some(b'/') | Some(b'\\')) {
+        return true;
+    }
+    b.len() >= 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && matches!(b[2], b'/' | b'\\')
+}
+
+/// Replace the longest existing prefix of an already separator-normalized path with its
+/// filesystem-resolved form, re-appending the non-existent tail. Returns the input
+/// unchanged when nothing along the path resolves (which is why a purely lexical
+/// comparison still holds for paths that do not exist yet on either side).
+fn resolve_existing_prefix(normalized: &str) -> String {
+    let mut tail: Vec<String> = Vec::new();
+    let mut head = normalized.to_string();
+    for _ in 0..MAX_CANONICAL_ASCENTS {
+        if let Ok(real) = std::fs::canonicalize(&head) {
+            let mut out = canonical_to_key(&real.to_string_lossy());
+            for seg in tail.iter().rev() {
+                if !out.ends_with('/') {
+                    out.push('/');
+                }
+                out.push_str(seg);
+            }
+            return out;
+        }
+        // Ascend one component, but never above a root or a drive prefix: `C:` alone
+        // means "current directory on C:", which is not the same place as `C:\`.
+        match head.rfind('/') {
+            Some(i) if i > 0 && !head[..i].ends_with(':') => {
+                tail.push(head[i + 1..].to_string());
+                head.truncate(i);
+            }
+            _ => break,
+        }
+    }
+    normalized.to_string()
+}
+
+/// Strip the extended-length prefix `std::fs::canonicalize` returns on Windows and
+/// normalize separators, so keys from resolved and unresolved paths stay comparable.
+fn canonical_to_key(real: &str) -> String {
+    let s = real.replace('\\', "/");
+    if let Some(rest) = s.strip_prefix("//?/UNC/") {
+        format!("//{rest}")
+    } else if let Some(rest) = s.strip_prefix("//?/") {
+        rest.to_string()
+    } else {
+        s
+    }
+}
+
 /// Path-based allow/deny check. Deny always wins.
+///
+/// Comparison happens on [`canonical_path_key`], so spelling the same location differently
+/// (case, 8.3 short name, trailing dot/space, symlink) cannot move it across a deny entry.
 pub fn path_allowed(target: Option<&str>, paths: &PathScope) -> bool {
     if paths.allow.is_empty() && paths.deny.is_empty() {
         return true;
@@ -62,11 +230,19 @@ pub fn path_allowed(target: Option<&str>, paths: &PathScope) -> bool {
         Some(t) => t,
         None => return false,
     };
-    let norm_target = normalize_path_str(target);
+    // An unmappable spelling names no location a `scope.paths` entry could describe, so it
+    // cannot be shown to sit inside an allowed directory: fail closed (T-01537 S-22).
+    let key_target = match canonical_path_key(target) {
+        Some(k) => k,
+        None => return false,
+    };
     for p in &paths.deny {
-        let norm_p = normalize_path_str(p);
-        if norm_target == norm_p
-            || norm_target.starts_with(&format!("{}/", norm_p.trim_end_matches('/')))
+        let key_p = match canonical_path_key(p) {
+            Some(k) => k,
+            None => continue,
+        };
+        if key_target == key_p
+            || key_target.starts_with(&format!("{}/", key_p.trim_end_matches('/')))
         {
             return false;
         }
@@ -76,9 +252,12 @@ pub fn path_allowed(target: Option<&str>, paths: &PathScope) -> bool {
         return true;
     }
     for p in &paths.allow {
-        let norm_p = normalize_path_str(p);
-        if norm_target == norm_p
-            || norm_target.starts_with(&format!("{}/", norm_p.trim_end_matches('/')))
+        let key_p = match canonical_path_key(p) {
+            Some(k) => k,
+            None => continue,
+        };
+        if key_target == key_p
+            || key_target.starts_with(&format!("{}/", key_p.trim_end_matches('/')))
         {
             return true;
         }
@@ -113,6 +292,19 @@ pub fn network_allowed(target: Option<&str>, networks: &[String]) -> bool {
 }
 
 pub fn is_irreversible(tool: &str) -> bool {
+    // Read-only reconnaissance and discovery tools are reversible / non-destructive
+    if tool == "pentest.network.interfaces"
+        || tool == "pentest.wifi.scan"
+        || tool == "pentest.arp.scan"
+        || tool == "pentest.tshark"
+        || tool.starts_with("network.")
+        || tool.starts_with("wifi.scan")
+        || tool.starts_with("aios.network.")
+        || tool.starts_with("aios.wifi.scan")
+    {
+        return false;
+    }
+
     tool.starts_with("fs.write")
         || tool.starts_with("pentest.")
         || tool.starts_with("aios.backup.")
@@ -125,6 +317,20 @@ pub fn is_irreversible(tool: &str) -> bool {
         || tool.starts_with("evidence.record")
         || tool.starts_with("aios.evidence.set")
         || tool.starts_with("evidence.set")
+        || tool.starts_with("aios.session.action")
+        || tool.starts_with("session.action")
+        || tool.starts_with("aios.session.create")
+        || tool.starts_with("session.create")
+        // T-01537 S-3: the four state-changing Filesystem Layout tools persist to a
+        // caller-named store, so they belong to the irreversible family. They were
+        // reachable *only* because every call site also passes `require_grant = true`;
+        // listing them here makes the PEP itself refuse an unauthenticated mutation
+        // instead of depending on each caller remembering the flag. The read-only
+        // `aios.fs_layout.*` tools stay reversible, so they are matched exactly.
+        || tool == "aios.fs_layout.register"
+        || tool == "aios.fs_layout.set_active"
+        || tool == "aios.fs_layout.remove"
+        || tool == "aios.fs_layout.import_fstab"
         || tool == "system.reboot"
         || tool == "system.shutdown"
 }
@@ -280,11 +486,47 @@ impl PepStore {
     }
 
     /// Authoritative gate. Returns Ok(()) or Err(reason).
+    ///
+    /// [`check`](Self::check) for the common case where the call touches no
+    /// filesystem path of its own. See [`check_with_paths`](Self::check_with_paths)
+    /// for why that distinction exists.
     pub fn check(
         &self,
         grant_id: Option<&str>,
         tool: &str,
         target: Option<&str>,
+    ) -> Result<(), String> {
+        self.check_with_paths(grant_id, tool, target, &[])
+    }
+
+    /// Authoritative gate, extended with the **filesystem paths the call will
+    /// actually touch** (T-01537 S-1).
+    ///
+    /// `target` is the value the audit rows are attributed to, and for tools whose
+    /// operated-on object *is* a path (e.g. `pentest.aircrack-ng --capture`) it is
+    /// also what `scope.paths` governs. That conflates two different things, and the
+    /// `fs_layout` mutation surface is where the conflation bites: its audit target is
+    /// a layout **id** (spec §9), so a `scope.paths` allow-list could never constrain
+    /// the layout **store file** the call writes — and for `register`'s `spec` form the
+    /// target is `None`, which skipped the path check entirely, so the same grant
+    /// refused the inline form and silently authorized the spec form.
+    ///
+    /// `path_subjects` therefore carries the paths that identify themselves, and the
+    /// rule is deliberately either/or: **if a call declares subjects, `scope.paths`
+    /// governs those and `target` is treated as an attribution label, not a path.** A
+    /// call that declares none keeps the historical reading of `target` unchanged. The
+    /// alternative — checking both — is incoherent, because an opaque id such as
+    /// `aios-uefi-standard-v1` can never be inside a directory allow-list, so a
+    /// path-scoped grant would refuse `set_active`/`remove`/`import_fstab` no matter how
+    /// correct their store path was. A grant with no `scope.paths` set is unaffected
+    /// either way, because `path_allowed` treats an empty allow+deny list as
+    /// unrestricted.
+    pub fn check_with_paths(
+        &self,
+        grant_id: Option<&str>,
+        tool: &str,
+        target: Option<&str>,
+        path_subjects: &[&str],
     ) -> Result<(), String> {
         match grant_id {
             None => {
@@ -336,11 +578,25 @@ impl PepStore {
                             target.unwrap()
                         ));
                     }
-                } else if target.is_some() && !path_allowed(target, &g.scope.paths) {
+                } else if target.is_some()
+                    && path_subjects.is_empty()
+                    && !path_allowed(target, &g.scope.paths)
+                {
                     return Err(format!(
                         "target '{}' blocked by grant scope.paths",
                         target.unwrap()
                     ));
+                }
+                // The paths this call will really write or read. Checked even when
+                // `target` is `None` (register's `spec` form), which is exactly the
+                // hole this closes.
+                for subject in path_subjects {
+                    if !path_allowed(Some(subject), &g.scope.paths) {
+                        return Err(format!(
+                            "path subject '{}' blocked by grant scope.paths",
+                            subject
+                        ));
+                    }
                 }
                 Ok(())
             }
@@ -466,6 +722,254 @@ mod tests {
         assert!(s
             .check(Some(&g.grant_id), "pentest.aircrack-ng", Some("/etc/passwd"))
             .is_err());
+    }
+
+    // ---- T-01537 S-1: path subjects are checked, not just the audit target ----
+
+    fn fs_layout_grant(paths: PathScope) -> (PepStore, String) {
+        let s = store();
+        let sc = GrantScope {
+            tools: vec!["aios.fs_layout.*".into()],
+            paths,
+            ..Default::default()
+        };
+        let g = s.create(&sc, 3600, "agent:test", "abc123").unwrap();
+        (s, g.grant_id)
+    }
+
+    #[test]
+    fn path_subjects_are_blocked_outside_allow_list() {
+        let (s, gid) = fs_layout_grant(PathScope {
+            allow: vec!["/srv/layouts".into()],
+            deny: vec![],
+        });
+        // The write target of a mutation is a policy subject.
+        assert!(s
+            .check_with_paths(
+                Some(&gid),
+                "aios.fs_layout.register",
+                None,
+                &["/srv/layouts/store.json"]
+            )
+            .is_ok());
+        assert!(s
+            .check_with_paths(
+                Some(&gid),
+                "aios.fs_layout.register",
+                None,
+                &["/etc/evil.json"]
+            )
+            .is_err());
+        // A denied subject wins even when an allowed sibling is present.
+        assert!(s
+            .check_with_paths(
+                Some(&gid),
+                "aios.fs_layout.import_fstab",
+                Some("layout-id"),
+                &["/srv/layouts/store.json", "/root/secrets.json"]
+            )
+            .is_err());
+        // With subjects declared, those govern: an in-scope store is allowed even
+        // though the audit target is a layout id that is not a path. Checking both
+        // would make every path-scoped grant unusable for this surface.
+        assert!(s
+            .check_with_paths(
+                Some(&gid),
+                "aios.fs_layout.set_active",
+                Some("aios-uefi-standard-v1"),
+                &["/srv/layouts/store.json"]
+            )
+            .is_ok());
+        // Documented pre-fix hole, pinned so it cannot silently return: with no
+        // subjects and a `None` target the path check is skipped entirely.
+        assert!(s
+            .check_with_paths(Some(&gid), "aios.fs_layout.register", None, &[])
+            .is_ok());
+    }
+
+    #[test]
+    fn path_subjects_leave_unscoped_grants_alone() {
+        let (s, gid) = fs_layout_grant(PathScope::default());
+        assert!(s
+            .check_with_paths(
+                Some(&gid),
+                "aios.fs_layout.register",
+                None,
+                &["/anywhere/at/all/store.json"]
+            )
+            .is_ok());
+        // The legacy 3-arg entry point keeps its exact behaviour.
+        assert!(s.check(Some(&gid), "aios.fs_layout.register", None).is_ok());
+    }
+
+    // ---- T-01537 S-3: fs_layout mutations are irreversible to the PEP itself ----
+
+    #[test]
+    fn fs_layout_mutations_require_a_grant_without_the_call_site_flag() {
+        let s = store();
+        for tool in [
+            "aios.fs_layout.register",
+            "aios.fs_layout.set_active",
+            "aios.fs_layout.remove",
+            "aios.fs_layout.import_fstab",
+        ] {
+            assert!(
+                s.check(None, tool, None).is_err(),
+                "{} must be irreversible",
+                tool
+            );
+        }
+        // Read-only siblings stay ungated.
+        for tool in [
+            "aios.fs_layout.get",
+            "aios.fs_layout.list",
+            "aios.fs_layout.validate",
+            "aios.fs_layout.fstab",
+            "aios.fs_layout.probe",
+            "aios.fs_layout.diff",
+        ] {
+            assert!(
+                s.check(None, tool, None).is_ok(),
+                "{} must stay reversible",
+                tool
+            );
+        }
+    }
+
+    // ---- T-01537 S-18/S-19: scope.paths matching is canonical, not lexical ----
+
+    #[test]
+    fn path_keys_fold_platform_aliases() {
+        // Spellings the filesystem treats as one directory must not slip past a deny
+        // entry. These paths do not exist, so both sides stay lexical and the assertions
+        // are deterministic on any machine.
+        #[cfg(windows)]
+        {
+            let deny_only = PathScope {
+                allow: vec![],
+                deny: vec![r"C:\DenyDir".into()],
+            };
+            assert!(
+                !path_allowed(Some(r"c:\denydir\x.json"), &deny_only),
+                "case alias must still match the deny entry"
+            );
+            assert!(
+                !path_allowed(Some(r"C:\DenyDir. \x.json"), &deny_only),
+                "trailing dot/space alias must still match the deny entry"
+            );
+            assert!(!path_allowed(Some(r"C:\DenyDir\sub\..\x.json"), &deny_only));
+            // And the allow list agrees, so a scoped grant is not refused for spelling
+            // its own directory in a different case (the fail-closed half of the bug).
+            let allow_only = PathScope {
+                allow: vec![r"C:\AllowedDir".into()],
+                deny: vec![],
+            };
+            assert!(path_allowed(Some(r"c:\alloweddir\store.json"), &allow_only));
+        }
+        #[cfg(not(windows))]
+        {
+            // POSIX names are case- and space-sensitive: those are different files, and
+            // Windows' aliasing must not leak into POSIX policy decisions.
+            assert!(path_allowed(
+                Some("/DenyDir/x.json"),
+                &PathScope { allow: vec![], deny: vec!["/denydir".into()] }
+            ));
+            assert!(path_allowed(
+                Some("/DenyDir /x.json"),
+                &PathScope { allow: vec![], deny: vec!["/DenyDir".into()] }
+            ));
+        }
+    }
+
+    #[test]
+    fn path_keys_resolve_an_existing_prefix() {
+        // 8.3 short names and symlinks can only be expanded by asking the filesystem, so
+        // the key for a not-yet-existing tail must be built from the *resolved* form of
+        // its longest existing prefix. That single property is what stops a short-name
+        // spelling from escaping a deny entry.
+        let dir = std::env::temp_dir();
+        let tail = dir.join("pep-key-probe").join("nested").join("store.json");
+        let key_dir = canonical_path_key(&dir.to_string_lossy()).expect("temp dir is keyable");
+        let key_tail =
+            canonical_path_key(&tail.to_string_lossy()).expect("temp dir tail is keyable");
+        assert!(
+            key_tail.starts_with(&format!("{}/", key_dir.trim_end_matches('/'))),
+            "non-existent tail {} must stay under the resolved prefix {}",
+            key_tail,
+            key_dir
+        );
+
+        let deny_dir = PathScope {
+            allow: vec![],
+            deny: vec![dir.to_string_lossy().to_string()],
+        };
+        assert!(
+            !path_allowed(Some(&tail.to_string_lossy()), &deny_dir),
+            "a store below a denied existing directory must be denied"
+        );
+        let allow_dir = PathScope {
+            allow: vec![dir.to_string_lossy().to_string()],
+            deny: vec![],
+        };
+        assert!(path_allowed(Some(&tail.to_string_lossy()), &allow_dir));
+    }
+
+    // ---- T-01537 S-22: device/extended-length spellings cannot evade scope.paths ----
+
+    #[test]
+    fn device_aliases_key_like_their_plain_form() {
+        // The pre-fix keyer left `\\?\C:\DenyDir` mangled (it does not start with a
+        // separator, so it never resolved), so the key differed from the resolved deny
+        // entry and the deny did not apply. These paths do not exist, so both sides stay
+        // lexical and the assertions are deterministic on any machine.
+        #[cfg(windows)]
+        {
+            let deny = PathScope {
+                allow: vec![],
+                deny: vec![r"C:\DenyDir".into()],
+            };
+            for spelling in [
+                r"\\?\C:\DenyDir\x.json",
+                r"\\.\C:\DenyDir\x.json",
+                r"//?/C:/DenyDir/x.json",
+                r"\\.\c:\denydir\x.json",
+                r"\\?\\\?\C:\DenyDir\x.json",
+            ] {
+                assert!(
+                    !path_allowed(Some(spelling), &deny),
+                    "{} must not escape the deny entry",
+                    spelling
+                );
+            }
+            // The UNC form of a denied UNC directory is the same directory.
+            let deny_unc = PathScope {
+                allow: vec![],
+                deny: vec![r"\\server\share".into()],
+            };
+            assert!(!path_allowed(
+                Some(r"\\?\UNC\server\share\x.json"),
+                &deny_unc
+            ));
+            // And the allow list agrees, so a long-path agent is not refused for spelling
+            // its own directory the extended way (the fail-closed half).
+            let allow = PathScope {
+                allow: vec![r"C:\AllowedDir".into()],
+                deny: vec![],
+            };
+            assert!(path_allowed(Some(r"\\?\C:\AllowedDir\store.json"), &allow));
+        }
+        // A prefix that is stripped but leaves nothing addressable must fail closed rather
+        // than become an unmatchable key, on every platform.
+        assert!(canonical_path_key(r"\\.\PhysicalDrive0").is_none());
+        assert!(canonical_path_key(r"\\?\GLOBALROOT\Device\HarddiskVolume2\x").is_none());
+        assert!(canonical_path_key(r"\\?\").is_none());
+        assert!(
+            !path_allowed(
+                Some(r"\\.\PhysicalDrive0"),
+                &PathScope { allow: vec![], deny: vec!["/tmp".into()] }
+            ),
+            "an unmappable device path must be denied, not merely unmatched"
+        );
     }
 
     #[test]

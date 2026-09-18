@@ -160,11 +160,11 @@ tools = [
 
 SYSTEM_PROMPT = (
     "You are the AIOS Kernel Assistant, an S-rank autonomous operating system "
-    "intelligence. You have direct control of the host Linux operating system "
+    "intelligence. You have direct control of the host Kali Linux operating system "
     "through the provided MCP tools.\n"
     "When the user asks you to inspect the system, check services, look at processes, "
-    "modify services, search packages, or read system files, ALWAYS invoke the appropriate "
-    "tools. Be concise, precise, and authoritative. Present system status in structured tables."
+    "modify services, search packages, perform network recon, or run security tools, "
+    "ALWAYS invoke the appropriate tools. Be concise, precise, and authoritative. Present system status in structured tables."
 )
 
 conversation_history = [
@@ -224,8 +224,27 @@ def select_relevant_tools(user_text: str, all_tools: list) -> list:
         matched_prefixes.add("aios.distro.")
         matched_prefixes.add("aios.image.")
 
-    # 8. Pentest tools
-    if any(k in text for k in ["nmap", "nikto", "sqlmap", "tshark", "aircrack", "port scan", "pcap"]):
+    # 8. Pentest, Network & WiFi tools
+    if any(k in text for k in ["nmap", "nikto", "sqlmap", "tshark", "aircrack", "port scan", "pcap", "pentest", "scan", "recon"]):
+        matched_prefixes.add("aios.pentest.")
+        matched_prefixes.add("aios.network.")
+        matched_prefixes.add("aios.wifi.")
+        matched_prefixes.add("aios.web.")
+
+    # 9. WiFi & Wireless Auditing
+    if any(k in text for k in ["wifi", "wi-fi", "wireless", "ssid", "bssid", "wlan", "airmon", "aircrack", "access point", "hotspot"]):
+        matched_prefixes.add("aios.wifi.")
+        matched_prefixes.add("aios.network.")
+        matched_prefixes.add("aios.pentest.")
+
+    # 10. Network Interfaces & ARP Discovery
+    if any(k in text for k in ["network", "interface", "interfaces", "ip", "adapter", "arp", "subnet", "gateway", "mac address"]):
+        matched_prefixes.add("aios.network.")
+        matched_prefixes.add("aios.wifi.")
+
+    # 11. Web Recon & Fuzzing
+    if any(k in text for k in ["gobuster", "fuzz", "endpoint", "endpoints", "directory", "dir", "wordlist"]):
+        matched_prefixes.add("aios.web.")
         matched_prefixes.add("aios.pentest.")
 
     # If any matched, return only tools matching those prefixes
@@ -319,7 +338,7 @@ def execute_turn(user_text: str):
 
 def main():
     print("=" * 65)
-    print("          AIOS Interactive Live AI Shell (Linux)")
+    print("        AIOS Interactive Live AI Shell (Kali Linux)")
     print("=" * 65)
     print(f"[*] Provider         : {args.provider}")
     print(f"[*] Backend URL      : {base_url}")
@@ -334,7 +353,7 @@ def main():
 
     while True:
         try:
-            prompt = input("AIOS (Linux) > ").strip()
+            prompt = input("AIOS (Kali Linux) > ").strip()
             if not prompt:
                 continue
             if prompt.lower() in ["exit", "quit", "q"]:

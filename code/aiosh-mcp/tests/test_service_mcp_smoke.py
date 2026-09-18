@@ -103,10 +103,14 @@ def test_manifest():
         "aios.service.get",
         "aios.service.action",
         "aios.service.order",
+        "aios.service.config",
+        "aios.service.policy",
+        "aios.service.stats",
+        "aios.service.check",
     }
     missing = required - names
     assert not missing, f"Missing MCP service tools in manifest: {missing}"
-    print("PASS: test_manifest (all 5 service tools registered)")
+    print("PASS: test_manifest (all 9 service tools registered)")
 
 
 def test_validate():
@@ -334,6 +338,62 @@ def test_order():
     print("PASS: test_order (topological ordering, missing targets, error paths)")
 
 
+def test_stats():
+    # 1. Default stats
+    res = call_mcp_tool("aios.service.stats", {})
+    assert res.get("ok") is True, f"Stats failed: {res}"
+    report = res.get("report", {})
+    assert report.get("total_services", 0) > 0
+    assert "state_breakdown" in report
+    assert "healthy_count" in report
+    assert "dependency_distribution" in report
+
+    # 2. Control characters in store_path
+    res_ctrl = call_mcp_tool("aios.service.stats", {"store_path": "bad\x00store"})
+    assert res_ctrl.get("ok") is False
+
+    # 3. Control characters in policy_path
+    res_ctrl_pol = call_mcp_tool("aios.service.stats", {"policy_path": "bad\x00policy"})
+    assert res_ctrl_pol.get("ok") is False
+
+    print("PASS: test_stats (telemetry metrics, inventory breakdown, error boundaries)")
+
+
+def test_check():
+    # 1. Default check
+    res = call_mcp_tool("aios.service.check", {})
+    assert res.get("ok") is True, f"Check failed: {res}"
+    report = res.get("report", {})
+    assert report.get("healthy") is True
+    assert report.get("valid_services", 0) >= 5
+    assert res.get("recovered") is False
+
+    # 2. Corrupt store handling with auto_recover
+    with tempfile.TemporaryDirectory() as td:
+        corrupt_path = Path(td) / "services.json"
+        corrupt_path.write_text("CORRUPTED PAYLOAD NOT VALID JSON")
+
+        # 2a. Audit mode (auto_recover: false) must report not ok
+        res_fail = call_mcp_tool("aios.service.check", {"store_path": str(corrupt_path), "auto_recover": False})
+        assert res_fail.get("ok") is False
+
+        # 2b. Auto-recovery mode (auto_recover: true) must succeed and produce backup
+        res_rec = call_mcp_tool("aios.service.check", {"store_path": str(corrupt_path), "auto_recover": True})
+        assert res_rec.get("ok") is True
+        assert res_rec.get("recovered") is True
+        backup_path = res_rec.get("backup_path")
+        assert backup_path is not None
+        assert Path(backup_path).exists()
+        assert Path(backup_path).read_text() == "CORRUPTED PAYLOAD NOT VALID JSON"
+
+    # 3. Boundary check: oversized store_path (> 1024)
+    oversized_path = "x" * 1025
+    res_over = call_mcp_tool("aios.service.check", {"store_path": oversized_path})
+    assert res_over.get("ok") is False
+
+    print("PASS: test_check (default healthy, corruption recovery, quarantine backup, boundaries)")
+
+
 def main():
     print("=== RUNNING SERVICE MCP SMOKE TESTS ===")
     test_manifest()
@@ -342,9 +402,12 @@ def main():
     test_get()
     test_action_and_persistence()
     test_order()
+    test_stats()
+    test_check()
     print("\nALL SERVICE MCP SMOKE TESTS PASSED!")
     return 0
 
 
 if __name__ == "__main__":
     sys.exit(main())
+

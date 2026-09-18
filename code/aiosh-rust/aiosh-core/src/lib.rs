@@ -43,6 +43,8 @@ pub mod doc_index_service;
 pub mod evidence;
 pub mod evidence_config;
 pub mod evidence_service;
+pub mod fs_layout;
+pub mod fs_layout_service;
 pub mod handoff;
 pub mod handoff_config;
 pub mod handoff_service;
@@ -69,8 +71,16 @@ pub mod secrets_config;
 pub mod secrets_service;
 pub mod service;
 pub mod service_config;
+pub mod service_observability;
 pub mod service_policy;
+pub mod service_recovery;
 pub mod service_service;
+pub mod session;
+pub mod session_config;
+pub mod session_observability;
+pub mod session_policy;
+pub mod session_recovery;
+pub mod session_service;
 pub mod task_service;
 pub mod toolchain_config;
 pub mod toolchain_service;
@@ -83,6 +93,15 @@ pub use audit::{AuditRing, OpenOptions};
 pub use classifier::classify;
 pub use distro::{ArchTarget, CLibrary, DistroEvaluation, DistroFamily, DistroProfile, InitSystem};
 pub use distro_service::DistroStore;
+pub use fs_layout::{
+    validate_directory_spec, validate_filesystem_layout, validate_mount_point,
+    validate_partition_spec, DirectorySpec, FilesystemLayoutSpec, FsType, MountPointSpec,
+    PartitionSpec, PartitionType,
+};
+pub use fs_layout_service::{
+    FilesystemLayoutService, FilesystemLayoutStore, LayoutDiff, MountDiffItem, PartitionDiffItem,
+    TargetEvaluation,
+};
 pub use handoff::{HandoffPriority, HandoffRecord, HandoffReport, HandoffStatus};
 pub use handoff_service::HandoffStore;
 pub use package::{
@@ -101,9 +120,25 @@ pub use service::{
     ServiceSpec, ServiceStartupMode, ServiceState, ServiceStatus, ServiceType,
 };
 pub use service_config::ServiceConfig;
+pub use service_observability::ServiceObservabilityReport;
 pub use service_policy::{
     ServicePolicyMode, ServicePolicyVerdict, ServicePolicyViolation, ServiceSecurityPolicy,
 };
+pub use service_recovery::{ServiceRecoveryAction, ServiceValidationReport};
 pub use service_service::{ServiceActionReport, ServiceStore};
+pub use session::{
+    transition_session_state, validate_session_id, validate_user_session_spec,
+    validate_user_session_status, validate_username, SessionClass, SessionScope, SessionState,
+    SessionType, UserSessionAction, UserSessionQuery, UserSessionSpec, UserSessionStatus,
+    UserSessionStore,
+};
+pub use session_config::SessionConfig;
+pub use session_observability::SessionObservabilityReport;
+pub use session_policy::{
+    SessionPolicyMode, SessionPolicyVerdict, SessionPolicyViolation, UserSessionSecurityPolicy,
+};
+pub use session_recovery::{SessionRecoveryAction, SessionValidationReport};
+pub use session_service::{UserSessionActionReport, UserSessionService};
 pub use types::GENESIS_HASH;
+
 

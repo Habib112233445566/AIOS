@@ -9,6 +9,8 @@ Criteria:
   SS5: service configuration subsystem invariants, precedence & sizing (SC1..SC7)
   SS6: service automated integration tests (ST1..ST5)
   SS7: service security policy invariants & evaluation (SP1..SP6)
+  SS8: service observability telemetry report & invariants (SO1..SO6)
+  SS9: service documentation guide & invariants (D1..D6)
 """
 
 from __future__ import annotations
@@ -100,6 +102,40 @@ def test_ss7_security_policy():
     )
 
 
+def test_ss8_observability():
+    return _run_cargo_test(
+        ["--test", "test_service_observability"],
+        "SS8",
+        "service observability telemetry report & invariants (SO1..SO6)",
+    )
+
+
+def test_ss9_documentation():
+    cmd = [sys.executable, str(ROOT / "tools" / "test_service_doc.py")]
+    try:
+        res = subprocess.run(cmd, capture_output=True, text=True, cwd=str(ROOT), timeout=30)
+    except subprocess.TimeoutExpired:
+        print("[-] SS9 timed out after 30s", file=sys.stderr)
+        return False
+    except Exception as e:
+        print(f"[-] SS9 execution error: {e}", file=sys.stderr)
+        return False
+
+    if res.returncode != 0:
+        print(f"[-] SS9 documentation test failed:\n{res.stderr}\n{res.stdout}", file=sys.stderr)
+        return False
+    print("[+] SS9 service documentation guide & invariants (D1..D6)")
+    return True
+
+
+def test_ss10_recovery():
+    return _run_cargo_test(
+        ["--test", "test_service_recovery"],
+        "SS10",
+        "service recovery subsystem & validation invariants (SR1..SR5)",
+    )
+
+
 def main():
     checks = [
         test_ss1_data_model_integrity,
@@ -109,6 +145,9 @@ def main():
         test_ss5_configuration_subsystem,
         test_ss6_automated_integration,
         test_ss7_security_policy,
+        test_ss8_observability,
+        test_ss9_documentation,
+        test_ss10_recovery,
     ]
     all_ok = True
     for c in checks:
@@ -116,7 +155,7 @@ def main():
             all_ok = False
 
     if all_ok:
-        print("\nPASS: service_suites criteria (SS1..SS7)")
+        print("\nPASS: service_suites criteria (SS1..SS10)")
         return 0
     else:
         print("\nFAIL: service_suites criteria", file=sys.stderr)
@@ -125,3 +164,4 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+
