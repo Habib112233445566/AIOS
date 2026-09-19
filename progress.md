@@ -1,5 +1,29 @@
 # Progress Log
 
+## 2026-09-19 — T-01597..T-01606: Filesystem Layout Epic CLOSED & Kernel Module Data Model Initialized (10/10 tasks)
+
+**What shipped:**
+- Completed Sub-Epic 10 and Finalized Filesystem Layout Epic (T-01597..T-01600):
+  - T-01597: Security review of recovery & validation against threats R-A1..R-A5.
+  - T-01598: Hardening of recovery harness (sandbox isolation, leak-free staging, bounded timeouts).
+  - T-01599: Documented Sub-Epic 10 in `docs/filesystem_layout.md`.
+  - T-01600: Verification & evidence milestone closure for Sub-Epic 10 and entire Filesystem Layout Epic (T-01501..T-01600).
+- Executed Sub-Epic 1 (Kernel Module Management / Data Model, T-01601..T-01606):
+  - T-01601: Research into sysfs/procfs module representation, modprobe.d directives, and CIS hardening.
+  - T-01602: Specification of `ModuleInfo`, `ModprobeRule`, `KernelModuleConfig`, and invariants KM1..KM5.
+  - T-01603: Scaffolding `code/aiosh-rust/aiosh-core/src/kernel_module.rs` and crate registration.
+  - T-01604: Implementation of complete data model, validation engine, presets, and `/proc/modules` parser.
+  - T-01605: Unit test execution (6/6 tests passing in `kernel_module::tests`).
+  - T-01606: Integration test suite in `code/aiosh-rust/aiosh-core/tests/test_kernel_module_data_model.rs` (6/6 passing).
+- Conducted comprehensive batch security audit in `docs/tasks/evidence/SECURITY_AUDIT_BATCH_T01597_T01606.md`.
+
+**Verified:**
+- `cargo test -p aiosh-core --lib kernel_module` (6 passed, 0 failed).
+- `cargo test -p aiosh-core --test test_kernel_module_data_model` (6 passed, 0 failed).
+- `python tools/test_fs_layout_suites.py` (FL1..FL14 PASS).
+- `python -c "import tools.task_ledger as tl; print(tl.validate_state())"` (valid, 1606 completed).
+- Next task pointer advances to **T-01607** (`Phase 1 — Linux Base System & Bootable Target / Kernel Module Management / data model: Security Review`).
+
 ## 2026-09-19 — T-01587..T-01596: Sub-Epic 9 Documentation Closed & Sub-Epic 10 Recovery & Validation (Criteria FL1..FL14, 10/10 tasks)
 
 **What shipped:**

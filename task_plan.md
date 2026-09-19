@@ -33,6 +33,23 @@ Strategic decision to adopt **Kali Linux** as the primary underlying distributio
 - **Base Substrate**: Rebased OS target onto **Kali Linux Rolling (Debian-derived)**. Leverages Kali's 600+ pre-packaged penetration testing binaries, out-of-the-box kernel wireless injection drivers, and package ecosystem (`apt`).
 - **Tool Architecture (Pillar A)**: Zero from-scratch tool development. Wrap Kali's native binaries (`airmon-ng`, `airodump-ng`, `aircrack-ng`, `nmap`, `gobuster`, `arp-scan`, `hashcat`, `tshark`, `sqlmap`) with AIOS Policy Enforcement Point (PEP) gating, runtime bounds, and SQLite WAL audit logging.
 - **Desktop Interface (Pillar B)**: Deliver a Windows 10/11 desktop experience via XFCE `kali-undercover` or KDE Plasma Fluent themes, eliminating Linux terminal friction for operators.
+### 2026-09-19 — MILESTONE: Filesystem Layout Epic CLOSED (T-01501..T-01600) & Kernel Module Data Model Initialized (T-01601..T-01606)
+
+Completed tasks T-01597 through T-01606:
+- **Filesystem Layout Epic Finalization (T-01597..T-01600)**:
+  - Sub-Epic 10 security review (threats R-A1..R-A5), harness hardening (sandbox isolation, leak-free staging), documentation in `docs/filesystem_layout.md`, and final milestone closure.
+  - Finalized all 100 tasks of the Filesystem Layout Epic (`T-01501..T-01600`) with full FL1..FL14 battery passing.
+- **Kernel Module Management / Data Model (T-01601..T-01606)**:
+  - Research (sysfs/procfs interfaces, modprobe.d directives, CIS baseline).
+  - Specification (types `ModuleInfo`, `ModprobeRule`, `KernelModuleConfig`, and invariants KM1..KM5).
+  - Scaffolding `code/aiosh-rust/aiosh-core/src/kernel_module.rs` and crate registration.
+  - Implementation of data model, validation engine, `/proc/modules` parser, and canonical presets.
+  - Unit tests verified (6/6 passing in `kernel_module::tests`).
+  - Integration tests verified (6/6 passing in `test_kernel_module_data_model.rs`).
+- **Audit & Verification**:
+  - Comprehensive security audit in `docs/tasks/evidence/SECURITY_AUDIT_BATCH_T01597_T01606.md`.
+  - Next task pointer advances to **T-01607** (`Phase 1 — Linux Base System & Bootable Target / Kernel Module Management / data model: Security Review`).
+
 ### 2026-09-19 — BATCH COMPLETE: Tasks T-01587..T-01596 (Sub-Epic 9 Closed & Sub-Epic 10 Recovery & Validation FL14)
 
 Completed tasks T-01587 through T-01596:

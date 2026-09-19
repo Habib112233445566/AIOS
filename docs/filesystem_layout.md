@@ -891,9 +891,40 @@ python tools/test_fs_layout_suites.py
 - `T-01587`: [Documentation Security Review](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01587-documentation-security-review.md)
 - `T-01588`: [Documentation Hardening](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01588-documentation-hardening.md)
 - `T-01589`: [Documentation Documentation](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01589-documentation-documentation.md)
-- `T-01590`: Documentation Verification & Evidence *(closing task for Sub-Epic 9)*
+- `T-01590`: [Documentation Verification & Evidence](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01590-documentation-verification-evidenc.md)
 
+### Sub-Epic 10: Filesystem Layout Recovery & Validation (T-01591..T-01600)
 
+This sub-epic establishes and verifies fail-closed store corruption containment, canonical preset fallbacks, atomic crash consistency, and audit trail continuity for the Filesystem Layout subsystem:
+- **Recovery & Validation Invariants (Criteria FL14)**:
+  - **R1: Corruption Refusal & Containment**: Invalid, truncated, or malformed store files are rejected with error code `LOAD_STORE_FAILED` (CLI exit code 1 / MCP `ok: false`) without altering or destroying the corrupted store file on disk.
+  - **R2: Fallback to Canonical Presets**: When persistent stores are missing or corrupted, the system falls back cleanly to compiled-in canonical presets (`uefi_gpt_systemd_boot`, `legacy_bios_mbr_grub`, `cloud_init_overlay`).
+  - **R3: Recovery via Valid Replacement**: Replacing a corrupted store with a valid store restores full query and mutation capabilities without requiring daemon restarts.
+  - **R4: Atomic Write Crash Consistency**: Mutations stage to `.tmp.<pid>` with `O_CREAT | O_EXCL` and `fsync` before atomic `rename`. Failed validations leave existing stores untouched with zero leaked staging files.
+  - **R5: Audit Trail Continuity**: Failure and recovery operations emit structured audit records with accurate outcome tags (`"error"` vs `"ok"`/`"success"`).
 
+**Copy-Pasteable Invocations:**
 
+```bash
+# 1. Run the standalone recovery & validation test suite:
+python code/aiosh-cli/tests/test_fs_layout_recovery_validation.py
 
+# 2. Run the full aggregate test battery (FL1..FL14):
+python tools/test_fs_layout_suites.py
+```
+
+**Constraints & Known Limitations:**
+- **Forensic Preservation**: On-disk corrupted files are preserved for forensic review rather than automatically overwritten or repaired.
+- **Same-Filesystem Staging**: Staging files are created as siblings in the same directory to guarantee atomic `rename(2)` POSIX semantics.
+
+**Evidence Links:**
+- `T-01591`: [Recovery & Validation Research](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01591-recovery-validation-research.md)
+- `T-01592`: [Recovery & Validation Specification](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01592-recovery-validation-specification.md)
+- `T-01593`: [Recovery & Validation Scaffold](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01593-recovery-validation-scaffold.md)
+- `T-01594`: [Recovery & Validation Implementation](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01594-recovery-validation-implementation.md)
+- `T-01595`: [Recovery & Validation Unit Test](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01595-recovery-validation-unit-test.md)
+- `T-01596`: [Recovery & Validation Integration](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01596-recovery-validation-integration.md)
+- `T-01597`: [Recovery & Validation Security Review](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01597-recovery-validation-security-review.md)
+- `T-01598`: [Recovery & Validation Hardening](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01598-recovery-validation-hardening.md)
+- `T-01599`: [Recovery & Validation Documentation](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01599-recovery-validation-documentation.md)
+- `T-01600`: Recovery & Validation Verification & Evidence *(closing task for Sub-Epic 10 and entire Filesystem Layout Epic)*
