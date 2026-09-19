@@ -16,6 +16,8 @@ Criteria:
        validation contract + T-01544 store parse contract)
   FL10: filesystem layout automated lifecycle & edge cases (A1..A8: state machine, protection,
         fstab, probe, diff, corruption, audit)
+  FL11: filesystem layout security policy (P1..P5: PEP gating, wrong scope, path confinement,
+        positive authorized mutation, read-only ungated access)
 """
 
 from __future__ import annotations
@@ -164,6 +166,15 @@ def test_fl10_automated_cases() -> bool:
     )
 
 
+def test_fl11_security_policy() -> bool:
+    return _run_python_script(
+        ROOT / "code" / "aiosh-cli" / "tests" / "test_fs_layout_security_policy.py",
+        "FL11",
+        "filesystem layout security policy (P1..P5: PEP gating, wrong scope, path confinement, "
+        "positive authorized mutation, read-only ungated access)",
+    )
+
+
 def main() -> int:
     suites = [
         ("FL1", test_fl1_data_model),
@@ -176,6 +187,7 @@ def main() -> int:
         ("FL8", test_fl8_mcp_contract),
         ("FL9", test_fl9_configuration_contract),
         ("FL10", test_fl10_automated_cases),
+        ("FL11", test_fl11_security_policy),
     ]
 
     failed = []
@@ -188,7 +200,7 @@ def main() -> int:
         print(f"FAIL: fs_layout_suites failed criteria: {', '.join(failed)}", file=sys.stderr)
         return 1
 
-    print("PASS: fs_layout_suites criteria (FL1..FL10)")
+    print("PASS: fs_layout_suites criteria (FL1..FL11)")
     return 0
 
 

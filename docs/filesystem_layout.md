@@ -737,5 +737,41 @@ This sub-epic establishes the configuration specification, strict schema validat
 - `T-01547`: [Configuration Security Review](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01547-configuration-security-review.md)
 - `T-01548`: [Configuration Hardening](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01548-configuration-hardening.md)
 - `T-01549`: [Configuration Documentation](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01549-configuration-documentation.md)
-- `T-01550`: Configuration Verification & Evidence *(closing task for Sub-Epic 5)*
+- `T-01550`: [Configuration Verification & Evidence](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01550-configuration-verification-evidenc.md)
+
+### Sub-Epic 6: Filesystem Layout Automated Tests (T-01551..T-01560)
+
+This sub-epic delivers end-to-end automated test suites, state-machine verification, and cross-surface coverage for the Filesystem Layout subsystem:
+- Automated Lifecycle Suite (`code/aiosh-cli/tests/test_fs_layout_automated_cases.py`):
+  - A1: Full lifecycle state machine (`list` -> `register` -> `set-active` -> `show` -> `diff` -> `probe` -> `remove`).
+  - A2: Built-in deletion protection (prevents removal of canonical presets `standard_uefi`, `minimal_container`).
+  - A3: Active layout protection (prevents removal of currently active layout).
+  - A4: fstab import & 6-field generation roundtrip.
+  - A5: Target disk capacity feasibility probing (undersized, minimum, tight capacity warning, generous).
+  - A6: Differential analysis with destructive change detection (`destructive: true`).
+  - A7: Corrupted store tamper resistance (fail-closed preservation of on-disk files).
+  - A8: SQLite WAL audit trail verification (ADR-0035 hash chaining).
+- Aggregate Test Runner Integration (`tools/test_fs_layout_suites.py`):
+  - Criterion **FL10** registered and executed alongside FL1..FL9.
+
+**Running the Automated Tests:**
+```bash
+# Run standalone automated cases suite:
+python code/aiosh-cli/tests/test_fs_layout_automated_cases.py
+
+# Run full aggregate filesystem layout battery (FL1..FL10):
+python tools/test_fs_layout_suites.py
+```
+
+- `T-01551`: [Automated Tests Research](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01551-automated-tests-research.md)
+- `T-01552`: [Automated Tests Specification](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01552-automated-tests-specification.md)
+- `T-01553`: [Automated Tests Scaffold](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01553-automated-tests-scaffold.md)
+- `T-01554`: [Automated Tests Implementation](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01554-automated-tests-implementation.md)
+- `T-01555`: [Automated Tests Unit Test](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01555-automated-tests-unit-test.md)
+- `T-01556`: [Automated Tests Integration](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01556-automated-tests-integration.md)
+- `T-01557`: [Automated Tests Security Review](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01557-automated-tests-security-review.md)
+- `T-01558`: [Automated Tests Hardening](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01558-automated-tests-hardening.md)
+- `T-01559`: [Automated Tests Documentation](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01559-automated-tests-documentation.md)
+- `T-01560`: Automated Tests Verification & Evidence *(closing task for Sub-Epic 6)*
+
 

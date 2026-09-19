@@ -33,8 +33,20 @@ Strategic decision to adopt **Kali Linux** as the primary underlying distributio
 - **Base Substrate**: Rebased OS target onto **Kali Linux Rolling (Debian-derived)**. Leverages Kali's 600+ pre-packaged penetration testing binaries, out-of-the-box kernel wireless injection drivers, and package ecosystem (`apt`).
 - **Tool Architecture (Pillar A)**: Zero from-scratch tool development. Wrap Kali's native binaries (`airmon-ng`, `airodump-ng`, `aircrack-ng`, `nmap`, `gobuster`, `arp-scan`, `hashcat`, `tshark`, `sqlmap`) with AIOS Policy Enforcement Point (PEP) gating, runtime bounds, and SQLite WAL audit logging.
 - **Desktop Interface (Pillar B)**: Deliver a Windows 10/11 desktop experience via XFCE `kali-undercover` or KDE Plasma Fluent themes, eliminating Linux terminal friction for operators.
-- **Autonomous AI Kernel (Pillar C)**: Integrate the AIOS AI shell (`ai_agent.py` + local SLM) as the desktop co-pilot with smart routing across all native Kali security tools.
+### 2026-09-19 — MILESTONE: Filesystem Layout Automated Tests CLOSED 10/10 (T-01551..T-01560)
+
+Complete research, specification, scaffolding, implementation, unit testing, integration, security review, hardening, documentation, and verification for Phase 1 `Filesystem Layout / automated tests` (10/10 tasks, `T-01551..T-01560`):
+- **Automated Lifecycle & Edge-Case Suite (`code/aiosh-cli/tests/test_fs_layout_automated_cases.py`)**:
+  - Test cases A1..A8: full lifecycle state machine, built-in layout deletion protection, active layout deletion protection, fstab import/export cycle, capacity feasibility probing (under, minimum, tight slack warning, generous), differential destructive detection, corrupted store tamper resistance, and SQLite WAL audit logging.
+- **Aggregate Runner Integration (`tools/test_fs_layout_suites.py`)**:
+  - Registered criterion **FL10**, running alongside FL1..FL9 with 100% pass rate.
+- **Verification Battery**:
+  - `tools/test_fs_layout_suites.py` criteria FL1..FL10 PASS.
+  - `cargo test -p aiosh-core -p aiosh-cli -p aiosh-mcp` (655 passed, 0 failed).
+- **Milestone Advance**: task pointer advances to **T-01561** (`Phase 1 — Linux Base System & Bootable Target / Filesystem Layout / security policy: Research`).
+
 ### 2026-09-19 — MILESTONE: Filesystem Layout Configuration CLOSED 10/10 (T-01541..T-01550)
+
 
 Complete research, specification, scaffolding, implementation, unit testing, integration, security review, hardening, documentation, and verification for Phase 1 `Filesystem Layout / configuration` (10/10 tasks, `T-01541..T-01550`):
 - **Configuration Contract (`aiosh_core::fs_layout`)**:

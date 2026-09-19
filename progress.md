@@ -1,6 +1,28 @@
 # Progress Log
 
+## 2026-09-19 — T-01551..T-01560 SHIPPED: Filesystem Layout Automated Tests CLOSED (Criteria FL1..FL10, 10/10 tasks)
+
+**What shipped:**
+- Delivered end-to-end automated test suite `code/aiosh-cli/tests/test_fs_layout_automated_cases.py` (A1..A8):
+  - A1: Full lifecycle state machine (`list` -> `register` -> `set-active` -> `show` -> `diff` -> `probe` -> `remove`).
+  - A2: Built-in deletion protection (prevents removal of canonical presets `standard_uefi`, `minimal_container`).
+  - A3: Active layout deletion protection (prevents removal of currently active layout).
+  - A4: fstab import & 6-field generation roundtrip.
+  - A5: Target disk capacity feasibility probing (undersized, minimum, tight capacity warning, generous).
+  - A6: Differential analysis with destructive change detection (`destructive: true`).
+  - A7: Corrupted store tamper resistance (fail-closed preservation of on-disk files).
+  - A8: SQLite WAL audit trail verification (ADR-0035 hash chaining).
+- Integrated criterion **FL10** into aggregate test runner `tools/test_fs_layout_suites.py`.
+- Documented full automated test suite, execution examples, and limitations in `docs/filesystem_layout.md`.
+
+**Verified:**
+- `python tools/test_fs_layout_suites.py` (FL1..FL10 PASS).
+- `cargo test -p aiosh-core -p aiosh-cli -p aiosh-mcp` (655 passed, 0 failed).
+- Milestone: **Filesystem Layout / automated tests CLOSED — 10/10 tasks** (T-01551..T-01560).
+- Next task pointer advances to **T-01561** (`Phase 1 — Linux Base System & Bootable Target / Filesystem Layout / security policy: Research`).
+
 ## 2026-09-19 — T-01541..T-01550 SHIPPED: Filesystem Layout Configuration CLOSED (Criteria FL1..FL9, 10/10 tasks)
+
 
 **What shipped:**
 - Completed the configuration specification, validation engine, and store parsing for Filesystem Layout (`aiosh_core::fs_layout` and `aiosh_core::fs_layout_service`):
