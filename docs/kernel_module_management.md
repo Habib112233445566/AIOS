@@ -260,5 +260,64 @@ The MCP (Model Context Protocol) API surface enables AI agents to query, configu
 - Security Review: `docs/tasks/evidence/T-01637-mcp-api-surface-security-review.md`.
 - Hardening: `docs/tasks/evidence/T-01638-mcp-api-surface-hardening.md`.
 
+---
+
+## 8. Configuration Subsystem
+
+The Configuration Subsystem manages bidirectional synchronization between the canonical AIOS JSON store (`KernelModuleStore`) and host Linux configuration files (`/etc/modprobe.d/` and `/etc/modules-load.d/`).
+
+### 8.1 Configuration Invariants (CFG-KM1..CFG-KM5)
+- **CFG-KM1: Path Validity & Presence**: Default store path and export paths must be non-empty and well-formed.
+- **CFG-KM2: Path Bounds & Sanitization**: Paths must not exceed 1024 bytes and must not contain ASCII control characters (`\x00`..`\x1F`, `\x7F`).
+- **CFG-KM3: Pre-Commit Conflict Prevention**: An autoloaded module cannot be simultaneously blacklisted or disabled via install directive. Importing conflicting files is rejected before writing.
+- **CFG-KM4: Document Size Ceilings**: Stores and import buffers are capped at `MAX_MODULE_DOC_BYTES` (10 MiB) to prevent memory exhaustion.
+- **CFG-KM5: Roundtrip Fidelity**: Exporting configuration directives and re-importing into a fresh store preserves exact semantic equivalence.
+
+### 8.2 Ingesting & Exporting Configurations
+
+#### CLI Ingestion
+```bash
+aiosh mod import --store /etc/aios/kernel_modules.json \
+                 --modprobe /etc/modprobe.d/custom.conf \
+                 --autoload /etc/modules-load.d/custom.conf \
+                 --json
+```
+
+**JSON Response**:
+```json
+{
+  "code": 0,
+  "data": {
+    "modprobe_imported": 2,
+    "autoload_imported": 2
+  },
+  "error": null
+}
+```
+
+#### CLI Export
+```bash
+aiosh mod export --store /etc/aios/kernel_modules.json \
+                 --modprobe /etc/modprobe.d/aios.conf \
+                 --autoload /etc/modules-load.d/aios.conf \
+                 --json
+```
+
+### 8.3 Constraints & Known Limitations
+1. Module names must consist only of ASCII alphanumeric characters and underscores (`^[a-zA-Z0-9_]+$`). Hyphens in module names must be converted to underscores per Linux kernel conventions.
+2. Ingesting directives that violate mutual exclusion (e.g. blacklisting an already autoloaded module) will fail with exit code 1 (`IMPORT_MODPROBE_FAILED` or `IMPORT_AUTOLOAD_FAILED`).
+3. Comments (`#` and `;`) are ignored during file ingestion and not preserved in the canonical JSON store.
+
+### 8.4 Verification Evidence
+- Research: `docs/tasks/evidence/T-01641-configuration-research.md`.
+- Specification: `docs/tasks/evidence/T-01642-configuration-specification.md`.
+- Scaffold: `docs/tasks/evidence/T-01643-configuration-scaffold.md`.
+- Implementation: `docs/tasks/evidence/T-01644-configuration-implementation.md`.
+- Unit Test: `docs/tasks/evidence/T-01645-configuration-unit-test.md`.
+- Integration: `docs/tasks/evidence/T-01646-configuration-integration.md`.
+- Security Review: `docs/tasks/evidence/T-01647-configuration-security-review.md`.
+- Hardening: `docs/tasks/evidence/T-01648-configuration-hardening.md`.
+
+
 
 
