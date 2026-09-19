@@ -856,7 +856,43 @@ python tools/test_fs_layout_suites.py
 - `T-01577`: [Observability Security Review](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01577-observability-security-review.md)
 - `T-01578`: [Observability Hardening](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01578-observability-hardening.md)
 - `T-01579`: [Observability Documentation](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01579-observability-documentation.md)
-- `T-01580`: Observability Verification & Evidence *(closing task for Sub-Epic 8)*
+- `T-01580`: [Observability Verification & Evidence](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01580-observability-verification-evidenc.md)
+
+### Sub-Epic 9: Filesystem Layout Documentation (T-01581..T-01590)
+
+This sub-epic establishes and verifies the automated documentation testing, schema parity, evidence link integrity, and error code completeness for the Filesystem Layout subsystem:
+- **Documentation Invariants (Criteria FL13)**:
+  - **D1: CLI Subcommand Completeness**: `aiosh layout --help` advertises all 10 subcommands (`list`, `show`, `validate`, `probe`, `diff`, `fstab`, `register`, `set-active`, `remove`, `import-fstab`).
+  - **D2: MCP Manifest Schema Parity**: All 10 tools advertised in `tools/list` have matching parameter definitions with `additionalProperties: false`.
+  - **D3: Evidence Link Integrity**: Every task evidence markdown link in `docs/filesystem_layout.md` resolves to an existing file under `docs/tasks/evidence/`.
+  - **D4: JSON Snippet Syntactic Validity**: All JSON code blocks in `docs/filesystem_layout.md` parse as valid JSON.
+  - **D5: Error Code Documentation Completeness**: All 21 error codes used across CLI and MCP are documented in §4.12.
+
+**Copy-Pasteable Invocations:**
+
+```bash
+# 1. Run the standalone documentation test suite:
+python code/aiosh-cli/tests/test_fs_layout_documentation.py
+
+# 2. Run the full aggregate test battery (FL1..FL13):
+python tools/test_fs_layout_suites.py
+```
+
+**Constraints & Known Limitations:**
+- **Static vs Dynamic Verification**: Documentation tests verify lexical parity, link integrity, and schema declarations; functional behavior is verified by FL1..FL12.
+
+**Evidence Links:**
+- `T-01581`: [Documentation Research](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01581-documentation-research.md)
+- `T-01582`: [Documentation Specification](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01582-documentation-specification.md)
+- `T-01583`: [Documentation Scaffold](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01583-documentation-scaffold.md)
+- `T-01584`: [Documentation Implementation](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01584-documentation-implementation.md)
+- `T-01585`: [Documentation Unit Test](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01585-documentation-unit-test.md)
+- `T-01586`: [Documentation Integration](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01586-documentation-integration.md)
+- `T-01587`: [Documentation Security Review](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01587-documentation-security-review.md)
+- `T-01588`: [Documentation Hardening](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01588-documentation-hardening.md)
+- `T-01589`: [Documentation Documentation](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01589-documentation-documentation.md)
+- `T-01590`: Documentation Verification & Evidence *(closing task for Sub-Epic 9)*
+
 
 
 

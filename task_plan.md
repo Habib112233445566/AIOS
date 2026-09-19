@@ -33,6 +33,30 @@ Strategic decision to adopt **Kali Linux** as the primary underlying distributio
 - **Base Substrate**: Rebased OS target onto **Kali Linux Rolling (Debian-derived)**. Leverages Kali's 600+ pre-packaged penetration testing binaries, out-of-the-box kernel wireless injection drivers, and package ecosystem (`apt`).
 - **Tool Architecture (Pillar A)**: Zero from-scratch tool development. Wrap Kali's native binaries (`airmon-ng`, `airodump-ng`, `aircrack-ng`, `nmap`, `gobuster`, `arp-scan`, `hashcat`, `tshark`, `sqlmap`) with AIOS Policy Enforcement Point (PEP) gating, runtime bounds, and SQLite WAL audit logging.
 - **Desktop Interface (Pillar B)**: Deliver a Windows 10/11 desktop experience via XFCE `kali-undercover` or KDE Plasma Fluent themes, eliminating Linux terminal friction for operators.
+### 2026-09-19 — BATCH COMPLETE: Tasks T-01587..T-01596 (Sub-Epic 9 Closed & Sub-Epic 10 Recovery & Validation FL14)
+
+Completed tasks T-01587 through T-01596:
+- **Sub-Epic 9 Documentation Finalization (T-01587..T-01590)**:
+  - Security review (threats D-A1..D-A4), hardening (malformed markdown resilience, bounded reads), documentation in `docs/filesystem_layout.md`, and milestone closure verification.
+- **Sub-Epic 10 Recovery & Validation (T-01591..T-01596)**:
+  - Research (corruption failure modes, crash consistency), specification (criteria R1..R5), scaffolding, test implementation in `code/aiosh-cli/tests/test_fs_layout_recovery_validation.py`, unit test verification, and test runner integration (**FL14** in `tools/test_fs_layout_suites.py`).
+- **Audit & Verification**:
+  - Full battery `tools/test_fs_layout_suites.py` criteria FL1..FL14 PASS.
+  - Comprehensive security audit in `docs/tasks/evidence/SECURITY_AUDIT_BATCH_T01587_T01596.md`.
+- **Task Pointer Advance**:
+  - Next task pointer advances to **T-01597** (`Phase 1 — Linux Base System & Bootable Target / Filesystem Layout / recovery & validation: Security Review`).
+
+### 2026-09-19 — MILESTONE: Filesystem Layout Documentation CLOSED 10/10 (T-01581..T-01590)
+
+Complete research, specification, scaffolding, implementation, unit testing, integration, security review, hardening, documentation, and verification for Phase 1 `Filesystem Layout / documentation` (10/10 tasks, `T-01581..T-01590`):
+- **Documentation Verification & Schema Parity (`code/aiosh-cli/tests/test_fs_layout_documentation.py`)**:
+  - Test cases D1..D5: CLI subcommand completeness in `aiosh layout --help`, MCP manifest schema parity in `aiosh-mcp tools/list` with strict `additionalProperties: false`, in-tree evidence link integrity (all 79 referenced task files verified), JSON code block syntactic validity (all 18 code blocks), and error code documentation completeness (all 21 error codes documented in §4.12).
+- **Aggregate Runner Integration (`tools/test_fs_layout_suites.py`)**:
+  - Registered criterion **FL13**, running alongside FL1..FL12 with 100% pass rate.
+- **Verification Battery**:
+  - `tools/test_fs_layout_suites.py` criteria FL1..FL13 PASS.
+- **Milestone Advance**: task pointer advances to **T-01591** (`Phase 1 — Linux Base System & Bootable Target / Filesystem Layout / recovery & validation: Research`).
+
 ### 2026-09-19 — MILESTONE: Filesystem Layout Observability CLOSED 10/10 (T-01571..T-01580)
 
 Complete research, specification, scaffolding, implementation, unit testing, integration, security review, hardening, documentation, and verification for Phase 1 `Filesystem Layout / observability` (10/10 tasks, `T-01571..T-01580`):

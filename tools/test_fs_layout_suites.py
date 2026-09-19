@@ -22,6 +22,9 @@ Criteria:
         outcome fidelity, state inspection parity, destructive mutation flagging)
   FL13: filesystem layout documentation (D1..D5: CLI subcommands, MCP schema parity, evidence links,
         JSON syntax, error codes)
+  FL14: filesystem layout recovery & validation (R1..R5: corruption refusal & containment,
+        fallback to canonical presets, recovery via valid replacement, atomic write crash consistency,
+        audit trail continuity)
 """
 
 from __future__ import annotations
@@ -197,6 +200,16 @@ def test_fl13_documentation() -> bool:
     )
 
 
+def test_fl14_recovery_validation() -> bool:
+    return _run_python_script(
+        ROOT / "code" / "aiosh-cli" / "tests" / "test_fs_layout_recovery_validation.py",
+        "FL14",
+        "filesystem layout recovery & validation (R1..R5: corruption refusal & containment, "
+        "fallback to canonical presets, recovery via valid replacement, atomic write crash consistency, "
+        "audit trail continuity)",
+    )
+
+
 def main() -> int:
     suites = [
         ("FL1", test_fl1_data_model),
@@ -212,6 +225,7 @@ def main() -> int:
         ("FL11", test_fl11_security_policy),
         ("FL12", test_fl12_observability),
         ("FL13", test_fl13_documentation),
+        ("FL14", test_fl14_recovery_validation),
     ]
 
     failed = []
@@ -224,7 +238,7 @@ def main() -> int:
         print(f"FAIL: fs_layout_suites failed criteria: {', '.join(failed)}", file=sys.stderr)
         return 1
 
-    print("PASS: fs_layout_suites criteria (FL1..FL13)")
+    print("PASS: fs_layout_suites criteria (FL1..FL14)")
     return 0
 
 

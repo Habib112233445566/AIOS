@@ -1,5 +1,45 @@
 # Progress Log
 
+## 2026-09-19 — T-01587..T-01596: Sub-Epic 9 Documentation Closed & Sub-Epic 10 Recovery & Validation (Criteria FL1..FL14, 10/10 tasks)
+
+**What shipped:**
+- Completed Sub-Epic 9 closing tasks:
+  - T-01587: Security review of documentation (threat model D-A1..D-A4).
+  - T-01588: Documentation hardening (bounded reads, malformed markdown resilience, fd leak protection).
+  - T-01589: Documentation documentation in `docs/filesystem_layout.md`.
+  - T-01590: Sub-Epic 9 verification and evidence milestone closure.
+- Executed Sub-Epic 10 (Filesystem Layout Recovery & Validation):
+  - T-01591: Recovery & validation research (store corruption, crash consistency, canonical preset fallbacks).
+  - T-01592: Recovery & validation specification (criteria R1..R5 formalized).
+  - T-01593: Recovery & validation scaffolding (`code/aiosh-cli/tests/test_fs_layout_recovery_validation.py`).
+  - T-01594: Recovery & validation implementation (test suite covering R1..R5).
+  - T-01595: Recovery & validation unit test (standalone execution with 100% pass rate).
+  - T-01596: Recovery & validation integration (registered criterion **FL14** in `tools/test_fs_layout_suites.py`).
+- Integrated criterion **FL14** into aggregate test runner `tools/test_fs_layout_suites.py`.
+- Conducted comprehensive batch security audit in `docs/tasks/evidence/SECURITY_AUDIT_BATCH_T01587_T01596.md`.
+
+**Verified:**
+- `python tools/test_fs_layout_suites.py` (FL1..FL14 PASS).
+- `python -c "import tools.task_ledger as tl; print(tl.validate_state())"` (valid, 1596 completed).
+- Next task pointer advances to **T-01597** (`Phase 1 — Linux Base System & Bootable Target / Filesystem Layout / recovery & validation: Security Review`).
+
+## 2026-09-19 — T-01581..T-01590 SHIPPED: Filesystem Layout Documentation CLOSED (Criteria FL1..FL13, 10/10 tasks)
+
+**What shipped:**
+- Delivered documentation test suite `code/aiosh-cli/tests/test_fs_layout_documentation.py` (D1..D5):
+  - D1: CLI subcommand completeness (`aiosh layout --help` advertises all 10 subcommands).
+  - D2: MCP manifest schema parity (`tools/list` matches all 10 tools with `additionalProperties: false`).
+  - D3: Evidence link integrity (all 79 task evidence links resolve to valid files on disk).
+  - D4: JSON snippet syntactic validity (all 18 JSON snippets parse cleanly).
+  - D5: Error code documentation completeness (all 21 error codes documented in §4.12).
+- Integrated criterion **FL13** into aggregate test runner `tools/test_fs_layout_suites.py`.
+- Documented documentation test criteria, copy-pasteable examples, and limitations in `docs/filesystem_layout.md`.
+
+**Verified:**
+- `python tools/test_fs_layout_suites.py` (FL1..FL13 PASS).
+- Milestone: **Filesystem Layout / documentation CLOSED — 10/10 tasks** (T-01581..T-01590).
+- Next task pointer advances to **T-01591** (`Phase 1 — Linux Base System & Bootable Target / Filesystem Layout / recovery & validation: Research`).
+
 ## 2026-09-19 — T-01571..T-01580 SHIPPED: Filesystem Layout Observability CLOSED (Criteria FL1..FL12, 10/10 tasks)
 
 **What shipped:**
