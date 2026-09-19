@@ -1,5 +1,28 @@
 # Progress Log
 
+## 2026-09-19 — T-01607..T-01616: Kernel Module Data Model CLOSED & Core Service Implemented (10/10 tasks)
+
+**What shipped:**
+- Completed Sub-Epic 1 (Kernel Module Management Data Model, T-01607..T-01610):
+  - T-01607: Security review against threats KM-A1..KM-A5 (command injection, parameter safety, conflict prevention, CIS hardening).
+  - T-01608: Hardening against bounded lengths, metacharacter neutralization, and panic-free error handling.
+  - T-01609: Authored comprehensive guide `docs/kernel_module_management.md`.
+  - T-01610: Sub-Epic 1 milestone closure verification (all invariants KM1..KM5 passing).
+- Executed Sub-Epic 2 (Kernel Module Management Core Service, T-01611..T-01616):
+  - T-01611: Research into service coordination, store persistence, and procfs/sysfs introspection.
+  - T-01612: Formal specification of `KernelModuleStore`, `KernelModuleService`, and invariants KS1..KS5.
+  - T-01613: Scaffolding `code/aiosh-rust/aiosh-core/src/kernel_module_service.rs` and crate registration in `lib.rs`.
+  - T-01614: Implementation of store mutations, conflict detection, preset application, and procfs fallback.
+  - T-01615: In-tree unit testing (6/6 tests passing in `kernel_module_service::tests`).
+  - T-01616: External integration testing in `code/aiosh-rust/aiosh-core/tests/test_kernel_module_service.rs` (6/6 passing).
+- Conducted comprehensive batch security audit in `docs/tasks/evidence/SECURITY_AUDIT_BATCH_T01607_T01616.md`.
+
+**Verified:**
+- `cargo test -p aiosh-core --lib kernel_module_service` (6 passed, 0 failed).
+- `cargo test -p aiosh-core --test test_kernel_module_service` (6 passed, 0 failed).
+- `python -c "import tools.task_ledger as tl; print(tl.validate_state())"` (valid, 1616 completed).
+- Next task pointer advances to **T-01617** (`Phase 1 — Linux Base System & Bootable Target / Kernel Module Management / core service: Security Review`).
+
 ## 2026-09-19 — T-01597..T-01606: Filesystem Layout Epic CLOSED & Kernel Module Data Model Initialized (10/10 tasks)
 
 **What shipped:**
