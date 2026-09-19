@@ -10085,8 +10085,154 @@ fn cmd_kernel_module(args: &[String]) -> i32 {
             }
             0
         }
+        Some("import") => {
+            let modprobe_in = parse_flag(rest, "--modprobe");
+            let autoload_in = parse_flag(rest, "--autoload");
+
+            if modprobe_in.is_none() && autoload_in.is_none() {
+                let msg = "missing source file for 'import' (specify --modprobe <path> or --autoload <path>)";
+                classify_and_emit(
+                    &mut ctx,
+                    "kernel_module",
+                    "import",
+                    json!({ "error": msg }),
+                    "failure",
+                    None,
+                    Some("Missing import source"),
+                    "operator",
+                    None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_IMPORT_SOURCE", "message": msg } }));
+                } else {
+                    eprintln!("{}", msg);
+                }
+                return 2;
+            }
+
+            let mut store = match load_store() {
+                Ok(s) => s,
+                Err(e) => {
+                    classify_and_emit(
+                        &mut ctx,
+                        "kernel_module",
+                        "import",
+                        json!({ "error": &e }),
+                        "failure",
+                        None,
+                        Some("Failed to load store"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "LOAD_STORE_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("failed to load store: {}", sanitize_terminal(&e));
+                    }
+                    return 1;
+                }
+            };
+
+            let mut modprobe_count = 0;
+            if let Some(ref path_str) = modprobe_in {
+                match aiosh_core::kernel_module_config::import_modprobe_file_to_store(&mut store, std::path::Path::new(path_str)) {
+                    Ok(c) => modprobe_count = c,
+                    Err(e) => {
+                        classify_and_emit(
+                            &mut ctx,
+                            "kernel_module",
+                            "import",
+                            json!({ "error": &e }),
+                            "failure",
+                            None,
+                            Some("Modprobe import error"),
+                            "operator",
+                            None,
+                        );
+                        if is_json {
+                            println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "IMPORT_MODPROBE_FAILED", "message": e } }));
+                        } else {
+                            eprintln!("failed to import modprobe: {}", sanitize_terminal(&e));
+                        }
+                        return 1;
+                    }
+                }
+            }
+
+            let mut autoload_count = 0;
+            if let Some(ref path_str) = autoload_in {
+                match aiosh_core::kernel_module_config::import_modules_load_file_to_store(&mut store, std::path::Path::new(path_str)) {
+                    Ok(c) => autoload_count = c,
+                    Err(e) => {
+                        classify_and_emit(
+                            &mut ctx,
+                            "kernel_module",
+                            "import",
+                            json!({ "error": &e }),
+                            "failure",
+                            None,
+                            Some("Autoload import error"),
+                            "operator",
+                            None,
+                        );
+                        if is_json {
+                            println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "IMPORT_AUTOLOAD_FAILED", "message": e } }));
+                        } else {
+                            eprintln!("failed to import autoload: {}", sanitize_terminal(&e));
+                        }
+                        return 1;
+                    }
+                }
+            }
+
+            if let Err(e) = save_store(&store) {
+                classify_and_emit(
+                    &mut ctx,
+                    "kernel_module",
+                    "import",
+                    json!({ "error": &e }),
+                    "failure",
+                    None,
+                    Some("Failed to save store"),
+                    "operator",
+                    None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "SAVE_STORE_FAILED", "message": e } }));
+                } else {
+                    eprintln!("failed to save store: {}", sanitize_terminal(&e));
+                }
+                return 1;
+            }
+
+            classify_and_emit(
+                &mut ctx,
+                "kernel_module",
+                "import",
+                json!({ "modprobe_imported": modprobe_count, "autoload_imported": autoload_count }),
+                "success",
+                None,
+                Some("Imported kernel module configuration"),
+                "operator",
+                None,
+            );
+
+            if is_json {
+                println!("{}", json!({
+                    "code": 0,
+                    "data": {
+                        "modprobe_imported": modprobe_count,
+                        "autoload_imported": autoload_count,
+                    },
+                    "error": serde_json::Value::Null
+                }));
+            } else {
+                println!("Imported {} modprobe rule(s) and {} autoload module(s).", modprobe_count, autoload_count);
+            }
+            0
+        }
         Some("--help") | Some("-h") | None => {
-            println!("aiosh mod — Kernel Module Management\n\nUsage:\n  aiosh mod list [--store <path>] [--proc-modules <path>] [--json]\n  aiosh mod show <name> [--store <path>] [--proc-modules <path>] [--json]\n  aiosh mod blacklist <module> [--store <path>] [--json]\n  aiosh mod unblacklist <module> [--store <path>] [--json]\n  aiosh mod options <module> <k=v...> [--store <path>] [--json]\n  aiosh mod autoload <module> [--store <path>] [--json]\n  aiosh mod unautoload <module> [--store <path>] [--json]\n  aiosh mod preset list [--json]\n  aiosh mod preset apply <preset_name> [--store <path>] [--json]\n  aiosh mod export [--store <path>] [--modprobe <path>] [--autoload <path>] [--json]");
+            println!("aiosh mod — Kernel Module Management\n\nUsage:\n  aiosh mod list [--store <path>] [--proc-modules <path>] [--json]\n  aiosh mod show <name> [--store <path>] [--proc-modules <path>] [--json]\n  aiosh mod blacklist <module> [--store <path>] [--json]\n  aiosh mod unblacklist <module> [--store <path>] [--json]\n  aiosh mod options <module> <k=v...> [--store <path>] [--json]\n  aiosh mod autoload <module> [--store <path>] [--json]\n  aiosh mod unautoload <module> [--store <path>] [--json]\n  aiosh mod preset list [--json]\n  aiosh mod preset apply <preset_name> [--store <path>] [--json]\n  aiosh mod export [--store <path>] [--modprobe <path>] [--autoload <path>] [--json]\n  aiosh mod import [--store <path>] [--modprobe <path>] [--autoload <path>] [--json]");
             0
         }
         Some(other) => {

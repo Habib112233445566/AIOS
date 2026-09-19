@@ -57,6 +57,7 @@ pub mod handoff;
 pub mod handoff_config;
 pub mod handoff_service;
 pub mod kernel_module;
+pub mod kernel_module_config;
 pub mod kernel_module_service;
 pub mod ledger;
 pub mod ledger_config;

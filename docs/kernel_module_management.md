@@ -175,4 +175,90 @@ The operator surface is exposed via `aiosh mod` (alias: `aiosh module`) in `code
 - In-tree unit tests: `cargo test -p aiosh-cli --bin aiosh test_cmd_kernel_module_flow` (100% pass rate).
 - Integration smoke tests: `code/aiosh-cli/tests/test_kernel_module_cli_smoke.py` (100% pass rate).
 
+---
+
+## 7. Agent MCP API Surface (`aios.kernel_module.*`)
+
+The MCP (Model Context Protocol) API surface enables AI agents to query, configure, and manage Linux kernel modules programmatically over JSON-RPC stdio.
+
+### 7.1 Tools & JSON-RPC Schemas
+
+1. `aios.kernel_module.list`:
+   - **Arguments**: `store_path` (optional string), `proc_modules_path` (optional string).
+   - **Returns**: `ok: bool`, `data: { loaded_modules: [...], rules: [...], autoload_modules: [...] }`.
+2. `aios.kernel_module.get`:
+   - **Arguments**: `module` (string, required), `store_path` (optional string), `proc_modules_path` (optional string).
+   - **Returns**: `ok: bool`, `data: { module: ModuleInfo }`.
+3. `aios.kernel_module.blacklist`:
+   - **Arguments**: `module` (string, required), `store_path` (optional string), `grant_id` (optional string).
+   - **Returns**: `ok: bool`, `data: { module: string, action: "blacklisted" }`.
+4. `aios.kernel_module.unblacklist`:
+   - **Arguments**: `module` (string, required), `store_path` (optional string), `grant_id` (optional string).
+   - **Returns**: `ok: bool`, `data: { module: string, action: "unblacklisted" }`.
+5. `aios.kernel_module.options`:
+   - **Arguments**: `module` (string, required), `options` (array of strings, required), `store_path` (optional string), `grant_id` (optional string).
+   - **Returns**: `ok: bool`, `data: { module: string, options: [...] }`.
+6. `aios.kernel_module.autoload`:
+   - **Arguments**: `module` (string, required), `store_path` (optional string), `grant_id` (optional string).
+   - **Returns**: `ok: bool`, `data: { module: string, action: "autoload_added" }`.
+7. `aios.kernel_module.unautoload`:
+   - **Arguments**: `module` (string, required), `store_path` (optional string), `grant_id` (optional string).
+   - **Returns**: `ok: bool`, `data: { module: string, action: "autoload_removed" }`.
+8. `aios.kernel_module.preset.list`:
+   - **Arguments**: None.
+   - **Returns**: `ok: bool`, `data: [ { name: string, description: string, ... } ]`.
+9. `aios.kernel_module.preset.apply`:
+   - **Arguments**: `preset_name` (string, required), `store_path` (optional string), `grant_id` (optional string).
+   - **Returns**: `ok: bool`, `data: { preset: string, action: "applied" }`.
+10. `aios.kernel_module.export`:
+    - **Arguments**: `store_path` (optional string).
+    - **Returns**: `ok: bool`, `data: { modprobe_conf: string, modules_load_conf: string }`.
+
+### 7.2 Example Tool Invocation
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "aios.kernel_module.blacklist",
+    "arguments": {
+      "module": "usb_storage",
+      "store_path": "/etc/aios/kernel_modules.json"
+    }
+  }
+}
+```
+
+**Response**:
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"ok\":true,\"data\":{\"action\":\"blacklisted\",\"module\":\"usb_storage\"}}"
+      }
+    ]
+  }
+}
+```
+
+### 7.3 Security Invariants (KM-M1..KM-M5)
+- **KM-M1: Schema Strictness**: All tools declare explicit input schemas with `additionalProperties: false` and bounded string lengths (`maxLength: 1024` for paths, `maxLength: 64` for module names).
+- **KM-M2: Path Sanitization**: Rejects paths with ASCII control characters (`\x00`..`\x1F`, `\x7F`) or length > 1024 characters.
+- **KM-M3: Pre-Commit Conflict Prevention**: Rejects blacklisting autoloaded modules or autoloading blacklisted modules with descriptive errors.
+- **KM-M4: Atomic Serialization**: Saves state via temporary sibling files and atomic rename to prevent partial writes.
+- **KM-M5: Capability Gating & Audit Logging**: Accepts optional `grant_id` for PEP authorization tracking and emits audit events.
+
+### 7.4 Verification Evidence
+- In-tree Rust unit test: `cargo test -p aiosh-mcp --bin aiosh-mcp test_mcp_kernel_module_tools` (`docs/tasks/evidence/T-01635-mcp-api-surface-unit-test.md`).
+- Integration smoke test: `python code/aiosh-mcp/tests/test_kernel_module_mcp_smoke.py` (`docs/tasks/evidence/T-01636-mcp-api-surface-integration.md`).
+- Security Review: `docs/tasks/evidence/T-01637-mcp-api-surface-security-review.md`.
+- Hardening: `docs/tasks/evidence/T-01638-mcp-api-surface-hardening.md`.
+
+
 
