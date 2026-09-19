@@ -33,6 +33,17 @@ Strategic decision to adopt **Kali Linux** as the primary underlying distributio
 - **Base Substrate**: Rebased OS target onto **Kali Linux Rolling (Debian-derived)**. Leverages Kali's 600+ pre-packaged penetration testing binaries, out-of-the-box kernel wireless injection drivers, and package ecosystem (`apt`).
 - **Tool Architecture (Pillar A)**: Zero from-scratch tool development. Wrap Kali's native binaries (`airmon-ng`, `airodump-ng`, `aircrack-ng`, `nmap`, `gobuster`, `arp-scan`, `hashcat`, `tshark`, `sqlmap`) with AIOS Policy Enforcement Point (PEP) gating, runtime bounds, and SQLite WAL audit logging.
 - **Desktop Interface (Pillar B)**: Deliver a Windows 10/11 desktop experience via XFCE `kali-undercover` or KDE Plasma Fluent themes, eliminating Linux terminal friction for operators.
+### 2026-09-19 — MILESTONE: Filesystem Layout Observability CLOSED 10/10 (T-01571..T-01580)
+
+Complete research, specification, scaffolding, implementation, unit testing, integration, security review, hardening, documentation, and verification for Phase 1 `Filesystem Layout / observability` (10/10 tasks, `T-01571..T-01580`):
+- **Observability & Telemetry (`code/aiosh-cli/tests/test_fs_layout_observability.py`)**:
+  - Test cases O1..O5: telemetry emission completeness (100% emission rate for CLI and MCP), audit correlation & queryability via `aiosh audit tail`, outcome fidelity (`ok`/`success`, `error`, `refused`), state inspection parity between CLI and MCP, and destructive mutation flagging (`destructive: true` on partition shrink/delete).
+- **Aggregate Runner Integration (`tools/test_fs_layout_suites.py`)**:
+  - Registered criterion **FL12**, running alongside FL1..FL11 with 100% pass rate.
+- **Verification Battery**:
+  - `tools/test_fs_layout_suites.py` criteria FL1..FL12 PASS.
+- **Milestone Advance**: task pointer advances to **T-01581** (`Phase 1 — Linux Base System & Bootable Target / Filesystem Layout / documentation: Research`).
+
 ### 2026-09-19 — MILESTONE: Filesystem Layout Security Policy CLOSED 10/10 (T-01561..T-01570)
 
 Complete research, specification, scaffolding, implementation, unit testing, integration, security review, hardening, documentation, and verification for Phase 1 `Filesystem Layout / security policy` (10/10 tasks, `T-01561..T-01570`):

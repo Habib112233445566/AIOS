@@ -814,7 +814,50 @@ python tools/test_fs_layout_suites.py
 - `T-01567`: [Security Policy Security Review](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01567-security-policy-security-review.md)
 - `T-01568`: [Security Policy Hardening](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01568-security-policy-hardening.md)
 - `T-01569`: [Security Policy Documentation](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01569-security-policy-documentation.md)
-- `T-01570`: Security Policy Verification & Evidence *(closing task for Sub-Epic 7)*
+- `T-01570`: [Security Policy Verification & Evidence](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01570-security-policy-verification-evidenc.md)
+
+### Sub-Epic 8: Filesystem Layout Observability (T-01571..T-01580)
+
+This sub-epic establishes and verifies the observability, telemetry emission, and audit queryability for the Filesystem Layout subsystem:
+- **Observability Invariants (Criteria FL12)**:
+  - **O1: Telemetry Emission Completeness**: Every invocation (CLI subcommand or MCP tool) emits an audit event into SQLite WAL `audit.db` in table `audit_ring`.
+  - **O2: Audit Correlation & Queryability**: Events can be correlated by layout target ID and tool name via `aiosh audit tail`.
+  - **O3: Outcome Fidelity**: Results are accurately categorized as `"ok"`/`"success"` (completed), `"error"` (validation or I/O failure), or `"refused"` (policy enforcement denial).
+  - **O4: State Inspection Parity**: In-band status telemetry (`active_layout` and `layouts` count) is consistently reported across CLI (`layout list --json`) and MCP (`aios.fs_layout.list`).
+  - **O5: Destructive Mutation Flagging**: Layout diffing and state transitions explicitly report `destructive: true` when partitions are shrunk or deleted.
+
+**Copy-Pasteable Invocations:**
+
+```bash
+# 1. Query recent filesystem layout audit telemetry via the CLI:
+aiosh audit tail --json -n 20
+
+# 2. Inspect active filesystem layout state:
+aiosh layout list --json
+
+# 3. Run the standalone observability test suite:
+python code/aiosh-cli/tests/test_fs_layout_observability.py
+
+# 4. Run the full aggregate test battery (FL1..FL12):
+python tools/test_fs_layout_suites.py
+```
+
+**Constraints & Known Limitations:**
+- **Local Storage Boundary**: Audit events are persisted locally in `$AIOSH_HOME/audit.db`. Distributed log forwarding requires external collector plugins if multi-host aggregation is needed.
+- **Bounded Tail Queries**: Audit queries enforce an explicit `-n <count>` limit (default 60) to prevent unbounded memory consumption on large audit rings.
+
+**Evidence Links:**
+- `T-01571`: [Observability Research](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01571-observability-research.md)
+- `T-01572`: [Observability Specification](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01572-observability-specification.md)
+- `T-01573`: [Observability Scaffold](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01573-observability-scaffold.md)
+- `T-01574`: [Observability Implementation](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01574-observability-implementation.md)
+- `T-01575`: [Observability Unit Test](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01575-observability-unit-test.md)
+- `T-01576`: [Observability Integration](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01576-observability-integration.md)
+- `T-01577`: [Observability Security Review](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01577-observability-security-review.md)
+- `T-01578`: [Observability Hardening](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01578-observability-hardening.md)
+- `T-01579`: [Observability Documentation](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01579-observability-documentation.md)
+- `T-01580`: Observability Verification & Evidence *(closing task for Sub-Epic 8)*
+
 
 
 

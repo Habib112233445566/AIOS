@@ -20,6 +20,8 @@ Criteria:
         positive authorized mutation, read-only ungated access)
   FL12: filesystem layout observability (O1..O5: audit emission completeness, correlation & queryability,
         outcome fidelity, state inspection parity, destructive mutation flagging)
+  FL13: filesystem layout documentation (D1..D5: CLI subcommands, MCP schema parity, evidence links,
+        JSON syntax, error codes)
 """
 
 from __future__ import annotations
@@ -186,6 +188,15 @@ def test_fl12_observability() -> bool:
     )
 
 
+def test_fl13_documentation() -> bool:
+    return _run_python_script(
+        ROOT / "code" / "aiosh-cli" / "tests" / "test_fs_layout_documentation.py",
+        "FL13",
+        "filesystem layout documentation (D1..D5: CLI subcommands, MCP schema parity, evidence links, "
+        "JSON syntax, error codes)",
+    )
+
+
 def main() -> int:
     suites = [
         ("FL1", test_fl1_data_model),
@@ -200,6 +211,7 @@ def main() -> int:
         ("FL10", test_fl10_automated_cases),
         ("FL11", test_fl11_security_policy),
         ("FL12", test_fl12_observability),
+        ("FL13", test_fl13_documentation),
     ]
 
     failed = []
@@ -212,7 +224,7 @@ def main() -> int:
         print(f"FAIL: fs_layout_suites failed criteria: {', '.join(failed)}", file=sys.stderr)
         return 1
 
-    print("PASS: fs_layout_suites criteria (FL1..FL12)")
+    print("PASS: fs_layout_suites criteria (FL1..FL13)")
     return 0
 
 

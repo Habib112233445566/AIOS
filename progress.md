@@ -1,5 +1,22 @@
 # Progress Log
 
+## 2026-09-19 — T-01571..T-01580 SHIPPED: Filesystem Layout Observability CLOSED (Criteria FL1..FL12, 10/10 tasks)
+
+**What shipped:**
+- Delivered observability test suite `code/aiosh-cli/tests/test_fs_layout_observability.py` (O1..O5):
+  - O1: Telemetry emission completeness (CLI & MCP invocations emit audit rows).
+  - O2: Audit correlation & queryability (filter by tool and target via audit tail).
+  - O3: Outcome fidelity (ok/success, error, refused correctly logged).
+  - O4: State inspection parity (active layout & profile counts observable on CLI & MCP).
+  - O5: Destructive mutation flagging (destructive: true reported on partition shrink/delete).
+- Integrated criterion **FL12** into aggregate test runner `tools/test_fs_layout_suites.py`.
+- Documented observability invariants, invocations, constraints, and limitations in `docs/filesystem_layout.md`.
+
+**Verified:**
+- `python tools/test_fs_layout_suites.py` (FL1..FL12 PASS).
+- Milestone: **Filesystem Layout / observability CLOSED — 10/10 tasks** (T-01571..T-01580).
+- Next task pointer advances to **T-01581** (`Phase 1 — Linux Base System & Bootable Target / Filesystem Layout / documentation: Research`).
+
 ## 2026-09-19 — T-01561..T-01570 SHIPPED: Filesystem Layout Security Policy CLOSED (Criteria FL1..FL11, 10/10 tasks)
 
 **What shipped:**
