@@ -26,7 +26,7 @@ graph TD
         DiffEngine["Diff Engine (LayoutDiff, Destructive Detection)"]
         ProbeEngine["Target Probing & Headroom Engine"]
         Fstab["Fstab Parser & Generator (fstab 5)"]
-        Validator["FL1..FL5 Invariant Validation Engine"]
+        Validator["FL1..FL6 Invariant Validation Engine"]
     end
 
     subgraph TargetSurfaces["Target System State"]
@@ -58,7 +58,7 @@ graph TD
 ## 2. Core Service & Data Model
 
 The implementation resides across two modules:
-- [`code/aiosh-rust/aiosh-core/src/fs_layout.rs`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/code/aiosh-rust/aiosh-core/src/fs_layout.rs): Data structures, GPT GUID mappings, fstab parser/serializer, and FL1..FL5 validators.
+- [`code/aiosh-rust/aiosh-core/src/fs_layout.rs`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/code/aiosh-rust/aiosh-core/src/fs_layout.rs): Data structures, GPT GUID mappings, fstab parser/serializer, and FL1..FL6 validators.
 - [`code/aiosh-rust/aiosh-core/src/fs_layout_service.rs`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/code/aiosh-rust/aiosh-core/src/fs_layout_service.rs): Service coordinator, store registry, target disk evaluation, layout diffing, and persistence.
 
 ### 2.1 Core Types & Entities
@@ -67,6 +67,7 @@ The implementation resides across two modules:
    - Manages profile registry (`BTreeMap<String, FilesystemLayoutSpec>`).
    - Tracks `active_layout_id: String` (defaults to `aios-uefi-standard-v1`).
    - Methods: `register_layout()`, `get_layout()`, `list_layouts()`, `remove_layout()`, `get_active_layout()`, `set_active_layout()`.
+   - The store *document* refuses unknown top-level fields at load, by name (T-01544; §6.22). Field set unchanged.
 2. **`FilesystemLayoutService`**:
    - `probe_target(layout_id, target_disk_bytes) -> Result<TargetEvaluation, String>`
    - `diff_layouts(source_id, target_id) -> Result<LayoutDiff, String>`
@@ -85,12 +86,13 @@ The implementation resides across two modules:
 
 ## 3. Invariant Systems
 
-### 3.1 Data Model Invariants (`FL1..FL5`)
+### 3.1 Data Model Invariants (`FL1..FL6`)
 1. **`FL1` (Single Root Mount)**: Exactly one entry in `mounts` must have `path == "/"`, and its pass number must be `1`. Non-root entries cannot have pass number `1`.
 2. **`FL2` (Path Hygiene)**: All paths must be absolute, cannot contain relative traversals (`.` or `..`), double slashes (`//`), control characters, or trailing slashes (except `/`).
 3. **`FL3` (Mount Hierarchy Topology)**: No duplicate mount point paths. Ancestor mounts must precede descendant mounts (e.g. `/` before `/boot`, `/boot` before `/boot/efi`).
-4. **`FL4` (CIS Security Mount Options)**: Mount points `/tmp` and `/dev/shm` must include `nodev` and `nosuid`.
-5. **`FL5` (Partition Constraints)**: Partition indices $1 \le \text{index} \le 128$ and unique; total partition size bounded by target disk capacity; ESP partition must be $\ge 100$ MiB and formatted as `vfat`.
+4. **`FL4` (CIS Security Mount Options)**: Mount points `/tmp` and `/dev/shm` must include `nodev`, `nosuid`, and `noexec` (T-01542 D3).
+5. **`FL5` (Partition Constraints)**: Partition indices $1 \le \text{index} \le 128$ and unique; total partition size bounded by target disk capacity;
+6. **`FL6` (Required-Mount Floor, T-01542 D8)**: At least one entry in `mounts` must have `required: true`. A layout with no required mount cannot be operationally ready. Per-element field checks (dump ∈ {0,1}; directory mode ∈ 1..=0o7777; UsrMerge-shaped `symlink_target`; RFC 3339 UTC `created_at`) are unnumbered by convention, as are their existing siblings. ESP partition must be $\ge 100$ MiB and formatted as `vfat`.
 
 ### 3.2 Core Service Invariants (`CS1..CS5`)
 1. **`CS1` (Store Integrity)**: Active layout must always point to a registered layout; built-in presets (`standard_uefi`, `minimal_container`) cannot be deleted; active layout cannot be deleted.
@@ -167,7 +169,7 @@ aiosh layout register --store ./layouts.json --json \
 ```
 
 `--spec` accepts either the path of an existing regular file or the JSON document itself. The
-specification is validated against `FL1..FL5` **before** it enters the store, and duplicate ids are
+specification is validated against `FL1..FL6` **before** it enters the store, and duplicate ids are
 refused (`REGISTER_FAILED`). Nothing reaches disk unless `--store` is supplied (see §6.7).
 
 ### 4.8 Switch the Active Layout
@@ -203,7 +205,7 @@ Each usable line is parsed with `fstab(5)` rules (six fields, `#` comments and b
 ```bash
 STORE="$PWD/layouts.json"
 
-aiosh layout validate --standard                          # canonical preset satisfies FL1..FL5
+aiosh layout validate --standard                          # canonical preset satisfies FL1..FL6
 aiosh layout list --store "$STORE"                        # file absent: in-memory presets are listed
 aiosh layout register --spec ./layout.json --store "$STORE"
 aiosh layout set-active lab-vm-v1 --store "$STORE"
@@ -376,7 +378,7 @@ The four mutations declare `required` arguments in their schemas (`store_path`; 
 ```
 
 Registers one new profile. `layout` (an inline JSON object) takes precedence over `spec` (a path to a
-regular file, or inline JSON). `register_layout` re-runs the full `FL1..FL5` validation and refuses a
+regular file, or inline JSON). The document must carry only schema-known fields (unknown JSON fields are refused, T-01542 D1 — the same typo protection the MCP tool schemas advertise). `register_layout` re-runs the full `FL1..FL6` validation and refuses a
 duplicate id. The row is attributed to the **new layout id on both outcome paths** (a duplicate-id
 refusal is still findable by layout), except for a *pre-gate* refusal — a call with no grant cannot
 name the id, because resolving it would mean parsing the caller's path before authorization.
@@ -584,12 +586,11 @@ surface end to end (register → set-active → probe → diff → fstab → ref
     (a read-only destination file) reports the same `os error 5` as a momentary lock, so it is retried
     before being refused (~0.4 s observed, error still surfaced, never masked); and a syscall blocked
     inside the kernel (an unresponsive network mount) is not interruptible from this layer, so the
-    budget bounds the retry loop, not the syscall.
-15. **Undeclared Arguments Are Ignored, Not Refused**: all ten tools advertise
-    `"additionalProperties": false`, but the server does not enforce it — an unknown key is silently
-    ignored and the call proceeds. This is not harmless in one direction: an agent sending
-    `{"dry_run": true}` to `aios.fs_layout.register` gets a **real, persisted mutation**. Do not rely
-    on the schema for typo or vocabulary protection; check the tool table in §5.0.
+    budget bounds the retry loop, not the syscall.15. **Undeclared *Tool* Arguments Are Ignored, Not Refused; Unknown *Spec* Fields Are Refused**: all ten tools advertise
+`"additionalProperties": false`, but the server does not enforce it — an unknown tool-level key is silently
+ignored and the call proceeds. This is not harmless in one direction: an agent sending
+`{"dry_run": true}` to `aios.fs_layout.register` gets a **real, persisted mutation**. Do not rely
+on the schema for typo or vocabulary protection; check the tool table in §5.0. The *layout document itself* is the other half of that closure (T-01542 D1): every spec struct rejects unknown JSON fields, so a typo'd field name inside `layout`/`spec` now fails registration with the offending name in the error instead of validating a document that means something other than what was written. The *store document* joined the same contract in T-01544 (§6.22): unknown top-level store fields are refused at load, so the store file is no longer the one parse path that tolerates a field it does not know.
 16. **Read Tools Are Ungated, and CLI-Written Text Is Not Classified**: `get`, `list`, `validate`,
     `fstab`, `probe` and `diff` run with `require_grant = false`, and `validate`/`fstab` accept a
     caller-named `spec` document. The read is bounded and type-checked (regular files only, ≤ 10 MiB,
@@ -647,6 +648,19 @@ surface end to end (register → set-active → probe → diff → fstab → ref
     The **Python** and **TypeScript** matchers (`audit_client.py:path_allowed`,
     `pep.ts:pathAllowed`) are still purely lexical: they compare strings, so `.` matches no target
     there — fail-closed, never fail-open.
+22. **The Store Document Refuses Unknown Fields Too, and an Unloadable Store Is Not Repairable In-Tool**:
+    T-01542 D1 put unknown-field rejection on every *spec* struct; T-01544 extends the same rule to the
+    store **document** (`FilesystemLayoutStore`). A store spelling `active_layout` instead of
+    `active_layout_id` used to load successfully and silently keep the built-in default active layout —
+    a typo mutated a store that meant something other than what it said. It is now refused by name at
+    load (`failed to deserialize layout store from '<path>': unknown field \`active_layout\`, expected …`),
+    and nothing from the refused document is loaded. The field *set* is unchanged, so a store this tool
+    wrote still loads unchanged; every write path emits only the two known keys. Two honest boundaries
+    follow from the same choice as §6.12: a store carrying an unknown key — hand-edited, or written by a
+    *newer* version that added a field — **cannot be loaded by any tool, and no tool can repair it**,
+    because every tool loads before it writes; recovery is external (drop the unknown key with an editor
+    or `python3 -c '…'`), exactly as for the over-ceiling store. And the refusal is deliberately *not* a
+    warn-and-continue: continuing is the silent misreading this rule exists to remove.
 
 ---
 
@@ -702,4 +716,26 @@ This is the sub-epic that produced everything in §5: the ten-tool surface, its 
 - `T-01537`: [MCP/API Surface Security Review](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01537-mcp-api-surface-security-review.md) — the authorization model of §5.0 (policy path subjects, canonical matching, nested-injection refusal)
 - `T-01538`: [MCP/API Surface Hardening](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01538-mcp-api-surface-hardening.md) — the persistence bounds of §6.12–§6.14
 - `T-01539`: [MCP/API Surface Documentation](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01539-mcp-api-surface-documentation.md) — this guide's §5 and §6
-- `T-01540`: MCP/API Surface Verification & Evidence *(the task that follows: re-runs the suites at this component's head and closes the sub-epic)*
+- `T-01540`: [MCP/API Surface Verification & Evidence](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01540-mcp-api-surface-verification-evidenc.md)
+
+### Sub-Epic 5: Filesystem Layout Configuration (T-01541..T-01550)
+
+This sub-epic establishes the configuration specification, strict schema validation, and fail-closed store parsing for the Filesystem Layout subsystem:
+- Invariants FL1..FL6: FL6 enforces at least one mount must have `required == true`.
+- Strict deserialization: `deny_unknown_fields` on all layout specifications and persisted stores (`FilesystemLayoutStore`).
+- Directory permission hygiene: directory `mode` must be a valid octal mask in `1..=0o7777` (`mode: 0` rejected).
+- CIS benchmark enforcement: `/tmp` and `/dev/shm` mounts require `nodev`, `nosuid`, and `noexec`.
+- UsrMerge symlink confinement: `symlink_target` must be a relative path rooted at `usr` without `.` or `..` traversals.
+- Timestamp & backup metadata: `created_at` must be RFC 3339 UTC ending in `Z`; fstab `dump` frequency must be `0` or `1`.
+
+- `T-01541`: [Configuration Research](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01541-configuration-research.md)
+- `T-01542`: [Configuration Specification](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01542-configuration-specification.md)
+- `T-01543`: [Configuration Scaffold](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01543-configuration-scaffold.md)
+- `T-01544`: [Configuration Implementation](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01544-configuration-implementation.md)
+- `T-01545`: [Configuration Unit Tests](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01545-configuration-unit-test.md)
+- `T-01546`: [Configuration Integration](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01546-configuration-integration.md)
+- `T-01547`: [Configuration Security Review](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01547-configuration-security-review.md)
+- `T-01548`: [Configuration Hardening](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01548-configuration-hardening.md)
+- `T-01549`: [Configuration Documentation](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01549-configuration-documentation.md)
+- `T-01550`: Configuration Verification & Evidence *(closing task for Sub-Epic 5)*
+

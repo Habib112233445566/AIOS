@@ -34,6 +34,24 @@ Strategic decision to adopt **Kali Linux** as the primary underlying distributio
 - **Tool Architecture (Pillar A)**: Zero from-scratch tool development. Wrap Kali's native binaries (`airmon-ng`, `airodump-ng`, `aircrack-ng`, `nmap`, `gobuster`, `arp-scan`, `hashcat`, `tshark`, `sqlmap`) with AIOS Policy Enforcement Point (PEP) gating, runtime bounds, and SQLite WAL audit logging.
 - **Desktop Interface (Pillar B)**: Deliver a Windows 10/11 desktop experience via XFCE `kali-undercover` or KDE Plasma Fluent themes, eliminating Linux terminal friction for operators.
 - **Autonomous AI Kernel (Pillar C)**: Integrate the AIOS AI shell (`ai_agent.py` + local SLM) as the desktop co-pilot with smart routing across all native Kali security tools.
+### 2026-09-19 — MILESTONE: Filesystem Layout Configuration CLOSED 10/10 (T-01541..T-01550)
+
+Complete research, specification, scaffolding, implementation, unit testing, integration, security review, hardening, documentation, and verification for Phase 1 `Filesystem Layout / configuration` (10/10 tasks, `T-01541..T-01550`):
+- **Configuration Contract (`aiosh_core::fs_layout`)**:
+  - Invariants FL1..FL6: FL6 enforces at least one mount marked `required == true`.
+  - Strict deserialization: `deny_unknown_fields` across layout specifications and persisted `FilesystemLayoutStore`.
+  - Directory permission mode bounds: octal mask `1..=0o7777` (`mode: 0` rejected).
+  - CIS benchmark security options: `/tmp` and `/dev/shm` mounts require `nodev`, `nosuid`, and `noexec`.
+  - UsrMerge symlink confinement: `symlink_target` must be a relative path rooted at `usr` without `.` or `..` traversals.
+  - Metadata hygiene: `created_at` must be RFC 3339 UTC ending in `Z`; fstab `dump` frequency must be `0` or `1`.
+- **Operator CLI & Agent MCP Hardening**:
+  - 10 MiB stream-bounded reads (`MAX_LAYOUT_DOC_BYTES`), 1 MiB inline payload bounds.
+  - Fail-closed validation and parse errors producing honest, hash-chained SQLite WAL audit rows (ADR-0035 §F-2).
+  - Atomic persistence with `.tmp.<pid>` staging and symlink overwrite prevention.
+- **Verification Battery**:
+  - `tools/test_fs_layout_suites.py` criteria FL1..FL9 PASS.
+  - `cargo test -p aiosh-core -p aiosh-cli -p aiosh-mcp` (655 passed, 0 failed).
+- **Milestone Advance**: task pointer advances to **T-01551** (`Phase 1 — Linux Base System & Bootable Target / Filesystem Layout / automated tests: Research`).
 
 ### 2026-09-17 — MILESTONE: Filesystem Layout CLI Surface CLOSED 10/10 (T-01521..T-01530)
 

@@ -38,7 +38,7 @@ Implements **ADR-0035 §D-2** (MCP as the only tool-call protocol).
 | `aios.session.check`  | ✓     | ✓¹    | Validates on-disk user session store integrity and optionally performs non-destructive recovery (SSR1..SSR5) |
 | `aios.fs_layout.get`  | ✓     |       | Stored layout by `layout_id`, or a built-in preset by `profile` |
 | `aios.fs_layout.list` | ✓     |       | Lists the store's layouts (default: the seeded built-in presets) |
-| `aios.fs_layout.validate` | ✓ |       | Runs `FL1..FL5` over `spec`/`layout`; never reads the store |
+| `aios.fs_layout.validate` | ✓ |       | Runs `FL1..FL6` over `spec`/`layout`; never reads the store |
 | `aios.fs_layout.fstab` | ✓    |       | Renders `/etc/fstab` from `spec`/`profile` |
 | `aios.fs_layout.probe` | ✓    |       | Evaluates a layout against `target_disk_bytes` (default 64 GiB) |
 | `aios.fs_layout.diff` | ✓     |       | Differential comparison; reports `destructive` |
@@ -461,7 +461,7 @@ Generates comprehensive observability telemetry and distribution metrics across 
 ## Filesystem Layout Tools (`aios.fs_layout.*`)
 
 Ten tools over the `aiosh-core::fs_layout` subsystem: target-disk layout profiles (partitions, mount
-points, FHS directories, `/etc/fstab`) validated against `FL1..FL5` / `CS1..CS5`. The six read-only
+points, FHS directories, `/etc/fstab`) validated against `FL1..FL6` / `CS1..CS5`. The six read-only
 tools need no grant; the four **mutations** (`register`, `set_active`, `remove`, `import_fstab`) each
 require a PEP grant **and** an explicit `store_path`, because no canonical default store exists yet.
 An ungranted mutation is refused before the body runs, and the refusal names the gate.

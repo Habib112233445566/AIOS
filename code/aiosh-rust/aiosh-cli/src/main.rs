@@ -4347,7 +4347,7 @@ fn cmd_fs_layout(args: &[String]) -> i32 {
                     "error": if is_ok { serde_json::Value::Null } else { json!({ "code": "VALIDATION_FAILED", "message": err_msg }) }
                 }));
             } else if is_ok {
-                println!("VALID: Filesystem layout '{}' satisfies all FL1..FL5 invariants", sanitize_terminal(&layout_id));
+                println!("VALID: Filesystem layout '{}' satisfies all FL1..FL6 invariants", sanitize_terminal(&layout_id));
             } else {
                 eprintln!("INVALID: {}", sanitize_terminal(&err_msg.unwrap_or_default()));
             }
@@ -4500,7 +4500,7 @@ fn cmd_fs_layout(args: &[String]) -> i32 {
 
             let mut service = aiosh_core::fs_layout_service::FilesystemLayoutService::empty();
             let layout_id = layout.id.clone();
-            // A layout rejected by FL1..FL5 must fail loudly rather than silently degrade
+            // A layout rejected by FL1..FL6 must fail loudly rather than silently degrade
             // into the "layout not found" path of probe_target below.
             if let Err(e) = service.store_mut().register_layout(layout) {
                 let msg = format!("layout '{}' cannot be probed: {}", layout_id, e);
@@ -4511,7 +4511,7 @@ fn cmd_fs_layout(args: &[String]) -> i32 {
                     json!({ "id": layout_id, "error": &msg }),
                     "failure",
                     Some(&layout_id),
-                    Some("Probe layout rejected by FL1..FL5 validation"),
+                    Some("Probe layout rejected by FL1..FL6 validation"),
                     "operator",
                     None,
                 );

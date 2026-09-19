@@ -688,6 +688,102 @@ fn test_fs_layout_replace_retry_is_bounded_and_reported() {
     let _ = std::fs::remove_dir_all(&tmp_dir);
 }
 
+// ---------------------------------------------------------------------------
+// T-01544 implementation: the store document joins the spec document's parse contract
+// (T-01542 V-1).
+//
+// The T-01543 pass put `deny_unknown_fields` on all five spec structs but left the
+// store file tolerant (the spec marked that half "recommended, not required"). That
+// left one deserialization entry where a document that means something other than what
+// it says still loads: a store spelled `active_layout` instead of `active_layout_id`
+// loaded fine and silently kept the built-in default active layout. Every other parse
+// path fails loudly on an unknown field; the store path must too.
+// ---------------------------------------------------------------------------
+
+/// A store carrying an unknown *top-level* field must be refused, and the refusal must
+/// name the offender and the document. Nothing is loaded, so a store that means
+/// something other than what it says cannot be mutated through.
+#[test]
+fn test_fs_layout_store_rejects_unknown_top_level_field() {
+    let tmp_dir = fresh_dir("store-unknown-top");
+    let store_file = tmp_dir.join("fs_layouts.json");
+
+    // Compatibility is additive-only: the store this tool itself wrote keeps loading.
+    let service = FilesystemLayoutService::new();
+    assert!(service.save_to_path(&store_file).is_ok());
+    let reloaded = FilesystemLayoutService::load_from_path(&store_file).unwrap();
+    assert_eq!(reloaded.store.active_layout_id, "aios-uefi-standard-v1");
+    assert_eq!(reloaded.store.layouts.len(), service.store.layouts.len());
+
+    // Now give it one key the schema does not declare — the exact shape a typo or a
+    // foreign writer produces.
+    let mut raw: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&store_file).unwrap()).unwrap();
+    raw.as_object_mut().unwrap().insert(
+        "active_layout".into(),
+        serde_json::json!("aios-container-minimal-v1"),
+    );
+    std::fs::write(&store_file, serde_json::to_string_pretty(&raw).unwrap()).unwrap();
+
+    let err = FilesystemLayoutService::load_from_path(&store_file).unwrap_err();
+    assert!(
+        err.contains("unknown field `active_layout`"),
+        "the refusal must name the offending field, got: {}",
+        err
+    );
+    assert!(
+        err.contains("failed to deserialize layout store from"),
+        "the refusal must name the document and the stage, got: {}",
+        err
+    );
+    assert!(
+        err.contains(&store_file.to_string_lossy().to_string()),
+        "the refusal must name the store path, got: {}",
+        err
+    );
+    assert!(
+        !err.contains("aios-container-minimal-v1"),
+        "no value from a refused store may be echoed as if it had loaded, got: {}",
+        err
+    );
+
+    let _ = std::fs::remove_dir_all(&tmp_dir);
+}
+
+/// The nested half of the same contract, exercised through the store path: an unknown
+/// field inside a *stored layout* is refused too (the T-01543 spec-struct rule), so a
+/// hand-edited or foreign-authored store cannot smuggle a field past the validator.
+#[test]
+fn test_fs_layout_store_rejects_unknown_nested_field() {
+    let tmp_dir = fresh_dir("store-unknown-nested");
+    let store_file = tmp_dir.join("fs_layouts.json");
+
+    let service = FilesystemLayoutService::new();
+    assert!(service.save_to_path(&store_file).is_ok());
+
+    let mut raw: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&store_file).unwrap()).unwrap();
+    raw["layouts"]["aios-uefi-standard-v1"]
+        .as_object_mut()
+        .unwrap()
+        .insert("dry_run".into(), serde_json::json!(true));
+    std::fs::write(&store_file, serde_json::to_string_pretty(&raw).unwrap()).unwrap();
+
+    let err = FilesystemLayoutService::load_from_path(&store_file).unwrap_err();
+    assert!(
+        err.contains("unknown field `dry_run`"),
+        "the nested refusal must name the offending field, got: {}",
+        err
+    );
+    assert!(
+        err.contains("failed to deserialize layout store from"),
+        "the nested refusal must name the document and the stage, got: {}",
+        err
+    );
+
+    let _ = std::fs::remove_dir_all(&tmp_dir);
+}
+
 /// On Linux, `/proc` files report a metadata length of `0` while yielding real
 /// content. That mismatch is exactly what a metadata-only size check misses, so this
 /// pins the read-time enforcement of the cap.

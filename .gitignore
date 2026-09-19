@@ -38,6 +38,7 @@ scratch/
 
 # AIOS local runtime state (service store, packages, triage, audit)
 .aios/
+.freebuff/
 
 # Model weights
 *.gguf

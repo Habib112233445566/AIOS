@@ -415,7 +415,16 @@ pub struct LayoutDiff {
 }
 
 /// Registry and store for managing filesystem layout specifications.
+///
+/// T-01544 (T-01542 V-1): the store **document** joins the spec document's parse
+/// contract — unknown top-level fields are refused, naming the first offender. This is
+/// the last deserialization entry that used to tolerate them, and tolerating them was
+/// not harmless: a store spelled `active_layout` instead of `active_layout_id` loaded
+/// successfully and silently kept the built-in default active layout, i.e. the operator
+/// mutated a store that meant something other than what it said. The *field set* is
+/// unchanged (no store-format change); only the tolerance is gone.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct FilesystemLayoutStore {
     /// Active layout identifier currently in effect.
     pub active_layout_id: String,

@@ -1008,7 +1008,7 @@ impl Server {
         }));
         tools.push(json!({
             "name": "aios.fs_layout.validate",
-            "description": "Validate a Filesystem Layout against consistency invariants (FL1..FL5)",
+            "description": "Validate a Filesystem Layout against consistency invariants (FL1..FL6)",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -1085,7 +1085,7 @@ impl Server {
                 "properties": {
                     "layout": { "type": "object", "description": "Inline layout JSON object (either this or spec is required)" },
                     "spec": { "type": "string", "description": "Path to a regular layout JSON file, or inline layout JSON" },
-                    "store_path": { "type": "string", "description": "Canonical layout store JSON path to persist into (required: no default store is defined yet)" },
+                    "store_path": { "type": "string", "description": "Canonical layout store JSON path to persist into (required: no default store is defined)" },
                     "grant_id": { "type": "string", "description": "PEP authorization grant ID" }
                 },
                 "required": ["store_path"],
@@ -1099,7 +1099,7 @@ impl Server {
                 "type": "object",
                 "properties": {
                     "layout_id": { "type": "string", "description": "Id of an already-registered layout to activate" },
-                    "store_path": { "type": "string", "description": "Canonical layout store JSON path to persist into (required: no default store is defined yet)" },
+                    "store_path": { "type": "string", "description": "Canonical layout store JSON path to persist into (required: no default store is defined)" },
                     "grant_id": { "type": "string", "description": "PEP authorization grant ID" }
                 },
                 "required": ["layout_id", "store_path"],
@@ -1113,7 +1113,7 @@ impl Server {
                 "type": "object",
                 "properties": {
                     "layout_id": { "type": "string", "description": "Id of the layout profile to remove" },
-                    "store_path": { "type": "string", "description": "Canonical layout store JSON path to persist into (required: no default store is defined yet)" },
+                    "store_path": { "type": "string", "description": "Canonical layout store JSON path to persist into (required: no default store is defined)" },
                     "grant_id": { "type": "string", "description": "PEP authorization grant ID" }
                 },
                 "required": ["layout_id", "store_path"],
@@ -1130,7 +1130,7 @@ impl Server {
                     "name": { "type": "string", "description": "Human-readable profile name" },
                     "fstab": { "type": "string", "description": "Path to a regular fstab file, or inline fstab content" },
                     "base_layout_id": { "type": "string", "description": "Layout whose partitions/directories are inherited (default: store active layout)" },
-                    "store_path": { "type": "string", "description": "Canonical layout store JSON path to persist into (required: no default store is defined yet)" },
+                    "store_path": { "type": "string", "description": "Canonical layout store JSON path to persist into (required: no default store is defined)" },
                     "grant_id": { "type": "string", "description": "PEP authorization grant ID" }
                 },
                 "required": ["layout_id", "name", "fstab", "store_path"],
@@ -3124,7 +3124,7 @@ impl Server {
 
                 dispatch::recorded_call(
                     &mut self.ring, &self.pep,
-                    "aios.fs_layout.validate", "Validate Filesystem Layout invariants (FL1..FL5)", arguments,
+                    "aios.fs_layout.validate", "Validate Filesystem Layout invariants (FL1..FL6)", arguments,
                     None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
                 )
             }
@@ -3282,7 +3282,7 @@ impl Server {
                         let layout_id = spec.id.clone();
                         resolved = Some(layout_id.clone());
                         let mut service = resolve_fs_layout_service(&Some(store_path.clone()))?;
-                        // `register_layout` validates FL1..FL5 and refuses duplicate ids.
+                        // `register_layout` validates FL1..FL6 and refuses duplicate ids.
                         service.store_mut().register_layout(spec)?;
                         service.save_to_path(std::path::Path::new(&store_path))?;
                         Ok(json!({

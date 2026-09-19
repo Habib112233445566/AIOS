@@ -12,6 +12,10 @@ Criteria:
        leak-free persistence)
   FL8: filesystem layout MCP contract (advertised inputSchema, audit target, destructive verdict,
        grant scope.paths confinement and canonical alias matching, nested-injection refusal)
+  FL9: filesystem layout configuration contract (CLI wire suite U1..U12 for the T-01542
+       validation contract + T-01544 store parse contract)
+  FL10: filesystem layout automated lifecycle & edge cases (A1..A8: state machine, protection,
+        fstab, probe, diff, corruption, audit)
 """
 
 from __future__ import annotations
@@ -142,6 +146,24 @@ def test_fl8_mcp_contract() -> bool:
     )
 
 
+def test_fl9_configuration_contract() -> bool:
+    return _run_python_script(
+        ROOT / "code" / "aiosh-cli" / "tests" / "test_fs_layout_config_validation.py",
+        "FL9",
+        "filesystem layout configuration contract (CLI wire suite: T-01542 validation rules "
+        "E-1..E-7, ordering, fail-closed refusals, T-01544 store parse contract)",
+    )
+
+
+def test_fl10_automated_cases() -> bool:
+    return _run_python_script(
+        ROOT / "code" / "aiosh-cli" / "tests" / "test_fs_layout_automated_cases.py",
+        "FL10",
+        "filesystem layout automated lifecycle & edge cases (A1..A8: state machine, "
+        "protection, fstab, probe, diff, corruption, audit)",
+    )
+
+
 def main() -> int:
     suites = [
         ("FL1", test_fl1_data_model),
@@ -152,6 +174,8 @@ def main() -> int:
         ("FL6", test_fl6_cross_surface_integration),
         ("FL7", test_fl7_cli_hardening),
         ("FL8", test_fl8_mcp_contract),
+        ("FL9", test_fl9_configuration_contract),
+        ("FL10", test_fl10_automated_cases),
     ]
 
     failed = []
@@ -164,7 +188,7 @@ def main() -> int:
         print(f"FAIL: fs_layout_suites failed criteria: {', '.join(failed)}", file=sys.stderr)
         return 1
 
-    print("PASS: fs_layout_suites criteria (FL1..FL8)")
+    print("PASS: fs_layout_suites criteria (FL1..FL10)")
     return 0
 
 

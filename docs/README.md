@@ -1200,7 +1200,7 @@ Evidence: `docs/tasks/evidence/T-01301-data-model-research.md` .. `docs/tasks/ev
 ### 8.14 Linux Filesystem Layout Subsystem (`aiosh-core::fs_layout`, T-01501..T-01540)
 
 Declarative target-disk layout profiles — partitions, mount points, FHS directories, and
-`/etc/fstab` generation — validated against invariants `FL1..FL5` (data model) and `CS1..CS5`
+`/etc/fstab` generation — validated against invariants `FL1..FL6` (data model) and `CS1..CS5`
 (store, probe, diff, atomic persistence), then operated through `aiosh layout` and exposed to agents
 as ten gated MCP tools (`aios.fs_layout.*`, six read-only plus `register`, `set_active`, `remove`,
 `import_fstab`, each of which needs a PEP grant and an explicit `store_path`).
@@ -1212,7 +1212,7 @@ Comprehensive architecture and operational guide (tool reference in §5, honest 
 # Isolate the demo's audit ring so a copy-pasted example never writes to your real one.
 export AIOSH_HOME="$PWD/.aios-demo"; mkdir -p "$AIOSH_HOME" demo
 
-aiosh layout validate --standard                     # FL1..FL5 over the canonical UEFI preset
+aiosh layout validate --standard                     # FL1..FL6 over the canonical UEFI preset
 
 # Derive a spec from the canonical container preset (so the block is self-contained).
 # Everything lives in ./demo so the grant below can actually be scoped to it.
@@ -1233,7 +1233,7 @@ GRANT=$(aiosh grant create --to agent:fs-layout-demo --tools 'aios.fs_layout.*' 
   | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["grant_id"])')
 printf '%s\n' "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"aios.fs_layout.remove\",\"arguments\":{\"layout_id\":\"lab-vm-v2\",\"store_path\":\"demo/layouts.json\",\"grant_id\":\"$GRANT\"}}}" | aiosh-mcp
 
-python3 tools/test_fs_layout_suites.py               # FL1..FL8
+python3 tools/test_fs_layout_suites.py               # FL1..FL9
 ```
 
 Evidence: `docs/tasks/evidence/T-01501-data-model-research.md` .. `docs/tasks/evidence/T-01539-mcp-api-surface-documentation.md`

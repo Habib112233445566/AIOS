@@ -46,6 +46,13 @@ C8 device spellings   a device/extended-length spelling (`\\?\`, `\\.\`, `\\?\UN
                       Paths that stay in the device namespace (`\\.\PhysicalDrive0`) must be
                       refused rather than merely unmatched, and the extended spelling of an
                       *allowed* directory must still authorize.
+C9 config parity      the configuration contract (T-01542 E-1..E-7) and the store-parse
+                      refusal (T-01544) hold identically on the MCP surface: an E-2
+                      refusal carries the CLI validate message verbatim, an E-1 refusal
+                      names the offender, every refusal is one honest audit row, and an
+                      unknown-field store is refused everywhere (nothing rewritten,
+                      recovery external) — the same wording and exit semantics as the
+                      CLI suite (T-01545 U1..U12).
 
 Run standalone:
     python code/aiosh-mcp/tests/test_fs_layout_mcp_contract.py
@@ -54,6 +61,7 @@ Exit code 0 = all criteria pass.
 """
 
 import copy
+import hashlib
 import json
 import subprocess
 import sys
@@ -63,6 +71,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 
 UEFI_ID = "aios-uefi-standard-v1"
+CONTAINER_ID = "aios-container-minimal-v1"
 
 #: The single source of truth for what each arm reads. The manifest must advertise
 #: exactly this set per tool (byte-for-byte the same table lives in the in-tree
@@ -683,6 +692,107 @@ def test_c8_device_spelling_aliases_are_refused():
               "device-namespace paths; extended allow spelling still authorizes)")
 
 
+# ---------------------------------------------------------------------------
+# C9 — configuration-contract parity: the MCP surface refuses exactly what the
+#      CLI surface refuses (T-01546; contract T-01542 E-1..E-7, store T-01544)
+# ---------------------------------------------------------------------------
+
+def cli_validate_message(spec_obj):
+    """Run the CLI validate verb on a spec and return (message, code)."""
+    cp = subprocess.run([get_cli_binary(), "layout", "validate", "--spec", json.dumps(spec_obj), "--json"],
+                        capture_output=True, text=True, timeout=60)
+    payload = json.loads(cp.stdout.strip())
+    return payload["error"]["message"], payload["error"]["code"]
+
+
+def test_c9_configuration_contract_parity_with_cli():
+    with tempfile.TemporaryDirectory() as td:
+        grant = create_pep_grant()
+        assert grant, "failed to mint a PEP grant for aios.fs_layout.*"
+        spec = copy.deepcopy(base_layout())
+        store = str(Path(td) / "store.json")
+
+        # Positive control: a granted mutation against a fresh store succeeds.
+        warm = call_mcp_tool("aios.fs_layout.set_active",
+                             {"layout_id": UEFI_ID, "store_path": store, "grant_id": grant})
+        assert warm.get("ok") is True, f"warming set_active failed: {warm}"
+
+        # E-2 (inline layout): the MCP refusal must carry the *same message text*
+        # the CLI's validate verb produces for the same document.
+        bad_mode = copy.deepcopy(spec)
+        bad_mode["directories"][0]["mode"] = 0
+        bad_mode["id"] = "contract-c9-mode0"
+        cli_msg, cli_code = cli_validate_message(bad_mode)
+        assert cli_code == "VALIDATION_FAILED" and \
+            "directory '/var/lib/aios' mode must be in 1..=0o7777 (octal), found 0" in cli_msg, (
+                f"CLI side of the parity pair moved: {cli_msg!r}")
+        res = call_mcp_tool("aios.fs_layout.register",
+                            {"layout": bad_mode, "store_path": store, "grant_id": grant})
+        assert res.get("ok") is False, f"mode-0 register must be refused: {res}"
+        text = err_text(res)
+        assert cli_msg in text, f"MCP refusal must carry the CLI wording verbatim: {text!r} vs {cli_msg!r}"
+
+        # The refusal is one honest audit row naming the refused layout (inline form:
+        # the id is known before the body runs — the C2 property, at a new refusal site).
+        rows = {row["id"]: row for row in audit_rows() if row.get("tool") == "aios.fs_layout.register"}
+        row = rows.get(res.get("audit_id"))
+        assert row is not None, f"audit row {res.get('audit_id')} not found"
+        assert row.get("outcome") == "error", row
+        assert row.get("target") == "contract-c9-mode0", row
+
+        # E-1 (spec string): the same offender naming both surfaces report.
+        unknown = copy.deepcopy(spec)
+        unknown["dry_run"] = True
+        unknown["id"] = "contract-c9-unknown"
+        res = call_mcp_tool("aios.fs_layout.register",
+                            {"spec": json.dumps(unknown), "store_path": store, "grant_id": grant})
+        assert res.get("ok") is False, f"unknown-field register must be refused: {res}"
+        assert "unknown field `dry_run`" in err_text(res), err_text(res)
+        rows = {row["id"]: row for row in audit_rows() if row.get("tool") == "aios.fs_layout.register"}
+        row = rows.get(res.get("audit_id"))
+        assert row is not None and row.get("outcome") == "error", (
+            f"spec-string parse refusal must still be one honest row: {res.get('audit_id')}"
+        )
+
+        # The refused documents never reached the store.
+        persisted = json.loads(Path(store).read_text(encoding="utf-8"))
+        for refused in ("contract-c9-mode0", "contract-c9-unknown"):
+            assert refused not in persisted["layouts"], f"{refused} leaked into the store"
+        assert not [p.name for p in Path(td).iterdir() if p.name.startswith(".store.json.tmp.")], \
+            "a refusal must not stage a file"
+
+        # T-01544 store contract through MCP: an unknown key in the store *file*
+        # is refused by read and mutate verbs with the same serde wording as the CLI,
+        # nothing is rewritten, and recovery is external (drop the key).
+        fresh = copy.deepcopy(persisted)
+        corrupted = copy.deepcopy(fresh)
+        corrupted["active_layout"] = "aios-container-minimal-v1"
+        Path(store).write_text(json.dumps(corrupted), encoding="utf-8")
+        md5_bad = hashlib.md5(Path(store).read_bytes()).hexdigest()
+
+        for label, tool, args in (
+            ("list", "aios.fs_layout.list", {"store_path": store, "grant_id": grant}),
+            ("set_active", "aios.fs_layout.set_active",
+             {"layout_id": CONTAINER_ID, "store_path": store, "grant_id": grant}),
+            ("register", "aios.fs_layout.register",
+             {"layout": copy.deepcopy(base_layout()), "store_path": store, "grant_id": grant}),
+        ):
+            res = call_mcp_tool(tool, args)
+            assert res.get("ok") is False, f"{label} against a corrupt store must be refused: {res}"
+            text = err_text(res)
+            assert "failed to deserialize layout store from" in text and \
+                "unknown field `active_layout`" in text, f"{label}: {text!r}"
+        assert hashlib.md5(Path(store).read_bytes()).hexdigest() == md5_bad, \
+            "a refused load must not rewrite the store"
+
+        Path(store).write_text(json.dumps(fresh), encoding="utf-8")
+        recovered = call_mcp_tool("aios.fs_layout.list", {"store_path": store, "grant_id": grant})
+        assert recovered.get("ok") is True, f"dropping the key must recover the store: {recovered}"
+
+        print("PASS: C9 configuration-contract parity (E-2 CLI-verbatim wording, E-1 offender "
+              "naming, store-document refusal + external recovery; fail-closed throughout)")
+
+
 def main():
     print("=== RUNNING FILESYSTEM LAYOUT MCP CONTRACT UNIT TESTS ===")
     test_c1_argument_contract()
@@ -693,6 +803,7 @@ def main():
     test_c6_nested_injection_is_refused()
     test_c7_path_scope_aliases_are_canonical()
     test_c8_device_spelling_aliases_are_refused()
+    test_c9_configuration_contract_parity_with_cli()
     print("\nALL FILESYSTEM LAYOUT MCP CONTRACT CRITERIA PASSED!")
     return 0
 

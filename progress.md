@@ -1,6 +1,27 @@
 # Progress Log
 
+## 2026-09-19 — T-01541..T-01550 SHIPPED: Filesystem Layout Configuration CLOSED (Criteria FL1..FL9, 10/10 tasks)
+
+**What shipped:**
+- Completed the configuration specification, validation engine, and store parsing for Filesystem Layout (`aiosh_core::fs_layout` and `aiosh_core::fs_layout_service`):
+  - Invariants FL1..FL6: FL6 enforces at least one mount marked `required == true`.
+  - Strict deserialization: `deny_unknown_fields` across all layout specifications and persisted `FilesystemLayoutStore`.
+  - Directory permission mode bounds: octal mask `1..=0o7777` (`mode: 0` rejected).
+  - CIS benchmark security options: `/tmp` and `/dev/shm` mounts require `nodev`, `nosuid`, and `noexec`.
+  - UsrMerge symlink confinement: `symlink_target` must be a relative path rooted at `usr` without `.` or `..` traversals.
+  - Metadata hygiene: `created_at` must be RFC 3339 UTC ending in `Z`; fstab `dump` frequency must be `0` or `1`.
+- Delivered dedicated test suite `code/aiosh-cli/tests/test_fs_layout_config_validation.py` (U1..U12) and parity test case C9 in `test_fs_layout_mcp_contract.py`.
+- Integrated FL9 into aggregate test runner `tools/test_fs_layout_suites.py`.
+- Documented full configuration surface, copy-pasteable examples, and honest limitations in `docs/filesystem_layout.md`.
+
+**Verified:**
+- `python tools/test_fs_layout_suites.py` (FL1..FL9 PASS).
+- `cargo test -p aiosh-core -p aiosh-cli -p aiosh-mcp` (655 passed, 0 failed).
+- Milestone: **Filesystem Layout / configuration CLOSED — 10/10 tasks** (T-01541..T-01550).
+- Next task pointer advances to **T-01551** (`Phase 1 — Linux Base System & Bootable Target / Filesystem Layout / automated tests: Research`).
+
 ## 2026-09-17 — T-01521..T-01530 SHIPPED: Filesystem Layout CLI Surface CLOSED (Criteria FL1..FL7, 10/10 tasks)
+
 
 **What shipped:**
 - Completed the operator CLI surface for Filesystem Layout in `code/aiosh-rust/aiosh-cli/src/main.rs` (`cmd_fs_layout` and helpers):

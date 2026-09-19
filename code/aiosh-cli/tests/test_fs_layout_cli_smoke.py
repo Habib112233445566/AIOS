@@ -150,7 +150,7 @@ def test_layout_show_valid_and_invalid() -> None:
 # ---------------------------------------------------------------------------
 
 def test_layout_validate_valid_invalid_and_boundary() -> None:
-    # Valid: shipped preset satisfies FL1..FL5.
+    # Valid: shipped preset satisfies FL1..FL6.
     env = json_envelope(run_aiosh("layout", "validate", "--json"), 0, "validate")
     assert env["data"]["valid"] is True
 

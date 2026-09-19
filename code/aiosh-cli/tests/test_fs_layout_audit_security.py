@@ -215,8 +215,13 @@ def _malicious_store() -> str:
     spec["id"] = "inject-v1"
     spec["name"] = f"Inject{ESC}[31mPWNED{ESC}[0m"
     spec["description"] = f"desc{ESC}]52;c;aGFjaw=={BEL}"
-    spec["created_at"] = f"20260101{ESC}[2J"
+    # T-01543: created_at is now RFC 3339 UTC-gated (T-01542 D7/E-5), so its old
+    # escape payload would be refused at parse time — the injection routes moved
+    # to fields the contract leaves free-text. The fstab header echo of created_at
+    # is still covered: the valid timestamp is emitted verbatim there.
+    spec["created_at"] = "2026-01-01T00:00:00Z"
     spec["partitions"][0]["label"] = f"EFI{ESC}[1m"
+    spec["directories"][0]["description"] = f"dir{ESC}[2Jdesc"
 
     td = tempfile.mkdtemp(prefix="aios_fslayout_inject_")
     store = str(Path(td) / "layouts.json")

@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 /// Target filesystem type classification.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum FsType {
     Ext4,
     Btrfs,
@@ -63,7 +63,7 @@ impl std::str::FromStr for FsType {
 
 /// Partition type classification for GPT partition tables.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum PartitionType {
     /// EFI System Partition (ESP). GPT GUID: c12a7328-f81f-11d2-ba4b-00a0c93ec93b
     EfiSystem,
@@ -111,7 +111,12 @@ impl PartitionType {
 }
 
 /// Mount point specification adhering to standard 6-field `fstab(5)` semantics.
+///
+/// T-01542 D1: unknown JSON fields are rejected (no silent tolerance) — a typo'd
+/// field name must fail loudly instead of validating a document that means
+/// something other than what was written.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MountPointSpec {
     /// Mount point directory (e.g. "/", "/boot/efi", "/tmp").
     pub path: String,
@@ -191,7 +196,10 @@ impl MountPointSpec {
 }
 
 /// Partition specification on a target block device.
+///
+/// T-01542 D1: unknown fields rejected — see [`MountPointSpec`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PartitionSpec {
     /// Partition table slot index (1-based, e.g. 1..128).
     pub index: u32,
@@ -210,7 +218,10 @@ pub struct PartitionSpec {
 }
 
 /// Directory specification in the filesystem hierarchy.
+///
+/// T-01542 D1: unknown fields rejected — see [`MountPointSpec`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct DirectorySpec {
     /// Normalized absolute directory path (e.g. "/var/lib/aios", "/tmp").
     pub path: String,
@@ -227,7 +238,10 @@ pub struct DirectorySpec {
 }
 
 /// Complete Filesystem Layout specification for target system configuration and validation.
+///
+/// T-01542 D1: unknown fields rejected — see [`MountPointSpec`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct FilesystemLayoutSpec {
     /// Unique identifier for the layout (e.g. "aios-uefi-standard-v1").
     pub id: String,
@@ -248,7 +262,7 @@ pub struct FilesystemLayoutSpec {
 }
 
 impl FilesystemLayoutSpec {
-    /// Validates internal consistency invariants FL1..FL5.
+    /// Validates internal consistency invariants FL1..FL6.
     pub fn validate(&self) -> Result<(), String> {
         validate_filesystem_layout(self)
     }
@@ -573,6 +587,13 @@ pub fn validate_mount_point(spec: &MountPointSpec) -> Result<(), String> {
     if spec.device.chars().any(|c| c.is_control() || c.is_whitespace()) {
         return Err(format!("mount point device '{}' cannot contain control characters or whitespace", spec.device));
     }
+    // T-01542 D7/E-6: `dump` is bounded to fstab(5) field-5 semantics.
+    if spec.dump > 1 {
+        return Err(format!(
+            "mount '{}' dump must be 0 or 1, found {}",
+            spec.path, spec.dump
+        ));
+    }
     for opt in &spec.options {
         if opt.trim().is_empty() {
             return Err("mount option cannot be empty".into());
@@ -606,6 +627,14 @@ pub fn validate_mount_point(spec: &MountPointSpec) -> Result<(), String> {
         if !spec.options.iter().any(|o| o == "nosuid") {
             return Err(format!(
                 "FL4 violation: mount '{}' missing mandatory security option 'nosuid'",
+                spec.path
+            ));
+        }
+        // T-01542 D3/E-3: noexec joins nodev+nosuid (CIS recommends all three;
+        // both built-in layouts already carry it, so this is additive-only).
+        if !spec.options.iter().any(|o| o == "noexec") {
+            return Err(format!(
+                "FL4 violation: mount '{}' missing mandatory security option 'noexec'",
                 spec.path
             ));
         }
@@ -661,6 +690,16 @@ pub fn validate_directory_spec(spec: &DirectorySpec) -> Result<(), String> {
     if spec.group.len() > 64 || spec.group.chars().any(|c| c.is_control() || c.is_whitespace()) {
         return Err(format!("directory group '{}' invalid: must be <= 64 chars and contain no control chars or whitespace", spec.group));
     }
+    // T-01542 D2/E-2: mode must be a legal POSIX permission mask (1..=0o7777).
+    // 0 would create an unusable directory; beyond 0o7777 is a unit error
+    // (bytes-as-mode). Setuid/setgid/sticky combinations inside the range are
+    // legitimate operator choices and are not policed.
+    if spec.mode == 0 || spec.mode > 0o7777 {
+        return Err(format!(
+            "directory '{}' mode must be in 1..=0o7777 (octal), found {}",
+            spec.path, spec.mode
+        ));
+    }
     if let Some(ref target) = spec.symlink_target {
         if target.trim().is_empty() {
             return Err("symlink target cannot be empty if specified".into());
@@ -668,11 +707,23 @@ pub fn validate_directory_spec(spec: &DirectorySpec) -> Result<(), String> {
         if target.len() > 1024 || target.chars().any(|c| c.is_control()) {
             return Err("symlink target cannot exceed 1024 characters or contain control characters".into());
         }
+        // T-01542 D4/E-4: symlink entries are UsrMerge entries — relative,
+        // dot-segment-free, rooted at 'usr'. Absolute or escaping targets would
+        // defeat the merge; plain directories (symlink_target: None) are exempt.
+        if target.starts_with('/')
+            || target.split('/').any(|seg| seg == "." || seg == "..")
+            || target.split('/').next() != Some("usr")
+        {
+            return Err(format!(
+                "directory '{}' symlink_target '{}' must be a relative path under 'usr' (UsrMerge)",
+                spec.path, target
+            ));
+        }
     }
     Ok(())
 }
 
-/// Validates internal consistency invariants FL1..FL5 across the whole filesystem layout.
+/// Validates internal consistency invariants FL1..FL6 across the whole filesystem layout.
 pub fn validate_filesystem_layout(spec: &FilesystemLayoutSpec) -> Result<(), String> {
     if spec.id.trim().is_empty() {
         return Err("layout id cannot be empty".into());
@@ -698,6 +749,20 @@ pub fn validate_filesystem_layout(spec: &FilesystemLayoutSpec) -> Result<(), Str
     if spec.directories.len() > 1024 {
         return Err(format!("layout directory count ({}) exceeds maximum limit of 1024 directories", spec.directories.len()));
     }
+    // T-01542 D7/E-5: creation timestamp must be an RFC 3339 **UTC** instant —
+    // the Z designator is required, so a valid-but-offset form (+02:00) is
+    // refused too: two spellings of the same instant would otherwise be
+    // unequal keys in every byte-level comparison downstream.
+    let created_ok = chrono::DateTime::parse_from_rfc3339(&spec.created_at)
+        .ok()
+        .filter(|_| spec.created_at.ends_with('Z'))
+        .is_some();
+    if !created_ok {
+        return Err(format!(
+            "layout 'created_at' must be an RFC 3339 UTC timestamp, found '{}'",
+            spec.created_at
+        ));
+    }
 
     // FL1: Exactly one root mount point
     let root_count = spec.mounts.iter().filter(|m| m.path == "/").count();
@@ -706,6 +771,13 @@ pub fn validate_filesystem_layout(spec: &FilesystemLayoutSpec) -> Result<(), Str
             "FL1 violation: layout must have exactly one root ('/') mount, found {}",
             root_count
         ));
+    }
+
+    // FL6 (T-01542 D8/E-7): a layout with no required mount cannot be
+    // "operationally ready" — the minimal honest semantics for the `required`
+    // field, which was previously carried but never read.
+    if !spec.mounts.iter().any(|m| m.required) {
+        return Err("FL6 violation: at least one mount must be marked required".into());
     }
 
     // FL3: Unique mount points and parent-before-child ordering
