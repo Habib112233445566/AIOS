@@ -1,5 +1,22 @@
 # Progress Log
 
+## 2026-09-19 — T-01561..T-01570 SHIPPED: Filesystem Layout Security Policy CLOSED (Criteria FL1..FL11, 10/10 tasks)
+
+**What shipped:**
+- Delivered security policy test suite `code/aiosh-cli/tests/test_fs_layout_security_policy.py` (P1..P5):
+  - P1: Gated mutation without grant -> refused by PEP gate (`gate == "pep"`, store file not written).
+  - P2: Gated mutation with wrong tool scope -> refused by PEP gate (`gate == "pep"`).
+  - P3: Gated mutation with out-of-scope path -> refused by PEP gate (`scope.paths` / path subject violation).
+  - P4: Gated mutation with valid grant & in-scope paths -> allowed (`ok == true`, store written, audit row `outcome="ok"`).
+  - P5: Read-only tools (`get`, `list`, `probe`, `diff`, `fstab`) executed without grant -> allowed (`ok == true`).
+- Integrated criterion **FL11** into aggregate test runner `tools/test_fs_layout_suites.py`.
+- Documented security policy invariants, invocations, constraints, and limitations in `docs/filesystem_layout.md`.
+
+**Verified:**
+- `python tools/test_fs_layout_suites.py` (FL1..FL11 PASS).
+- Milestone: **Filesystem Layout / security policy CLOSED — 10/10 tasks** (T-01561..T-01570).
+- Next task pointer advances to **T-01571** (`Phase 1 — Linux Base System & Bootable Target / Filesystem Layout / observability: Research`).
+
 ## 2026-09-19 — T-01551..T-01560 SHIPPED: Filesystem Layout Automated Tests CLOSED (Criteria FL1..FL10, 10/10 tasks)
 
 **What shipped:**

@@ -33,6 +33,17 @@ Strategic decision to adopt **Kali Linux** as the primary underlying distributio
 - **Base Substrate**: Rebased OS target onto **Kali Linux Rolling (Debian-derived)**. Leverages Kali's 600+ pre-packaged penetration testing binaries, out-of-the-box kernel wireless injection drivers, and package ecosystem (`apt`).
 - **Tool Architecture (Pillar A)**: Zero from-scratch tool development. Wrap Kali's native binaries (`airmon-ng`, `airodump-ng`, `aircrack-ng`, `nmap`, `gobuster`, `arp-scan`, `hashcat`, `tshark`, `sqlmap`) with AIOS Policy Enforcement Point (PEP) gating, runtime bounds, and SQLite WAL audit logging.
 - **Desktop Interface (Pillar B)**: Deliver a Windows 10/11 desktop experience via XFCE `kali-undercover` or KDE Plasma Fluent themes, eliminating Linux terminal friction for operators.
+### 2026-09-19 — MILESTONE: Filesystem Layout Security Policy CLOSED 10/10 (T-01561..T-01570)
+
+Complete research, specification, scaffolding, implementation, unit testing, integration, security review, hardening, documentation, and verification for Phase 1 `Filesystem Layout / security policy` (10/10 tasks, `T-01561..T-01570`):
+- **Security Policy Enforcement (`code/aiosh-cli/tests/test_fs_layout_security_policy.py`)**:
+  - Test cases P1..P5: PEP gating for all mutations (`register`, `set_active`, `remove`, `import_fstab`), fail-closed wrong tool scope checks (`pentest.*`), path confinement across allowed and denied directories (`scope.paths`), positive authorized mutations emitting `outcome="ok"` audit rows, and read-only ungated operations (`get`, `list`, `probe`, `diff`, `fstab`).
+- **Aggregate Runner Integration (`tools/test_fs_layout_suites.py`)**:
+  - Registered criterion **FL11**, running alongside FL1..FL10 with 100% pass rate.
+- **Verification Battery**:
+  - `tools/test_fs_layout_suites.py` criteria FL1..FL11 PASS.
+- **Milestone Advance**: task pointer advances to **T-01571** (`Phase 1 — Linux Base System & Bootable Target / Filesystem Layout / observability: Research`).
+
 ### 2026-09-19 — MILESTONE: Filesystem Layout Automated Tests CLOSED 10/10 (T-01551..T-01560)
 
 Complete research, specification, scaffolding, implementation, unit testing, integration, security review, hardening, documentation, and verification for Phase 1 `Filesystem Layout / automated tests` (10/10 tasks, `T-01551..T-01560`):

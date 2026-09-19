@@ -18,6 +18,8 @@ Criteria:
         fstab, probe, diff, corruption, audit)
   FL11: filesystem layout security policy (P1..P5: PEP gating, wrong scope, path confinement,
         positive authorized mutation, read-only ungated access)
+  FL12: filesystem layout observability (O1..O5: audit emission completeness, correlation & queryability,
+        outcome fidelity, state inspection parity, destructive mutation flagging)
 """
 
 from __future__ import annotations
@@ -175,6 +177,15 @@ def test_fl11_security_policy() -> bool:
     )
 
 
+def test_fl12_observability() -> bool:
+    return _run_python_script(
+        ROOT / "code" / "aiosh-cli" / "tests" / "test_fs_layout_observability.py",
+        "FL12",
+        "filesystem layout observability (O1..O5: audit emission completeness, correlation & queryability, "
+        "outcome fidelity, state inspection parity, destructive mutation flagging)",
+    )
+
+
 def main() -> int:
     suites = [
         ("FL1", test_fl1_data_model),
@@ -188,6 +199,7 @@ def main() -> int:
         ("FL9", test_fl9_configuration_contract),
         ("FL10", test_fl10_automated_cases),
         ("FL11", test_fl11_security_policy),
+        ("FL12", test_fl12_observability),
     ]
 
     failed = []
@@ -200,7 +212,7 @@ def main() -> int:
         print(f"FAIL: fs_layout_suites failed criteria: {', '.join(failed)}", file=sys.stderr)
         return 1
 
-    print("PASS: fs_layout_suites criteria (FL1..FL11)")
+    print("PASS: fs_layout_suites criteria (FL1..FL12)")
     return 0
 
 

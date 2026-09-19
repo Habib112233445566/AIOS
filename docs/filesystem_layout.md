@@ -771,7 +771,50 @@ python tools/test_fs_layout_suites.py
 - `T-01556`: [Automated Tests Integration](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01556-automated-tests-integration.md)
 - `T-01557`: [Automated Tests Security Review](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01557-automated-tests-security-review.md)
 - `T-01558`: [Automated Tests Hardening](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01558-automated-tests-hardening.md)
-- `T-01559`: [Automated Tests Documentation](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01559-automated-tests-documentation.md)
-- `T-01560`: Automated Tests Verification & Evidence *(closing task for Sub-Epic 6)*
+- `T-01560`: [Automated Tests Verification & Evidence](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01560-automated-tests-verification-evidenc.md)
+
+### Sub-Epic 7: Filesystem Layout Security Policy (T-01561..T-01570)
+
+This sub-epic establishes and verifies the security policy governing the Filesystem Layout subsystem across MCP tool access, Policy Enforcement Point (PEP) gating, path confinement, and audit logging:
+- **Security Policy Invariants (Criteria FL11)**:
+  - **P1: Gated mutation without grant -> refused**: Mutating MCP tools (`register`, `set_active`, `remove`, `import_fstab`) require a valid PEP grant; ungranted calls fail closed with `gate: "pep"` and produce zero on-disk modifications.
+  - **P2: Gated mutation with wrong tool scope -> refused**: A grant scoped to another domain (e.g. `pentest.*`) fails authorization when calling `aios.fs_layout.*`.
+  - **P3: Gated mutation with out-of-scope path -> refused**: If a grant defines `scope.paths` (allow or deny), target files (`store_path`, `spec`, `fstab`) outside allowed prefixes or matching denied entries are refused with a `path subject` violation.
+  - **P4: Gated mutation with valid grant & in-scope paths -> allowed**: Authorized calls succeed and emit an honest audit row with `outcome="ok"`.
+  - **P5: Read-only tool execution without grant -> allowed**: Information-retrieval tools (`get`, `list`, `probe`, `diff`, `fstab`) remain accessible without requiring PEP grants.
+
+**Copy-Pasteable Invocations:**
+
+```bash
+# 1. Mint a scoped PEP grant for layout operations confined to /var/lib/aios:
+aiosh grant create --to agent:mcp-contract --tools "aios.fs_layout.*" --allow /var/lib/aios
+
+# 2. Call an authorized mutating tool via JSON-RPC 2.0 over MCP:
+echo '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"aios.fs_layout.set_active","arguments":{"layout_id":"aios-uefi-standard-v1","store_path":"/var/lib/aios/layouts.json","grant_id":"<GRANT_ID>"}}}' | aiosh-mcp
+
+# 3. Run the standalone security policy test suite:
+python code/aiosh-cli/tests/test_fs_layout_security_policy.py
+
+# 4. Run the full aggregate test battery (FL1..FL11):
+python tools/test_fs_layout_suites.py
+```
+
+**Constraints & Known Limitations:**
+- **Operator vs Agent Surface**: `aiosh layout` CLI commands execute under the local operator session and are not subject to MCP PEP grants. PEP gating applies specifically to MCP tool invocations.
+- **Canonical Path Confinement**: Path matching resolves 8.3 short names, case variations, trailing separators, and Windows device namespaces (`\\?\`, `\\.\`). Device paths targeting physical drives directly (`\\.\PhysicalDrive0`) are strictly disallowed.
+- **Pre-Gate Audit Target Limitation**: In a pre-gate refusal where no valid grant is provided, the audit target for a spec-file registration is recorded as `None` because parsing user-controlled spec files prior to authorization is intentionally forbidden (F-1/FIFO hazard mitigation).
+
+**Evidence Links:**
+- `T-01561`: [Security Policy Research](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01561-security-policy-research.md)
+- `T-01562`: [Security Policy Specification](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01562-security-policy-specification.md)
+- `T-01563`: [Security Policy Scaffold](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01563-security-policy-scaffold.md)
+- `T-01564`: [Security Policy Implementation](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01564-security-policy-implementation.md)
+- `T-01565`: [Security Policy Unit Test](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01565-security-policy-unit-test.md)
+- `T-01566`: [Security Policy Integration](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01566-security-policy-integration.md)
+- `T-01567`: [Security Policy Security Review](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01567-security-policy-security-review.md)
+- `T-01568`: [Security Policy Hardening](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01568-security-policy-hardening.md)
+- `T-01569`: [Security Policy Documentation](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01569-security-policy-documentation.md)
+- `T-01570`: Security Policy Verification & Evidence *(closing task for Sub-Epic 7)*
+
 
 
