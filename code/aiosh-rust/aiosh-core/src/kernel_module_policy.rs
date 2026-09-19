@@ -469,6 +469,9 @@ impl KernelModuleSecurityPolicy {
         }
         let file = File::open(path).map_err(|e| format!("failed to open policy file '{}': {}", path.display(), e))?;
         let metadata = file.metadata().map_err(|e| format!("failed to query metadata for '{}': {}", path.display(), e))?;
+        if !metadata.is_file() {
+            return Err(format!("policy path '{}' is not a regular file", path.display()));
+        }
 
         if metadata.len() > MAX_POLICY_FILE_BYTES {
             return Err(format!(

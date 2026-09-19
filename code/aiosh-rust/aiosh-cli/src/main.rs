@@ -10418,8 +10418,131 @@ fn cmd_kernel_module(args: &[String]) -> i32 {
             }
             0
         }
+        Some("observability") | Some("status") => {
+            let policy_path_opt = parse_flag(rest, "--policy").or_else(|| parse_flag(rest, "--config"));
+            if let Some(ref p) = policy_path_opt {
+                if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+                    let msg = "policy path cannot exceed 1024 characters and cannot contain control characters";
+                    classify_and_emit(
+                        &mut ctx,
+                        "kernel_module",
+                        "observability",
+                        json!({ "error": msg }),
+                        "failure",
+                        None,
+                        Some("Invalid policy path"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENT", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(msg));
+                    }
+                    return 2;
+                }
+            }
+
+            let policy = match aiosh_core::kernel_module_policy::KernelModuleSecurityPolicy::resolve(policy_path_opt.as_deref()) {
+                Ok(p) => p,
+                Err(e) => {
+                    classify_and_emit(
+                        &mut ctx,
+                        "kernel_module",
+                        "observability",
+                        json!({ "error": &e }),
+                        "failure",
+                        None,
+                        Some("Failed to resolve policy"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "POLICY_RESOLUTION_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("failed to resolve policy: {}", sanitize_terminal(&e));
+                    }
+                    return 1;
+                }
+            };
+
+            let store = match load_store() {
+                Ok(s) => s,
+                Err(e) => {
+                    classify_and_emit(
+                        &mut ctx,
+                        "kernel_module",
+                        "observability",
+                        json!({ "error": &e }),
+                        "failure",
+                        None,
+                        Some("Failed to load store"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "LOAD_STORE_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("failed to load store: {}", sanitize_terminal(&e));
+                    }
+                    return 1;
+                }
+            };
+
+            let mut service = aiosh_core::kernel_module_service::KernelModuleService::new(store);
+            if let Some(proc_p) = proc_path_opt {
+                service = service.with_proc_modules_path(std::path::PathBuf::from(proc_p));
+            }
+
+            let report = aiosh_core::kernel_module_observability::KernelModuleObservabilityReport::generate(
+                &service,
+                Some(&policy),
+            );
+
+            classify_and_emit(
+                &mut ctx,
+                "kernel_module",
+                "observability",
+                json!({
+                    "loaded_modules": report.total_loaded_modules,
+                    "memory_bytes": report.total_memory_bytes,
+                    "store_rules": report.store_rules_count,
+                    "autoload_modules": report.autoload_modules_count,
+                    "compliant": report.policy_compliant_count,
+                    "violations": report.policy_violations_count,
+                }),
+                "success",
+                None,
+                Some("Generated kernel module observability report"),
+                "operator",
+                None,
+            );
+
+            if is_json {
+                println!("{}", json!({
+                    "code": 0,
+                    "data": report,
+                    "error": serde_json::Value::Null
+                }));
+            } else {
+                println!("Kernel Module Observability Report:");
+                println!("  Loaded Modules:     {}", report.total_loaded_modules);
+                println!("  Memory Footprint:   {} bytes", report.total_memory_bytes);
+                println!("  Store Rules:        {}", report.store_rules_count);
+                println!("  Autoload Modules:   {}", report.autoload_modules_count);
+                println!("  Policy Compliant:   {}", report.policy_compliant_count);
+                println!("  Policy Violations:  {}", report.policy_violations_count);
+                if !report.prohibited_modules_configured.is_empty() {
+                    println!("  Prohibited Active:  {:?}", report.prohibited_modules_configured);
+                }
+                if !report.protected_modules_configured.is_empty() {
+                    println!("  Protected Tracked:  {:?}", report.protected_modules_configured);
+                }
+            }
+            0
+        }
         Some("--help") | Some("-h") | None => {
-            println!("aiosh mod — Kernel Module Management\n\nUsage:\n  aiosh mod list [--store <path>] [--proc-modules <path>] [--json]\n  aiosh mod show <name> [--store <path>] [--proc-modules <path>] [--json]\n  aiosh mod blacklist <module> [--store <path>] [--json]\n  aiosh mod unblacklist <module> [--store <path>] [--json]\n  aiosh mod options <module> <k=v...> [--store <path>] [--json]\n  aiosh mod autoload <module> [--store <path>] [--json]\n  aiosh mod unautoload <module> [--store <path>] [--json]\n  aiosh mod preset list [--json]\n  aiosh mod preset apply <preset_name> [--store <path>] [--json]\n  aiosh mod export [--store <path>] [--modprobe <path>] [--autoload <path>] [--json]\n  aiosh mod import [--store <path>] [--modprobe <path>] [--autoload <path>] [--json]\n  aiosh mod policy [--policy <path>] [--evaluate-store] [--module <name>] [--json]");
+            println!("aiosh mod — Kernel Module Management\n\nUsage:\n  aiosh mod list [--store <path>] [--proc-modules <path>] [--json]\n  aiosh mod show <name> [--store <path>] [--proc-modules <path>] [--json]\n  aiosh mod blacklist <module> [--store <path>] [--json]\n  aiosh mod unblacklist <module> [--store <path>] [--json]\n  aiosh mod options <module> <k=v...> [--store <path>] [--json]\n  aiosh mod autoload <module> [--store <path>] [--json]\n  aiosh mod unautoload <module> [--store <path>] [--json]\n  aiosh mod preset list [--json]\n  aiosh mod preset apply <preset_name> [--store <path>] [--json]\n  aiosh mod export [--store <path>] [--modprobe <path>] [--autoload <path>] [--json]\n  aiosh mod import [--store <path>] [--modprobe <path>] [--autoload <path>] [--json]\n  aiosh mod policy [--policy <path>] [--evaluate-store] [--module <name>] [--json]\n  aiosh mod observability [--store <path>] [--proc-modules <path>] [--policy <path>] [--json]");
             0
         }
         Some(other) => {

@@ -360,6 +360,72 @@ python tools/test_kernel_module_suites.py
 - Integration: `docs/tasks/evidence/T-01656-automated-tests-integration.md`.
 - Security Review: `docs/tasks/evidence/T-01657-automated-tests-security-review.md`.
 - Hardening: `docs/tasks/evidence/T-01658-automated-tests-hardening.md`.
+- Documentation: `docs/tasks/evidence/T-01659-automated-tests-documentation.md`.
+- Verification: `docs/tasks/evidence/T-01660-automated-tests-verification-evidenc.md`.
+
+---
+
+## 10. Security Policy & Invariant Enforcement
+
+The Kernel Module Management subsystem enforces security criteria via `KernelModuleSecurityPolicy` (SP-KM1..SP-KM6).
+
+### 10.1 Invariants Overview
+
+| Invariant | Title | Rule | Fatal |
+|---|---|---|---|
+| **SP-KM1** | Parameter & Identifier Hygiene | Names must match `^[a-zA-Z0-9_]+$` ($\le 64$ chars). Parameter keys must be alphanumeric/underscore ($\le 128$ chars). Parameter values must not contain shell metacharacters or control characters ($\le 1024$ chars). | Yes |
+| **SP-KM2** | Mandatory Blacklist Enforcement | Modules in `prohibited_modules` (e.g. `cramfs`, `dccp`, `firewire_core`) must never be added to autoload or configured with options. | Yes |
+| **SP-KM3** | Protected Module Guard | Modules in `protected_modules` (e.g. `ext4`, `xfs`, `overlay`, `crypto`, `dm_mod`) must never be blacklisted or disabled via install `/bin/false`. | Yes |
+| **SP-KM4** | Install Command Sanitization | `install` directives may only execute binaries explicitly listed in `allowed_install_commands` (default: `/bin/true`, `/bin/false`, `/usr/bin/true`, `/usr/bin/false`). Arbitrary commands and metacharacters (`;`, `&`, `|`, `` ` ``, `$`, `..`) are rejected. | Yes |
+| **SP-KM5** | Parameter Whitelist / Blacklist | Specific parameter keys in `disallowed_parameter_keys` (`panic`, `init`, `rdinit`) or values matching dangerous patterns are blocked. | Yes |
+| **SP-KM6** | Tri-State Evaluation & Size Ceiling | Policy files must not exceed `MAX_POLICY_FILE_BYTES` (64 KiB). Evaluation follows `Enforcing`, `Audit`, or `Permissive` semantics. | Enforcing: all fatal block; Audit: none block; Permissive: only SP-KM3/SP-KM4 block. |
+
+### 10.2 Usage & Examples
+
+```bash
+# 1. Inspect current active security policy
+aiosh mod policy --json
+
+# 2. Evaluate a specific module against policy
+aiosh mod policy cramfs --json
+
+# 3. Evaluate an entire kernel module store
+aiosh mod policy --evaluate-store --store /etc/aios/kernel_modules.json --json
+
+# 4. Use custom policy configuration
+aiosh mod policy --policy /etc/aios/kernel_module_policy.json --evaluate-store
+```
+
+```json
+// MCP Tool: aios.kernel_module.policy
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "aios.kernel_module.policy",
+    "arguments": {
+      "module": "cramfs"
+    }
+  }
+}
+```
+
+### 10.3 Constraints & Known Limitations
+1. Disjointness requirement: no module may be present in both `prohibited_modules` and `protected_modules`.
+2. Policy configuration files are strictly capped at 64 KiB and must be regular files.
+3. In `Permissive` mode, critical violations (SP-KM3 protected module destruction and SP-KM4 arbitrary install command execution) remain fatal to prevent irreversible host damage.
+
+### 10.4 Verification Evidence
+- Research: `docs/tasks/evidence/T-01661-security-policy-research.md`.
+- Specification: `docs/tasks/evidence/T-01662-security-policy-specification.md`.
+- Scaffold: `docs/tasks/evidence/T-01663-security-policy-scaffold.md`.
+- Implementation: `docs/tasks/evidence/T-01664-security-policy-implementation.md`.
+- Unit Test: `docs/tasks/evidence/T-01665-security-policy-unit-test.md`.
+- Integration: `docs/tasks/evidence/T-01666-security-policy-integration.md`.
+- Security Review: `docs/tasks/evidence/T-01667-security-policy-security-review.md`.
+- Hardening: `docs/tasks/evidence/T-01668-security-policy-hardening.md`.
+
 
 
 

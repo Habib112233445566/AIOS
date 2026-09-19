@@ -1293,6 +1293,20 @@ impl Server {
                 "additionalProperties": false
             }
         }));
+        tools.push(json!({
+            "name": "aios.kernel_module.observability",
+            "description": "Generate comprehensive kernel module observability and telemetry report",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "store_path": { "type": "string", "description": "Optional path to kernel module store JSON" },
+                    "proc_path": { "type": "string", "description": "Optional path to mock /proc/modules" },
+                    "policy_path": { "type": "string", "description": "Optional path to policy JSON" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
         tools
     }
 
@@ -4707,6 +4721,36 @@ impl Server {
                 dispatch::recorded_call(
                     &mut self.ring, &self.pep,
                     "aios.kernel_module.policy", "Inspect or evaluate kernel module security policy", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.kernel_module.observability" => {
+                let policy_path_opt = arguments.get("policy_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let proc_path_opt = arguments.get("proc_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+                let f = move || -> Result<Value, String> {
+                    if let Some(ref p) = policy_path_opt {
+                        check_kernel_module_path_bounds(p, "policy")?;
+                    }
+                    if let Some(ref p) = proc_path_opt {
+                        check_kernel_module_path_bounds(p, "proc_modules")?;
+                    }
+                    let policy = aiosh_core::kernel_module_policy::KernelModuleSecurityPolicy::resolve(policy_path_opt.as_deref())?;
+                    let service = resolve_kernel_module_service(&store_path_opt, &proc_path_opt)?;
+                    let report = aiosh_core::kernel_module_observability::KernelModuleObservabilityReport::generate(
+                        &service,
+                        Some(&policy),
+                    );
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.kernel_module.observability",
+                        "data": report,
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.kernel_module.observability", "Generate kernel module observability report", arguments,
                     None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
                 )
             }
