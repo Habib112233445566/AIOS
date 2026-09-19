@@ -1278,6 +1278,21 @@ impl Server {
                 "additionalProperties": false
             }
         }));
+        tools.push(json!({
+            "name": "aios.kernel_module.policy",
+            "description": "Inspect kernel module security policy or evaluate policy against a module or store",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "policy_path": { "type": "string", "description": "Optional path to policy JSON" },
+                    "store_path": { "type": "string", "description": "Optional path to kernel module store JSON" },
+                    "module": { "type": "string", "description": "Optional module name to evaluate" },
+                    "evaluate_store": { "type": "boolean", "description": "Whether to evaluate entire store against policy" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
         tools
     }
 
@@ -4644,6 +4659,54 @@ impl Server {
                 dispatch::recorded_call(
                     &mut self.ring, &self.pep,
                     "aios.kernel_module.export", "Export kernel module configuration", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.kernel_module.policy" => {
+                let policy_path_opt = arguments.get("policy_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let module_opt = arguments.get("module").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let evaluate_store = arguments.get("evaluate_store").and_then(|v| v.as_bool()).unwrap_or(false);
+
+                let f = move || -> Result<Value, String> {
+                    if let Some(ref p) = policy_path_opt {
+                        check_kernel_module_path_bounds(p, "policy")?;
+                    }
+                    let policy = aiosh_core::kernel_module_policy::KernelModuleSecurityPolicy::resolve(policy_path_opt.as_deref())?;
+
+                    if evaluate_store {
+                        let service = resolve_kernel_module_service(&store_path_opt, &None)?;
+                        let verdicts = policy.evaluate_store(&service.store);
+                        let all_allowed = verdicts.iter().all(|v| v.allowed);
+                        return Ok(json!({
+                            "ok": all_allowed,
+                            "tool": "aios.kernel_module.policy",
+                            "data": {
+                                "allowed": all_allowed,
+                                "mode": policy.mode,
+                                "verdicts": verdicts,
+                            }
+                        }));
+                    }
+
+                    if let Some(ref mod_name) = module_opt {
+                        let verdict = policy.evaluate_autoload(mod_name);
+                        return Ok(json!({
+                            "ok": verdict.allowed,
+                            "tool": "aios.kernel_module.policy",
+                            "data": verdict,
+                        }));
+                    }
+
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.kernel_module.policy",
+                        "data": policy,
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.kernel_module.policy", "Inspect or evaluate kernel module security policy", arguments,
                     None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
                 )
             }

@@ -318,6 +318,50 @@ aiosh mod export --store /etc/aios/kernel_modules.json \
 - Security Review: `docs/tasks/evidence/T-01647-configuration-security-review.md`.
 - Hardening: `docs/tasks/evidence/T-01648-configuration-hardening.md`.
 
+---
+
+## 9. Automated Testing & Verification Batteries
+
+The Kernel Module Management subsystem includes an 8-stage automated test battery orchestrated by `tools/test_kernel_module_suites.py`.
+
+### 9.1 Test Batteries Overview
+
+| Battery | Target Suite | Scope |
+|---|---|---|
+| **KM1** | `test_kernel_module_data_model.rs` | Invariants KM1..KM5: module syntax, parameter validation, install command safety, preset completeness. |
+| **KM2** | `test_kernel_module_service.rs` | Runtime service: procfs fallback, pre-commit conflict detection, atomic persistence, idempotent mutations. |
+| **KM3** | `test_kernel_module_config.rs` | Subsystem configuration: modprobe.d and modules-load.d line parsers, store ingestion, CFG-KM1..CFG-KM5. |
+| **KM4** | `test_kernel_module_automated.rs` | In-tree integration: compound state transitions, scale limits (1000 rules, 200 autoloads), 10 MiB document ceiling, corrupt store recovery. |
+| **KM5** | `test_kernel_module_cli_smoke.py` | Operator CLI: subcommands (`list`, `show`, `blacklist`, `unblacklist`, `options`, `autoload`, `unautoload`, `preset`, `export`), exit codes, terminal sanitization. |
+| **KM6** | `test_kernel_module_mcp_smoke.py` | Agent MCP: JSON-RPC tools (`aios.kernel_module.*`), schema advertising, full lifecycle, cross-surface parity. |
+| **KM7** | `test_kernel_module_config_smoke.py` | Configuration integration: `aiosh mod import` and `export`, roundtrip fidelity, conflict rejection. |
+| **KM8** | `test_kernel_module_automated_cases.py` | Compound lifecycle sequences, boundary values (64-char module names, 1024-byte parameters), concurrent store isolation. |
+
+### 9.2 Running the Test Orchestrator
+
+```bash
+# Execute all 8 test batteries in sequence
+python tools/test_kernel_module_suites.py
+```
+
+### 9.3 Invariants (AT-KM1..AT-KM5)
+- **AT-KM1: Compound State Transitions**: End-to-end multi-step flows preserve state integrity and disk consistency.
+- **AT-KM2: Scale & Density Limits**: System gracefully handles 1,000 rules and 200 autoload modules without performance degradation.
+- **AT-KM3: Document Ceiling**: Stores exceeding `MAX_MODULE_DOC_BYTES` (10 MiB) fail with explicit errors.
+- **AT-KM4: Corruption Resilience**: Malformed or truncated store files produce structured error envelopes without corrupting files.
+- **AT-KM5: Cross-Surface Parity**: Identical underlying state is observed and mutated across CLI, MCP, and configuration surfaces.
+
+### 9.4 Verification Evidence
+- Research: `docs/tasks/evidence/T-01651-automated-tests-research.md`.
+- Specification: `docs/tasks/evidence/T-01652-automated-tests-specification.md`.
+- Scaffold: `docs/tasks/evidence/T-01653-automated-tests-scaffold.md`.
+- Implementation: `docs/tasks/evidence/T-01654-automated-tests-implementation.md`.
+- Unit Test: `docs/tasks/evidence/T-01655-automated-tests-unit-test.md`.
+- Integration: `docs/tasks/evidence/T-01656-automated-tests-integration.md`.
+- Security Review: `docs/tasks/evidence/T-01657-automated-tests-security-review.md`.
+- Hardening: `docs/tasks/evidence/T-01658-automated-tests-hardening.md`.
+
+
 
 
 

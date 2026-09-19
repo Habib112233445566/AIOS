@@ -10231,8 +10231,195 @@ fn cmd_kernel_module(args: &[String]) -> i32 {
             }
             0
         }
+        Some("policy") => {
+            let policy_path_opt = parse_flag(rest, "--policy").or_else(|| parse_flag(rest, "--config"));
+            if let Some(ref p) = policy_path_opt {
+                if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+                    let msg = "policy path cannot exceed 1024 characters and cannot contain control characters";
+                    classify_and_emit(
+                        &mut ctx,
+                        "kernel_module",
+                        "policy",
+                        json!({ "error": msg }),
+                        "failure",
+                        None,
+                        Some("Invalid policy path"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENT", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(msg));
+                    }
+                    return 2;
+                }
+            }
+
+            let policy = match aiosh_core::kernel_module_policy::KernelModuleSecurityPolicy::resolve(policy_path_opt.as_deref()) {
+                Ok(p) => p,
+                Err(e) => {
+                    classify_and_emit(
+                        &mut ctx,
+                        "kernel_module",
+                        "policy",
+                        json!({ "error": &e }),
+                        "failure",
+                        None,
+                        Some("Failed to resolve kernel module security policy"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "POLICY_RESOLUTION_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("failed to resolve policy: {}", sanitize_terminal(&e));
+                    }
+                    return 1;
+                }
+            };
+
+            let evaluate_store_flag = rest.iter().any(|s| s == "--evaluate-store");
+            let target_module = parse_flag(rest, "--module").or_else(|| {
+                rest.first().filter(|s| !s.starts_with("--")).cloned()
+            });
+
+            if evaluate_store_flag {
+                let store = match load_store() {
+                    Ok(s) => s,
+                    Err(e) => {
+                        classify_and_emit(
+                            &mut ctx,
+                            "kernel_module",
+                            "policy",
+                            json!({ "error": &e }),
+                            "failure",
+                            None,
+                            Some("Failed to load store"),
+                            "operator",
+                            None,
+                        );
+                        if is_json {
+                            println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "LOAD_STORE_FAILED", "message": e } }));
+                        } else {
+                            eprintln!("failed to load store: {}", sanitize_terminal(&e));
+                        }
+                        return 1;
+                    }
+                };
+
+                let verdicts = policy.evaluate_store(&store);
+                let all_allowed = verdicts.iter().all(|v| v.allowed);
+                let violation_count: usize = verdicts.iter().map(|v| v.violations.len()).sum();
+
+                classify_and_emit(
+                    &mut ctx,
+                    "kernel_module",
+                    "policy",
+                    json!({ "evaluated": "store", "allowed": all_allowed, "verdicts": verdicts.len(), "violations": violation_count }),
+                    if all_allowed { "success" } else { "failure" },
+                    None,
+                    Some("Evaluated kernel module store against policy"),
+                    "operator",
+                    None,
+                );
+
+                if is_json {
+                    println!("{}", json!({
+                        "code": if all_allowed { 0 } else { 1 },
+                        "data": {
+                            "allowed": all_allowed,
+                            "mode": policy.mode,
+                            "verdicts": verdicts,
+                        },
+                        "error": serde_json::Value::Null
+                    }));
+                } else {
+                    println!("Kernel Module Store Policy Evaluation:");
+                    println!("  Mode:       {:?}", policy.mode);
+                    println!("  Allowed:    {}", all_allowed);
+                    println!("  Verdicts:   {}", verdicts.len());
+                    println!("  Violations: {}", violation_count);
+                    for v in &verdicts {
+                        if !v.violations.is_empty() {
+                            println!("  Module '{}' (allowed: {}):", sanitize_terminal(&v.module_name), v.allowed);
+                            for viol in &v.violations {
+                                println!("    [{}] {}: {}", if viol.fatal { "FATAL" } else { "WARN" }, viol.rule_id, sanitize_terminal(&viol.description));
+                            }
+                        }
+                    }
+                }
+                return if all_allowed { 0 } else { 1 };
+            }
+
+            if let Some(ref mod_name) = target_module {
+                let verdict = policy.evaluate_autoload(mod_name);
+                classify_and_emit(
+                    &mut ctx,
+                    "kernel_module",
+                    "policy",
+                    json!({ "module": mod_name, "allowed": verdict.allowed, "violations": verdict.violations.len() }),
+                    if verdict.allowed { "success" } else { "failure" },
+                    Some(mod_name),
+                    Some("Evaluated kernel module against policy"),
+                    "operator",
+                    None,
+                );
+
+                if is_json {
+                    println!("{}", json!({
+                        "code": if verdict.allowed { 0 } else { 1 },
+                        "data": verdict,
+                        "error": serde_json::Value::Null
+                    }));
+                } else {
+                    println!("Policy Evaluation for Module '{}':", sanitize_terminal(mod_name));
+                    println!("  Allowed:    {}", verdict.allowed);
+                    println!("  Mode:       {:?}", verdict.mode);
+                    println!("  Violations: {}", verdict.violations.len());
+                    for viol in &verdict.violations {
+                        println!("    [{}] {}: {}", if viol.fatal { "FATAL" } else { "WARN" }, viol.rule_id, sanitize_terminal(&viol.description));
+                    }
+                }
+                return if verdict.allowed { 0 } else { 1 };
+            }
+
+            // Default: inspect policy
+            classify_and_emit(
+                &mut ctx,
+                "kernel_module",
+                "policy",
+                json!({
+                    "mode": format!("{:?}", policy.mode),
+                    "prohibited_modules": policy.prohibited_modules.len(),
+                    "protected_modules": policy.protected_modules.len(),
+                }),
+                "success",
+                None,
+                Some("Inspected kernel module security policy"),
+                "operator",
+                None,
+            );
+
+            if is_json {
+                println!("{}", json!({
+                    "code": 0,
+                    "data": policy,
+                    "error": serde_json::Value::Null
+                }));
+            } else {
+                println!("Kernel Module Security Policy:");
+                println!("  Mode:                      {:?}", policy.mode);
+                println!("  Prohibited Modules:        {}", policy.prohibited_modules.len());
+                println!("  Protected Modules:         {}", policy.protected_modules.len());
+                println!("  Allowed Install Commands:  {}", policy.allowed_install_commands.len());
+                println!("  Disallowed Parameter Keys: {}", policy.disallowed_parameter_keys.len());
+                println!("  Max Parameter Value Len:   {}", policy.max_parameter_value_len);
+            }
+            0
+        }
         Some("--help") | Some("-h") | None => {
-            println!("aiosh mod — Kernel Module Management\n\nUsage:\n  aiosh mod list [--store <path>] [--proc-modules <path>] [--json]\n  aiosh mod show <name> [--store <path>] [--proc-modules <path>] [--json]\n  aiosh mod blacklist <module> [--store <path>] [--json]\n  aiosh mod unblacklist <module> [--store <path>] [--json]\n  aiosh mod options <module> <k=v...> [--store <path>] [--json]\n  aiosh mod autoload <module> [--store <path>] [--json]\n  aiosh mod unautoload <module> [--store <path>] [--json]\n  aiosh mod preset list [--json]\n  aiosh mod preset apply <preset_name> [--store <path>] [--json]\n  aiosh mod export [--store <path>] [--modprobe <path>] [--autoload <path>] [--json]\n  aiosh mod import [--store <path>] [--modprobe <path>] [--autoload <path>] [--json]");
+            println!("aiosh mod — Kernel Module Management\n\nUsage:\n  aiosh mod list [--store <path>] [--proc-modules <path>] [--json]\n  aiosh mod show <name> [--store <path>] [--proc-modules <path>] [--json]\n  aiosh mod blacklist <module> [--store <path>] [--json]\n  aiosh mod unblacklist <module> [--store <path>] [--json]\n  aiosh mod options <module> <k=v...> [--store <path>] [--json]\n  aiosh mod autoload <module> [--store <path>] [--json]\n  aiosh mod unautoload <module> [--store <path>] [--json]\n  aiosh mod preset list [--json]\n  aiosh mod preset apply <preset_name> [--store <path>] [--json]\n  aiosh mod export [--store <path>] [--modprobe <path>] [--autoload <path>] [--json]\n  aiosh mod import [--store <path>] [--modprobe <path>] [--autoload <path>] [--json]\n  aiosh mod policy [--policy <path>] [--evaluate-store] [--module <name>] [--json]");
             0
         }
         Some(other) => {
