@@ -1137,6 +1137,147 @@ impl Server {
                 "additionalProperties": false
             }
         }));
+        // Kernel Module Management Tools (KM-M1..KM-M5)
+        tools.push(json!({
+            "name": "aios.kernel_module.list",
+            "description": "List loaded kernel modules from procfs and configured store rules",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "store_path": { "type": "string", "description": "Optional path to kernel module store JSON" },
+                    "proc_modules_path": { "type": "string", "description": "Optional path to mock/alternative /proc/modules" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.kernel_module.get",
+            "description": "Inspect a specific kernel module: live metrics, parameters, and configured store rules",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "module": { "type": "string", "description": "Name of the kernel module to inspect" },
+                    "store_path": { "type": "string", "description": "Optional path to kernel module store JSON" },
+                    "proc_modules_path": { "type": "string", "description": "Optional path to mock/alternative /proc/modules" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "required": ["module"],
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.kernel_module.blacklist",
+            "description": "Add a module to the blacklist in the kernel module store (requires PEP grant)",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "module": { "type": "string", "description": "Kernel module name to blacklist" },
+                    "store_path": { "type": "string", "description": "Path to kernel module store JSON" },
+                    "grant_id": { "type": "string", "description": "PEP authorization grant ID" }
+                },
+                "required": ["module"],
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.kernel_module.unblacklist",
+            "description": "Remove a module from the blacklist in the kernel module store (requires PEP grant)",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "module": { "type": "string", "description": "Kernel module name to unblacklist" },
+                    "store_path": { "type": "string", "description": "Path to kernel module store JSON" },
+                    "grant_id": { "type": "string", "description": "PEP authorization grant ID" }
+                },
+                "required": ["module"],
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.kernel_module.options",
+            "description": "Configure parameter options for a kernel module (requires PEP grant)",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "module": { "type": "string", "description": "Kernel module name" },
+                    "options": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "List of module parameters (e.g. ['param=val', 'flag'])"
+                    },
+                    "store_path": { "type": "string", "description": "Path to kernel module store JSON" },
+                    "grant_id": { "type": "string", "description": "PEP authorization grant ID" }
+                },
+                "required": ["module", "options"],
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.kernel_module.autoload",
+            "description": "Add a kernel module to the boot autoload list (requires PEP grant)",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "module": { "type": "string", "description": "Kernel module name to autoload" },
+                    "store_path": { "type": "string", "description": "Path to kernel module store JSON" },
+                    "grant_id": { "type": "string", "description": "PEP authorization grant ID" }
+                },
+                "required": ["module"],
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.kernel_module.unautoload",
+            "description": "Remove a kernel module from the boot autoload list (requires PEP grant)",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "module": { "type": "string", "description": "Kernel module name to remove from autoload" },
+                    "store_path": { "type": "string", "description": "Path to kernel module store JSON" },
+                    "grant_id": { "type": "string", "description": "PEP authorization grant ID" }
+                },
+                "required": ["module"],
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.kernel_module.preset.list",
+            "description": "List available canonical kernel module presets",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.kernel_module.preset.apply",
+            "description": "Apply a canonical preset into the kernel module store (requires PEP grant)",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "preset_name": { "type": "string", "description": "Preset name (e.g. cis_hardened_baseline)" },
+                    "store_path": { "type": "string", "description": "Path to kernel module store JSON" },
+                    "grant_id": { "type": "string", "description": "PEP authorization grant ID" }
+                },
+                "required": ["preset_name"],
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.kernel_module.export",
+            "description": "Export modprobe.d and modules-load.d configuration files from store",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "store_path": { "type": "string", "description": "Optional path to kernel module store JSON" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
         tools
     }
 
@@ -4259,6 +4400,253 @@ impl Server {
                 let timeout = arguments.get("timeout_s").and_then(|v| v.as_u64()).unwrap_or(120);
                 pentest::pentest_gobuster(&mut self.pentest_ctx(), url, wordlist, grant_id, timeout)
             }
+            "aios.kernel_module.list" => {
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let proc_path_opt = arguments.get("proc_modules_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = move || -> Result<Value, String> {
+                    let service = resolve_kernel_module_service(&store_path_opt, &proc_path_opt)?;
+                    let loaded = service.list_loaded_modules()?;
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.kernel_module.list",
+                        "data": {
+                            "loaded_modules": loaded,
+                            "rules": service.store.config.rules,
+                            "autoload_modules": service.store.config.autoload_modules,
+                        }
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.kernel_module.list", "List loaded kernel modules and store rules", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.kernel_module.get" => {
+                let module = match arguments.get("module").and_then(|v| v.as_str()) {
+                    Some(m) if !m.is_empty() => m.to_string(),
+                    _ => return json!({ "ok": false, "error": "missing required parameter 'module'" }),
+                };
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let proc_path_opt = arguments.get("proc_modules_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let mod_name = module.clone();
+                let f = move || -> Result<Value, String> {
+                    let service = resolve_kernel_module_service(&store_path_opt, &proc_path_opt)?;
+                    let loaded_mod = service.get_module(&module)?;
+                    let matching_rules: Vec<_> = service.store.config.rules.iter().filter(|r| match r {
+                        aiosh_core::kernel_module::ModprobeRule::Blacklist { module: m } => m == &module,
+                        aiosh_core::kernel_module::ModprobeRule::Options { module: m, .. } => m == &module,
+                        aiosh_core::kernel_module::ModprobeRule::Alias { alias, module: m } => alias == &module || m == &module,
+                        aiosh_core::kernel_module::ModprobeRule::Install { module: m, .. } => m == &module,
+                        aiosh_core::kernel_module::ModprobeRule::Remove { module: m, .. } => m == &module,
+                        aiosh_core::kernel_module::ModprobeRule::Softdep { module: m, .. } => m == &module,
+                    }).cloned().collect();
+                    let is_autoload = service.store.config.autoload_modules.iter().any(|m| m == &module);
+
+                    if loaded_mod.is_none() && matching_rules.is_empty() && !is_autoload {
+                        return Err(format!("module '{}' not found in loaded modules or configured store", module));
+                    }
+
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.kernel_module.get",
+                        "data": {
+                            "module": loaded_mod,
+                            "rules": matching_rules,
+                            "autoload": is_autoload,
+                        }
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.kernel_module.get", "Inspect kernel module details", arguments,
+                    Some(&mod_name), grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.kernel_module.blacklist" => {
+                let module = match arguments.get("module").and_then(|v| v.as_str()) {
+                    Some(m) if !m.is_empty() => m.to_string(),
+                    _ => return json!({ "ok": false, "error": "missing required parameter 'module'" }),
+                };
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let mod_name = module.clone();
+                let f = move || -> Result<Value, String> {
+                    let mut service = resolve_kernel_module_service(&store_path_opt, &None)?;
+                    service.store.add_blacklist(&module)?;
+                    save_kernel_module_service(&service, &store_path_opt)?;
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.kernel_module.blacklist",
+                        "data": { "module": module, "blacklisted": true }
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.kernel_module.blacklist", "Blacklist kernel module", arguments,
+                    Some(&mod_name), grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.kernel_module.unblacklist" => {
+                let module = match arguments.get("module").and_then(|v| v.as_str()) {
+                    Some(m) if !m.is_empty() => m.to_string(),
+                    _ => return json!({ "ok": false, "error": "missing required parameter 'module'" }),
+                };
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let mod_name = module.clone();
+                let f = move || -> Result<Value, String> {
+                    let mut service = resolve_kernel_module_service(&store_path_opt, &None)?;
+                    let removed = service.store.remove_blacklist(&module);
+                    if removed {
+                        save_kernel_module_service(&service, &store_path_opt)?;
+                    }
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.kernel_module.unblacklist",
+                        "data": { "module": module, "removed": removed }
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.kernel_module.unblacklist", "Unblacklist kernel module", arguments,
+                    Some(&mod_name), grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.kernel_module.options" => {
+                let module = match arguments.get("module").and_then(|v| v.as_str()) {
+                    Some(m) if !m.is_empty() => m.to_string(),
+                    _ => return json!({ "ok": false, "error": "missing required parameter 'module'" }),
+                };
+                let options: Vec<String> = match arguments.get("options").and_then(|v| v.as_array()) {
+                    Some(arr) => arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect(),
+                    None => return json!({ "ok": false, "error": "missing required parameter 'options'" }),
+                };
+                if options.is_empty() {
+                    return json!({ "ok": false, "error": "options array cannot be empty" });
+                }
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let mod_name = module.clone();
+                let f = move || -> Result<Value, String> {
+                    let mut service = resolve_kernel_module_service(&store_path_opt, &None)?;
+                    service.store.add_options(&module, options.clone())?;
+                    save_kernel_module_service(&service, &store_path_opt)?;
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.kernel_module.options",
+                        "data": { "module": module, "options": options }
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.kernel_module.options", "Set kernel module options", arguments,
+                    Some(&mod_name), grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.kernel_module.autoload" => {
+                let module = match arguments.get("module").and_then(|v| v.as_str()) {
+                    Some(m) if !m.is_empty() => m.to_string(),
+                    _ => return json!({ "ok": false, "error": "missing required parameter 'module'" }),
+                };
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let mod_name = module.clone();
+                let f = move || -> Result<Value, String> {
+                    let mut service = resolve_kernel_module_service(&store_path_opt, &None)?;
+                    service.store.add_autoload(&module)?;
+                    save_kernel_module_service(&service, &store_path_opt)?;
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.kernel_module.autoload",
+                        "data": { "module": module, "autoload": true }
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.kernel_module.autoload", "Autoload kernel module", arguments,
+                    Some(&mod_name), grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.kernel_module.unautoload" => {
+                let module = match arguments.get("module").and_then(|v| v.as_str()) {
+                    Some(m) if !m.is_empty() => m.to_string(),
+                    _ => return json!({ "ok": false, "error": "missing required parameter 'module'" }),
+                };
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let mod_name = module.clone();
+                let f = move || -> Result<Value, String> {
+                    let mut service = resolve_kernel_module_service(&store_path_opt, &None)?;
+                    let removed = service.store.remove_autoload(&module);
+                    if removed {
+                        save_kernel_module_service(&service, &store_path_opt)?;
+                    }
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.kernel_module.unautoload",
+                        "data": { "module": module, "removed": removed }
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.kernel_module.unautoload", "Remove kernel module from autoload", arguments,
+                    Some(&mod_name), grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.kernel_module.preset.list" => {
+                let f = move || -> Result<Value, String> {
+                    let service = resolve_kernel_module_service(&None, &None)?;
+                    let presets = service.list_presets();
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.kernel_module.preset.list",
+                        "data": presets
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.kernel_module.preset.list", "List kernel module presets", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.kernel_module.preset.apply" => {
+                let preset_name = match arguments.get("preset_name").and_then(|v| v.as_str()) {
+                    Some(p) if !p.is_empty() => p.to_string(),
+                    _ => return json!({ "ok": false, "error": "missing required parameter 'preset_name'" }),
+                };
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let target_name = preset_name.clone();
+                let f = move || -> Result<Value, String> {
+                    let mut service = resolve_kernel_module_service(&store_path_opt, &None)?;
+                    service.apply_preset(&preset_name)?;
+                    save_kernel_module_service(&service, &store_path_opt)?;
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.kernel_module.preset.apply",
+                        "data": { "preset": preset_name, "applied": true }
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.kernel_module.preset.apply", "Apply kernel module preset", arguments,
+                    Some(&target_name), grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.kernel_module.export" => {
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = move || -> Result<Value, String> {
+                    let service = resolve_kernel_module_service(&store_path_opt, &None)?;
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.kernel_module.export",
+                        "data": {
+                            "modprobe_conf": service.store.export_modprobe_conf(),
+                            "modules_load_conf": service.store.export_modules_load_conf(),
+                        }
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.kernel_module.export", "Export kernel module configuration", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
             _ => json!({"ok": false, "error": format!("unknown tool: {}", tool)}),
         }
     }
@@ -4455,6 +4843,65 @@ fn resolve_fs_layout_service(
         }
         None => Ok(aiosh_core::fs_layout_service::FilesystemLayoutService::new()),
     }
+}
+
+fn check_kernel_module_path_bounds(path_str: &str, field_name: &str) -> Result<(), String> {
+    if path_str.len() > 1024 {
+        return Err(format!("{} path exceeds maximum limit of 1024 characters", field_name));
+    }
+    if path_str.chars().any(|c| c.is_control()) {
+        return Err(format!("{} path cannot contain control characters", field_name));
+    }
+    Ok(())
+}
+
+fn resolve_kernel_module_service(
+    store_path_opt: &Option<String>,
+    proc_path_opt: &Option<String>,
+) -> Result<aiosh_core::kernel_module_service::KernelModuleService, String> {
+    let resolved_store = match store_path_opt {
+        Some(p) => {
+            check_kernel_module_path_bounds(p, "store")?;
+            p.clone()
+        }
+        None => std::env::var("AIOSH_KERNEL_MODULE_STORE").unwrap_or_else(|_| ".aios/kernel_modules.json".into()),
+    };
+    check_kernel_module_path_bounds(&resolved_store, "store")?;
+
+    let store = {
+        let path = std::path::Path::new(&resolved_store);
+        if path.exists() {
+            aiosh_core::kernel_module_service::KernelModuleStore::load_from_path(path)?
+        } else {
+            aiosh_core::kernel_module_service::KernelModuleStore::new("default", "AIOS Kernel Module Store")
+        }
+    };
+
+    let mut service = aiosh_core::kernel_module_service::KernelModuleService::new(store);
+    if let Some(proc_p) = proc_path_opt {
+        check_kernel_module_path_bounds(proc_p, "proc_modules")?;
+        service = service.with_proc_modules_path(std::path::PathBuf::from(proc_p));
+    }
+    Ok(service)
+}
+
+fn save_kernel_module_service(
+    service: &aiosh_core::kernel_module_service::KernelModuleService,
+    store_path_opt: &Option<String>,
+) -> Result<(), String> {
+    let resolved_store = match store_path_opt {
+        Some(p) => {
+            check_kernel_module_path_bounds(p, "store")?;
+            p.clone()
+        }
+        None => std::env::var("AIOSH_KERNEL_MODULE_STORE").unwrap_or_else(|_| ".aios/kernel_modules.json".into()),
+    };
+    check_kernel_module_path_bounds(&resolved_store, "store")?;
+    let path = std::path::Path::new(&resolved_store);
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    service.store.save_to_path(path)
 }
 
 /// Upper bound for an inline (non-file) layout / fstab payload. Mirrors the explicit
@@ -6590,6 +7037,140 @@ mod tests {
             "top-level injection text must stay refused: {:?}",
             flat
         );
+
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+    }
+
+    #[test]
+    fn test_mcp_kernel_module_tools() {
+        let mut server = Server::open();
+        let tools = server.tool_manifest();
+        let tool_names: Vec<&str> = tools
+            .iter()
+            .filter_map(|t| t.get("name").and_then(|v| v.as_str()))
+            .collect();
+
+        // 1. Tool manifest discovery
+        assert!(tool_names.contains(&"aios.kernel_module.list"));
+        assert!(tool_names.contains(&"aios.kernel_module.get"));
+        assert!(tool_names.contains(&"aios.kernel_module.blacklist"));
+        assert!(tool_names.contains(&"aios.kernel_module.unblacklist"));
+        assert!(tool_names.contains(&"aios.kernel_module.options"));
+        assert!(tool_names.contains(&"aios.kernel_module.autoload"));
+        assert!(tool_names.contains(&"aios.kernel_module.unautoload"));
+        assert!(tool_names.contains(&"aios.kernel_module.preset.list"));
+        assert!(tool_names.contains(&"aios.kernel_module.preset.apply"));
+        assert!(tool_names.contains(&"aios.kernel_module.export"));
+
+        let tmp_dir = std::env::temp_dir().join(format!("aios_mcp_km_test_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&tmp_dir);
+        let store_path = tmp_dir.join("store.json").to_string_lossy().to_string();
+        let proc_path = tmp_dir.join("proc_modules.txt").to_string_lossy().to_string();
+        let _ = std::fs::write(&proc_path, "overlay 151552 1 - Live 0x0000000000000000\next4 983040 2 - Live 0x0000000000000000\n");
+
+        // 2. List
+        let res_list = server.call_tool("aios.kernel_module.list", &json!({
+            "store_path": store_path,
+            "proc_modules_path": proc_path
+        }));
+        assert_eq!(res_list.get("ok").and_then(|v| v.as_bool()), Some(true));
+        let loaded = res_list.get("data").and_then(|d| d.get("loaded_modules")).and_then(|l| l.as_array()).unwrap();
+        assert_eq!(loaded.len(), 2);
+
+        // 3. Get live module
+        let res_get = server.call_tool("aios.kernel_module.get", &json!({
+            "module": "overlay",
+            "store_path": store_path,
+            "proc_modules_path": proc_path
+        }));
+        assert_eq!(res_get.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(
+            res_get.get("data").and_then(|d| d.get("module")).and_then(|m| m.get("name")).and_then(|v| v.as_str()),
+            Some("overlay")
+        );
+
+        // 4. Get missing module
+        let res_get_missing = server.call_tool("aios.kernel_module.get", &json!({
+            "module": "nonexistent_mod",
+            "store_path": store_path,
+            "proc_modules_path": proc_path
+        }));
+        assert_eq!(res_get_missing.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 5. Blacklist
+        let res_bl = server.call_tool("aios.kernel_module.blacklist", &json!({
+            "module": "usb_storage",
+            "store_path": store_path
+        }));
+        assert_eq!(res_bl.get("ok").and_then(|v| v.as_bool()), Some(true));
+
+        // 6. Conflict: autoload blacklisted module
+        let res_conflict = server.call_tool("aios.kernel_module.autoload", &json!({
+            "module": "usb_storage",
+            "store_path": store_path
+        }));
+        assert_eq!(res_conflict.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 7. Unblacklist
+        let res_unbl = server.call_tool("aios.kernel_module.unblacklist", &json!({
+            "module": "usb_storage",
+            "store_path": store_path
+        }));
+        assert_eq!(res_unbl.get("ok").and_then(|v| v.as_bool()), Some(true));
+
+        // 8. Autoload
+        let res_auto = server.call_tool("aios.kernel_module.autoload", &json!({
+            "module": "br_netfilter",
+            "store_path": store_path
+        }));
+        assert_eq!(res_auto.get("ok").and_then(|v| v.as_bool()), Some(true));
+
+        // 9. Conflict: blacklist autoloaded module
+        let res_bl_conflict = server.call_tool("aios.kernel_module.blacklist", &json!({
+            "module": "br_netfilter",
+            "store_path": store_path
+        }));
+        assert_eq!(res_bl_conflict.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 10. Unautoload
+        let res_unauto = server.call_tool("aios.kernel_module.unautoload", &json!({
+            "module": "br_netfilter",
+            "store_path": store_path
+        }));
+        assert_eq!(res_unauto.get("ok").and_then(|v| v.as_bool()), Some(true));
+
+        // 11. Options
+        let res_opts = server.call_tool("aios.kernel_module.options", &json!({
+            "module": "e1000e",
+            "options": ["InterruptThrottleRate=1"],
+            "store_path": store_path
+        }));
+        assert_eq!(res_opts.get("ok").and_then(|v| v.as_bool()), Some(true));
+
+        // 12. Presets
+        let res_presets = server.call_tool("aios.kernel_module.preset.list", &json!({}));
+        assert_eq!(res_presets.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_presets.get("data").and_then(|d| d.as_array()).map(|a| a.len()), Some(3));
+
+        let res_apply = server.call_tool("aios.kernel_module.preset.apply", &json!({
+            "preset_name": "cis_hardened_baseline",
+            "store_path": store_path
+        }));
+        assert_eq!(res_apply.get("ok").and_then(|v| v.as_bool()), Some(true));
+
+        // 13. Export
+        let res_export = server.call_tool("aios.kernel_module.export", &json!({
+            "store_path": store_path
+        }));
+        assert_eq!(res_export.get("ok").and_then(|v| v.as_bool()), Some(true));
+        let export_data = res_export.get("data").unwrap();
+        assert!(export_data.get("modprobe_conf").and_then(|v| v.as_str()).unwrap().contains("install cramfs /bin/true"));
+
+        // 14. Path control character rejection
+        let res_bad_path = server.call_tool("aios.kernel_module.list", &json!({
+            "store_path": "bad\x07store"
+        }));
+        assert_eq!(res_bad_path.get("ok").and_then(|v| v.as_bool()), Some(false));
 
         let _ = std::fs::remove_dir_all(&tmp_dir);
     }

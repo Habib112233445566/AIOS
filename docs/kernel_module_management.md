@@ -143,3 +143,36 @@ This sub-epic establishes and verifies the runtime coordinator (`KernelModuleSer
 - `T-01619`: [Core Service Documentation](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01619-kernel-module-core-service-documentation.md)
 - `T-01620`: [Core Service Verification & Evidence](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01620-kernel-module-core-service-verification-evidenc.md)
 
+## 6. Sub-Epic 3: Kernel Module Management CLI Surface (T-01621..T-01630)
+
+The operator surface is exposed via `aiosh mod` (alias: `aiosh module`) in `code/aiosh-rust/aiosh-cli/src/main.rs`.
+
+### 6.1 Subcommands & Syntax
+- `aiosh mod list [--store <path>] [--proc-modules <path>] [--json]`: Lists live kernel modules and configured store rules.
+- `aiosh mod show <name> [--store <path>] [--proc-modules <path>] [--json]`: Displays status, parameters, dependencies, and configuration directives for a specific module.
+- `aiosh mod blacklist <module> [--store <path>] [--json]`: Adds module to blacklist in the store. Rejects autoloaded modules.
+- `aiosh mod unblacklist <module> [--store <path>] [--json]`: Removes module from store blacklist rules.
+- `aiosh mod options <module> <k=v...> [--store <path>] [--json]`: Configures module parameters.
+- `aiosh mod autoload <module> [--store <path>] [--json]`: Configures module for boot autoload (`/etc/modules-load.d/`). Rejects blacklisted modules.
+- `aiosh mod unautoload <module> [--store <path>] [--json]`: Removes module from autoload list.
+- `aiosh mod preset list [--json]`: Enumerates canonical presets (`cis_hardened_baseline`, `pentest_wireless_baseline`, `container_isolation_baseline`).
+- `aiosh mod preset apply <name> [--store <path>] [--json]`: Applies preset rules and autoloads into active store.
+- `aiosh mod export [--store <path>] [--modprobe <path>] [--autoload <path>] [--json]`: Exports `modprobe.d` and `modules-load.d` configuration directives.
+
+### 6.2 Exit Codes
+- `0`: Success.
+- `1`: Domain validation or conflict error (e.g., `MODULE_NOT_FOUND`, `BLACKLIST_FAILED`, `AUTOLOAD_FAILED`, `OPTIONS_FAILED`, `PRESET_APPLY_FAILED`).
+- `2`: Invocation error (missing arguments, unknown subcommand, path > 1024 chars, control characters).
+
+### 6.3 Invariants (KC1..KC5)
+- **KC1: CLI Invariant & Validation**: Strict argument counting and type checks; exits 2 on syntax errors.
+- **KC2: JSON Envelope Uniformity**: Structured response `{ "code": <int>, "data": <T>, "error": <err_obj_or_null> }` when `--json` is supplied.
+- **KC3: Terminal Output Sanitization**: Non-JSON terminal output sanitized using `sanitize_terminal` to strip escape sequences (CWE-150).
+- **KC4: Structured Audit Logging**: Every command execution path (success and error) emits an audit row via `classify_and_emit()`.
+- **KC5: Fail-Closed Error Handling**: Specific error codes and safe defaults without unhandled panics.
+
+### 6.4 Verification Evidence
+- In-tree unit tests: `cargo test -p aiosh-cli --bin aiosh test_cmd_kernel_module_flow` (100% pass rate).
+- Integration smoke tests: `code/aiosh-cli/tests/test_kernel_module_cli_smoke.py` (100% pass rate).
+
+

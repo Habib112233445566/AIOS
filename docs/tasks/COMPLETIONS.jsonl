@@ -1624,3 +1624,13 @@
 {"seq":1624,"ts":"2026-09-19T01:19:39Z","event":"completed","task_id":1624,"note":"Implemented aiosh mod CLI subcommands, error codes, and audit emission","evidence":[]}
 {"seq":1625,"ts":"2026-09-19T01:21:32Z","event":"completed","task_id":1625,"note":"Executed in-tree unit tests for aiosh mod CLI surface with 100% pass rate","evidence":[]}
 {"seq":1626,"ts":"2026-09-19T01:23:10Z","event":"completed","task_id":1626,"note":"Integrated and verified aiosh mod CLI smoke and boundary tests","evidence":[]}
+{"seq":1627,"ts":"2026-09-19T01:26:47Z","event":"completed","task_id":1627,"note":"Completed security review of aiosh mod CLI surface with KC-A1..KC-A5 mitigations","evidence":[]}
+{"seq":1628,"ts":"2026-09-19T01:27:14Z","event":"completed","task_id":1628,"note":"Hardened aiosh mod CLI surface with panic-free parsing and terminal sanitization","evidence":[]}
+{"seq":1629,"ts":"2026-09-19T01:28:23Z","event":"completed","task_id":1629,"note":"Documented aiosh mod CLI surface in docs/kernel_module_management.md","evidence":[]}
+{"seq":1630,"ts":"2026-09-19T01:28:40Z","event":"completed","task_id":1630,"note":"Closed Sub-Epic 3: Kernel Module Management CLI Surface milestone","evidence":[]}
+{"seq":1631,"ts":"2026-09-19T01:29:55Z","event":"completed","task_id":1631,"note":"Researched Kernel Module Management MCP API surface and tool definitions","evidence":[]}
+{"seq":1632,"ts":"2026-09-19T01:30:19Z","event":"completed","task_id":1632,"note":"Specified Kernel Module Management MCP API surface and schemas","evidence":[]}
+{"seq":1633,"ts":"2026-09-19T01:34:40Z","event":"completed","task_id":1633,"note":"Scaffolded Kernel Module Management MCP API surface in aiosh-mcp","evidence":[]}
+{"seq":1634,"ts":"2026-09-19T01:35:02Z","event":"completed","task_id":1634,"note":"Implemented all 10 Kernel Module Management MCP tool handlers","evidence":[]}
+{"seq":1635,"ts":"2026-09-19T01:38:59Z","event":"completed","task_id":1635,"note":"Executed in-tree unit tests for Kernel Module Management MCP API surface","evidence":[]}
+{"seq":1636,"ts":"2026-09-19T01:41:34Z","event":"completed","task_id":1636,"note":"Executed end-to-end integration smoke tests for Kernel Module MCP tools","evidence":[]}
