@@ -214,8 +214,9 @@ fn main() {
         Some("service") => cmd_service(&args[1..]),
         Some("session") => cmd_session(&args[1..]),
         Some("layout") | Some("fs-layout") => cmd_fs_layout(&args[1..]),
+        Some("mod") | Some("module") => cmd_kernel_module(&args[1..]),
         Some("--help") | Some("-h") | None => {
-            println!("aiosh — AIOS shell CLI (Rust)\n\nUsage: aiosh <status|run|agent|audit|grant|pentest|classify|task|ci|release|backup|toolchain|doc|evidence|repo|secrets|triage|handoff|distro|image|package|service|session|layout> ...\n\n  aiosh task <status|done|block|unblock|skip|rebuild|check>  Task ledger control\n  aiosh ci <show|failures|check|config|metrics> [--file PATH]  CI smoke reports\n  aiosh release generate  Create bootable ISO\n  aiosh backup create  Create system snapshot zip\n  aiosh toolchain check [--config <path>]  Verify host environment against ToolchainManifest\n  aiosh toolchain show [--config <path>]   Display the resolved ToolchainManifest\n  aiosh doc <show|check|search>  Documentation Index Control\n  aiosh evidence <verify|hash|scan>   Evidence & Audit Trail Control\n  aiosh repo <health|check>  Repository Health Diagnostics\n  aiosh secrets <scan|check> [--config <path>]  Secrets & Access Hygiene Scanner\n  aiosh triage <list|show|record|resolve|ingest|check>  Regression Triage Manager\n  aiosh handoff <list|show|initiate|accept|reject|complete|cancel>  Agent Handoff Protocol Manager\n  aiosh distro <list|show|evaluate|recommend|policy|stats|check>  Linux Distro Selection & Justification Manager\n  aiosh image <list|show|plan|filter>  Linux Base Image Build & Packaging Manager\n  aiosh package <list|show|search|plan|apply|validate>  Linux Package Management & Store Control\n  aiosh service <validate|list|show|status|action|start|stop|restart|reload|order>  Init & Service Supervision Control\n  aiosh session <validate|list|show|status|create|action|activate|lock|unlock|terminate|config>  User Session Bootstrap Control\n  aiosh layout <list|show|validate|check|probe|diff|fstab|register|set-active|remove|import-fstab>  Filesystem Layout & Target Partitioning Manager");
+            println!("aiosh — AIOS shell CLI (Rust)\n\nUsage: aiosh <status|run|agent|audit|grant|pentest|classify|task|ci|release|backup|toolchain|doc|evidence|repo|secrets|triage|handoff|distro|image|package|service|session|layout|mod> ...\n\n  aiosh task <status|done|block|unblock|skip|rebuild|check>  Task ledger control\n  aiosh ci <show|failures|check|config|metrics> [--file PATH]  CI smoke reports\n  aiosh release generate  Create bootable ISO\n  aiosh backup create  Create system snapshot zip\n  aiosh toolchain check [--config <path>]  Verify host environment against ToolchainManifest\n  aiosh toolchain show [--config <path>]   Display the resolved ToolchainManifest\n  aiosh doc <show|check|search>  Documentation Index Control\n  aiosh evidence <verify|hash|scan>   Evidence & Audit Trail Control\n  aiosh repo <health|check>  Repository Health Diagnostics\n  aiosh secrets <scan|check> [--config <path>]  Secrets & Access Hygiene Scanner\n  aiosh triage <list|show|record|resolve|ingest|check>  Regression Triage Manager\n  aiosh handoff <list|show|initiate|accept|reject|complete|cancel>  Agent Handoff Protocol Manager\n  aiosh distro <list|show|evaluate|recommend|policy|stats|check>  Linux Distro Selection & Justification Manager\n  aiosh image <list|show|plan|filter>  Linux Base Image Build & Packaging Manager\n  aiosh package <list|show|search|plan|apply|validate>  Linux Package Management & Store Control\n  aiosh service <validate|list|show|status|action|start|stop|restart|reload|order>  Init & Service Supervision Control\n  aiosh session <validate|list|show|status|create|action|activate|lock|unlock|terminate|config>  User Session Bootstrap Control\n  aiosh layout <list|show|validate|check|probe|diff|fstab|register|set-active|remove|import-fstab>  Filesystem Layout & Target Partitioning Manager\n  aiosh mod <list|show|blacklist|unblacklist|options|autoload|unautoload|preset|export>  Kernel Module Management");
             0
         }
         Some(other) => {
@@ -8942,6 +8943,1175 @@ fn cmd_classify(args: &[String]) -> i32 {
     0
 }
 
+fn cmd_kernel_module(args: &[String]) -> i32 {
+    let mut ctx = open_context();
+    let sub = args.first().map(|s| s.as_str());
+    let rest = if args.len() > 1 { &args[1..] } else { &[] };
+    let is_json = has_flag(rest, "--json");
+
+    let store_path_opt = parse_flag(rest, "--store");
+    if let Some(ref p) = store_path_opt {
+        if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+            let msg = "store path cannot exceed 1024 characters and cannot contain control characters";
+            classify_and_emit(
+                &mut ctx,
+                "kernel_module",
+                sub.unwrap_or("unknown"),
+                json!({ "error": msg }),
+                "failure",
+                None,
+                Some("Invalid store path"),
+                "operator",
+                None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENT", "message": msg } }));
+            } else {
+                eprintln!("{}", sanitize_terminal(msg));
+            }
+            return 2;
+        }
+    }
+
+    let proc_path_opt = parse_flag(rest, "--proc-modules");
+    if let Some(ref p) = proc_path_opt {
+        if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+            let msg = "proc-modules path cannot exceed 1024 characters and cannot contain control characters";
+            classify_and_emit(
+                &mut ctx,
+                "kernel_module",
+                sub.unwrap_or("unknown"),
+                json!({ "error": msg }),
+                "failure",
+                None,
+                Some("Invalid proc-modules path"),
+                "operator",
+                None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENT", "message": msg } }));
+            } else {
+                eprintln!("{}", sanitize_terminal(msg));
+            }
+            return 2;
+        }
+    }
+
+    let resolved_store_path = store_path_opt
+        .clone()
+        .unwrap_or_else(|| std::env::var("AIOSH_KERNEL_MODULE_STORE").unwrap_or_else(|_| format!("{}/kernel_modules.json", ai_home())));
+
+    let load_store = || -> Result<aiosh_core::kernel_module_service::KernelModuleStore, String> {
+        let p = std::path::Path::new(&resolved_store_path);
+        if p.exists() {
+            aiosh_core::kernel_module_service::KernelModuleStore::load_from_path(p)
+        } else {
+            Ok(aiosh_core::kernel_module_service::KernelModuleStore::new("default", "AIOS Kernel Module Store"))
+        }
+    };
+
+    let save_store = |store: &aiosh_core::kernel_module_service::KernelModuleStore| -> Result<(), String> {
+        let p = std::path::Path::new(&resolved_store_path);
+        if let Some(parent) = p.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        store.save_to_path(p)
+    };
+
+    match sub {
+        Some("list") => {
+            let store = match load_store() {
+                Ok(s) => s,
+                Err(e) => {
+                    classify_and_emit(
+                        &mut ctx,
+                        "kernel_module",
+                        "list",
+                        json!({ "error": &e }),
+                        "failure",
+                        None,
+                        Some("Failed to load store"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "LOAD_STORE_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("failed to load store: {}", sanitize_terminal(&e));
+                    }
+                    return 1;
+                }
+            };
+            let mut service = aiosh_core::kernel_module_service::KernelModuleService::new(store);
+            if let Some(proc_p) = proc_path_opt {
+                service = service.with_proc_modules_path(std::path::PathBuf::from(proc_p));
+            }
+            let loaded = match service.list_loaded_modules() {
+                Ok(m) => m,
+                Err(e) => {
+                    classify_and_emit(
+                        &mut ctx,
+                        "kernel_module",
+                        "list",
+                        json!({ "error": &e }),
+                        "failure",
+                        None,
+                        Some("Failed to list loaded modules"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "LIST_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("failed to list modules: {}", sanitize_terminal(&e));
+                    }
+                    return 1;
+                }
+            };
+
+            classify_and_emit(
+                &mut ctx,
+                "kernel_module",
+                "list",
+                json!({ "loaded_count": loaded.len(), "rules_count": service.store.config.rules.len() }),
+                "success",
+                None,
+                Some("Listed kernel modules"),
+                "operator",
+                None,
+            );
+
+            if is_json {
+                println!("{}", json!({
+                    "code": 0,
+                    "data": {
+                        "loaded_modules": loaded,
+                        "rules": service.store.config.rules,
+                        "autoload_modules": service.store.config.autoload_modules,
+                    },
+                    "error": serde_json::Value::Null
+                }));
+            } else {
+                println!("Loaded Modules ({}):", loaded.len());
+                for m in &loaded {
+                    println!("  {} ({} bytes, refcount: {}, state: {:?})", sanitize_terminal(&m.name), m.size_bytes, m.ref_count, m.state);
+                }
+                println!("\nConfigured Rules ({}):", service.store.config.rules.len());
+                for r in &service.store.config.rules {
+                    println!("  {:?}", r);
+                }
+                println!("\nAutoload Modules ({}):", service.store.config.autoload_modules.len());
+                for m in &service.store.config.autoload_modules {
+                    println!("  {}", sanitize_terminal(m));
+                }
+            }
+            0
+        }
+        Some("show") => {
+            let target_name = rest.first().filter(|s| !s.starts_with("--"));
+            let name = match target_name {
+                Some(n) => n.as_str(),
+                None => {
+                    let msg = "missing module name for 'show'";
+                    classify_and_emit(
+                        &mut ctx,
+                        "kernel_module",
+                        "show",
+                        json!({ "error": msg }),
+                        "failure",
+                        None,
+                        Some("Missing module name"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_MODULE_NAME", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+            };
+
+            let store = match load_store() {
+                Ok(s) => s,
+                Err(e) => {
+                    classify_and_emit(
+                        &mut ctx,
+                        "kernel_module",
+                        "show",
+                        json!({ "error": &e }),
+                        "failure",
+                        Some(name),
+                        Some("Failed to load store"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "LOAD_STORE_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("failed to load store: {}", sanitize_terminal(&e));
+                    }
+                    return 1;
+                }
+            };
+
+            let mut service = aiosh_core::kernel_module_service::KernelModuleService::new(store);
+            if let Some(proc_p) = proc_path_opt {
+                service = service.with_proc_modules_path(std::path::PathBuf::from(proc_p));
+            }
+
+            let loaded_mod = match service.get_module(name) {
+                Ok(m) => m,
+                Err(e) => {
+                    classify_and_emit(
+                        &mut ctx,
+                        "kernel_module",
+                        "show",
+                        json!({ "error": &e }),
+                        "failure",
+                        Some(name),
+                        Some("Failed to inspect module"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "SHOW_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("failed to inspect module: {}", sanitize_terminal(&e));
+                    }
+                    return 1;
+                }
+            };
+
+            let matching_rules: Vec<_> = service.store.config.rules.iter().filter(|r| match r {
+                aiosh_core::kernel_module::ModprobeRule::Blacklist { module } => module == name,
+                aiosh_core::kernel_module::ModprobeRule::Options { module, .. } => module == name,
+                aiosh_core::kernel_module::ModprobeRule::Alias { alias, module } => alias == name || module == name,
+                aiosh_core::kernel_module::ModprobeRule::Install { module, .. } => module == name,
+                aiosh_core::kernel_module::ModprobeRule::Remove { module, .. } => module == name,
+                aiosh_core::kernel_module::ModprobeRule::Softdep { module, .. } => module == name,
+            }).cloned().collect();
+
+            let is_autoload = service.store.config.autoload_modules.iter().any(|m| m == name);
+
+            if loaded_mod.is_none() && matching_rules.is_empty() && !is_autoload {
+                let msg = format!("module '{}' not found in loaded modules or configured store", name);
+                classify_and_emit(
+                    &mut ctx,
+                    "kernel_module",
+                    "show",
+                    json!({ "error": &msg }),
+                    "failure",
+                    Some(name),
+                    Some("Module not found"),
+                    "operator",
+                    None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "MODULE_NOT_FOUND", "message": msg } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(&msg));
+                }
+                return 1;
+            }
+
+            classify_and_emit(
+                &mut ctx,
+                "kernel_module",
+                "show",
+                json!({ "module": name, "loaded": loaded_mod.is_some(), "rules_count": matching_rules.len(), "autoload": is_autoload }),
+                "success",
+                Some(name),
+                Some("Showed module details"),
+                "operator",
+                None,
+            );
+
+            if is_json {
+                println!("{}", json!({
+                    "code": 0,
+                    "data": {
+                        "module": loaded_mod,
+                        "rules": matching_rules,
+                        "autoload": is_autoload,
+                    },
+                    "error": serde_json::Value::Null
+                }));
+            } else {
+                println!("Module: {}", sanitize_terminal(name));
+                if let Some(m) = loaded_mod {
+                    println!("  Loaded: yes ({} bytes, refcount: {}, state: {:?})", m.size_bytes, m.ref_count, m.state);
+                    if !m.used_by.is_empty() {
+                        println!("  Used by: {}", sanitize_terminal(&m.used_by.join(", ")));
+                    }
+                } else {
+                    println!("  Loaded: no");
+                }
+                println!("  Autoload: {}", if is_autoload { "yes" } else { "no" });
+                println!("  Configured Rules ({}):", matching_rules.len());
+                for r in &matching_rules {
+                    println!("    {:?}", r);
+                }
+            }
+            0
+        }
+        Some("blacklist") => {
+            let target_name = rest.first().filter(|s| !s.starts_with("--"));
+            let name = match target_name {
+                Some(n) => n.as_str(),
+                None => {
+                    let msg = "missing module name for 'blacklist'";
+                    classify_and_emit(
+                        &mut ctx,
+                        "kernel_module",
+                        "blacklist",
+                        json!({ "error": msg }),
+                        "failure",
+                        None,
+                        Some("Missing module name"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_MODULE_NAME", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+            };
+
+            let mut store = match load_store() {
+                Ok(s) => s,
+                Err(e) => {
+                    classify_and_emit(
+                        &mut ctx,
+                        "kernel_module",
+                        "blacklist",
+                        json!({ "error": &e }),
+                        "failure",
+                        Some(name),
+                        Some("Failed to load store"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "LOAD_STORE_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("failed to load store: {}", sanitize_terminal(&e));
+                    }
+                    return 1;
+                }
+            };
+
+            if let Err(e) = store.add_blacklist(name) {
+                classify_and_emit(
+                    &mut ctx,
+                    "kernel_module",
+                    "blacklist",
+                    json!({ "error": &e }),
+                    "failure",
+                    Some(name),
+                    Some("Blacklist addition failed"),
+                    "operator",
+                    None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "BLACKLIST_FAILED", "message": e } }));
+                } else {
+                    eprintln!("failed to blacklist module: {}", sanitize_terminal(&e));
+                }
+                return 1;
+            }
+
+            if let Err(e) = save_store(&store) {
+                classify_and_emit(
+                    &mut ctx,
+                    "kernel_module",
+                    "blacklist",
+                    json!({ "error": &e }),
+                    "failure",
+                    Some(name),
+                    Some("Failed to save store"),
+                    "operator",
+                    None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "SAVE_STORE_FAILED", "message": e } }));
+                } else {
+                    eprintln!("failed to save store: {}", sanitize_terminal(&e));
+                }
+                return 1;
+            }
+
+            classify_and_emit(
+                &mut ctx,
+                "kernel_module",
+                "blacklist",
+                json!({ "module": name, "action": "blacklisted" }),
+                "success",
+                Some(name),
+                Some("Blacklisted kernel module"),
+                "operator",
+                None,
+            );
+
+            if is_json {
+                println!("{}", json!({ "code": 0, "data": { "module": name, "blacklisted": true }, "error": serde_json::Value::Null }));
+            } else {
+                println!("Module '{}' blacklisted successfully.", sanitize_terminal(name));
+            }
+            0
+        }
+        Some("unblacklist") => {
+            let target_name = rest.first().filter(|s| !s.starts_with("--"));
+            let name = match target_name {
+                Some(n) => n.as_str(),
+                None => {
+                    let msg = "missing module name for 'unblacklist'";
+                    classify_and_emit(
+                        &mut ctx,
+                        "kernel_module",
+                        "unblacklist",
+                        json!({ "error": msg }),
+                        "failure",
+                        None,
+                        Some("Missing module name"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_MODULE_NAME", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+            };
+
+            let mut store = match load_store() {
+                Ok(s) => s,
+                Err(e) => {
+                    classify_and_emit(
+                        &mut ctx,
+                        "kernel_module",
+                        "unblacklist",
+                        json!({ "error": &e }),
+                        "failure",
+                        Some(name),
+                        Some("Failed to load store"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "LOAD_STORE_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("failed to load store: {}", sanitize_terminal(&e));
+                    }
+                    return 1;
+                }
+            };
+
+            let removed = store.remove_blacklist(name);
+            if removed {
+                if let Err(e) = save_store(&store) {
+                    classify_and_emit(
+                        &mut ctx,
+                        "kernel_module",
+                        "unblacklist",
+                        json!({ "error": &e }),
+                        "failure",
+                        Some(name),
+                        Some("Failed to save store"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "SAVE_STORE_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("failed to save store: {}", sanitize_terminal(&e));
+                    }
+                    return 1;
+                }
+            }
+
+            classify_and_emit(
+                &mut ctx,
+                "kernel_module",
+                "unblacklist",
+                json!({ "module": name, "removed": removed }),
+                "success",
+                Some(name),
+                Some("Unblacklisted kernel module"),
+                "operator",
+                None,
+            );
+
+            if is_json {
+                println!("{}", json!({ "code": 0, "data": { "module": name, "removed": removed }, "error": serde_json::Value::Null }));
+            } else {
+                if removed {
+                    println!("Module '{}' removed from blacklist.", sanitize_terminal(name));
+                } else {
+                    println!("Module '{}' was not blacklisted.", sanitize_terminal(name));
+                }
+            }
+            0
+        }
+        Some("options") => {
+            let target_name = rest.first().filter(|s| !s.starts_with("--"));
+            let name = match target_name {
+                Some(n) => n.as_str(),
+                None => {
+                    let msg = "missing module name for 'options'";
+                    classify_and_emit(
+                        &mut ctx,
+                        "kernel_module",
+                        "options",
+                        json!({ "error": msg }),
+                        "failure",
+                        None,
+                        Some("Missing module name"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_MODULE_NAME", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+            };
+
+            let mut opts = Vec::new();
+            let mut it = rest.iter().skip(1);
+            while let Some(arg) = it.next() {
+                if arg == "--store" || arg == "--proc-modules" || arg == "--modprobe" || arg == "--autoload" {
+                    let _ = it.next();
+                } else if arg.starts_with("--") {
+                    continue;
+                } else {
+                    opts.push(arg.clone());
+                }
+            }
+            if opts.is_empty() {
+                let msg = "missing option parameter(s) for 'options'";
+                classify_and_emit(
+                    &mut ctx,
+                    "kernel_module",
+                    "options",
+                    json!({ "error": msg }),
+                    "failure",
+                    Some(name),
+                    Some("Missing options"),
+                    "operator",
+                    None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_OPTIONS", "message": msg } }));
+                } else {
+                    eprintln!("{}", msg);
+                }
+                return 2;
+            }
+
+            let mut store = match load_store() {
+                Ok(s) => s,
+                Err(e) => {
+                    classify_and_emit(
+                        &mut ctx,
+                        "kernel_module",
+                        "options",
+                        json!({ "error": &e }),
+                        "failure",
+                        Some(name),
+                        Some("Failed to load store"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "LOAD_STORE_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("failed to load store: {}", sanitize_terminal(&e));
+                    }
+                    return 1;
+                }
+            };
+
+            if let Err(e) = store.add_options(name, opts.clone()) {
+                classify_and_emit(
+                    &mut ctx,
+                    "kernel_module",
+                    "options",
+                    json!({ "error": &e }),
+                    "failure",
+                    Some(name),
+                    Some("Options update failed"),
+                    "operator",
+                    None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "OPTIONS_FAILED", "message": e } }));
+                } else {
+                    eprintln!("failed to set module options: {}", sanitize_terminal(&e));
+                }
+                return 1;
+            }
+
+            if let Err(e) = save_store(&store) {
+                classify_and_emit(
+                    &mut ctx,
+                    "kernel_module",
+                    "options",
+                    json!({ "error": &e }),
+                    "failure",
+                    Some(name),
+                    Some("Failed to save store"),
+                    "operator",
+                    None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "SAVE_STORE_FAILED", "message": e } }));
+                } else {
+                    eprintln!("failed to save store: {}", sanitize_terminal(&e));
+                }
+                return 1;
+            }
+
+            classify_and_emit(
+                &mut ctx,
+                "kernel_module",
+                "options",
+                json!({ "module": name, "options": opts }),
+                "success",
+                Some(name),
+                Some("Configured module options"),
+                "operator",
+                None,
+            );
+
+            if is_json {
+                println!("{}", json!({ "code": 0, "data": { "module": name, "options": opts }, "error": serde_json::Value::Null }));
+            } else {
+                println!("Options for module '{}' set to: {:?}", sanitize_terminal(name), opts);
+            }
+            0
+        }
+        Some("autoload") => {
+            let target_name = rest.first().filter(|s| !s.starts_with("--"));
+            let name = match target_name {
+                Some(n) => n.as_str(),
+                None => {
+                    let msg = "missing module name for 'autoload'";
+                    classify_and_emit(
+                        &mut ctx,
+                        "kernel_module",
+                        "autoload",
+                        json!({ "error": msg }),
+                        "failure",
+                        None,
+                        Some("Missing module name"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_MODULE_NAME", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+            };
+
+            let mut store = match load_store() {
+                Ok(s) => s,
+                Err(e) => {
+                    classify_and_emit(
+                        &mut ctx,
+                        "kernel_module",
+                        "autoload",
+                        json!({ "error": &e }),
+                        "failure",
+                        Some(name),
+                        Some("Failed to load store"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "LOAD_STORE_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("failed to load store: {}", sanitize_terminal(&e));
+                    }
+                    return 1;
+                }
+            };
+
+            if let Err(e) = store.add_autoload(name) {
+                classify_and_emit(
+                    &mut ctx,
+                    "kernel_module",
+                    "autoload",
+                    json!({ "error": &e }),
+                    "failure",
+                    Some(name),
+                    Some("Autoload addition failed"),
+                    "operator",
+                    None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "AUTOLOAD_FAILED", "message": e } }));
+                } else {
+                    eprintln!("failed to add autoload module: {}", sanitize_terminal(&e));
+                }
+                return 1;
+            }
+
+            if let Err(e) = save_store(&store) {
+                classify_and_emit(
+                    &mut ctx,
+                    "kernel_module",
+                    "autoload",
+                    json!({ "error": &e }),
+                    "failure",
+                    Some(name),
+                    Some("Failed to save store"),
+                    "operator",
+                    None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "SAVE_STORE_FAILED", "message": e } }));
+                } else {
+                    eprintln!("failed to save store: {}", sanitize_terminal(&e));
+                }
+                return 1;
+            }
+
+            classify_and_emit(
+                &mut ctx,
+                "kernel_module",
+                "autoload",
+                json!({ "module": name, "action": "autoloaded" }),
+                "success",
+                Some(name),
+                Some("Added kernel module to autoload"),
+                "operator",
+                None,
+            );
+
+            if is_json {
+                println!("{}", json!({ "code": 0, "data": { "module": name, "autoload": true }, "error": serde_json::Value::Null }));
+            } else {
+                println!("Module '{}' added to autoload list.", sanitize_terminal(name));
+            }
+            0
+        }
+        Some("unautoload") => {
+            let target_name = rest.first().filter(|s| !s.starts_with("--"));
+            let name = match target_name {
+                Some(n) => n.as_str(),
+                None => {
+                    let msg = "missing module name for 'unautoload'";
+                    classify_and_emit(
+                        &mut ctx,
+                        "kernel_module",
+                        "unautoload",
+                        json!({ "error": msg }),
+                        "failure",
+                        None,
+                        Some("Missing module name"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_MODULE_NAME", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+            };
+
+            let mut store = match load_store() {
+                Ok(s) => s,
+                Err(e) => {
+                    classify_and_emit(
+                        &mut ctx,
+                        "kernel_module",
+                        "unautoload",
+                        json!({ "error": &e }),
+                        "failure",
+                        Some(name),
+                        Some("Failed to load store"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "LOAD_STORE_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("failed to load store: {}", sanitize_terminal(&e));
+                    }
+                    return 1;
+                }
+            };
+
+            let removed = store.remove_autoload(name);
+            if removed {
+                if let Err(e) = save_store(&store) {
+                    classify_and_emit(
+                        &mut ctx,
+                        "kernel_module",
+                        "unautoload",
+                        json!({ "error": &e }),
+                        "failure",
+                        Some(name),
+                        Some("Failed to save store"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "SAVE_STORE_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("failed to save store: {}", sanitize_terminal(&e));
+                    }
+                    return 1;
+                }
+            }
+
+            classify_and_emit(
+                &mut ctx,
+                "kernel_module",
+                "unautoload",
+                json!({ "module": name, "removed": removed }),
+                "success",
+                Some(name),
+                Some("Removed module from autoload"),
+                "operator",
+                None,
+            );
+
+            if is_json {
+                println!("{}", json!({ "code": 0, "data": { "module": name, "removed": removed }, "error": serde_json::Value::Null }));
+            } else {
+                if removed {
+                    println!("Module '{}' removed from autoload list.", sanitize_terminal(name));
+                } else {
+                    println!("Module '{}' was not in autoload list.", sanitize_terminal(name));
+                }
+            }
+            0
+        }
+        Some("preset") => {
+            let action = rest.first().filter(|s| !s.starts_with("--")).map(|s| s.as_str());
+            match action {
+                Some("list") => {
+                    let store = load_store().unwrap_or_else(|_| aiosh_core::kernel_module_service::KernelModuleStore::new("default", "AIOS Kernel Module Store"));
+                    let service = aiosh_core::kernel_module_service::KernelModuleService::new(store);
+                    let presets = service.list_presets();
+
+                    classify_and_emit(
+                        &mut ctx,
+                        "kernel_module",
+                        "preset-list",
+                        json!({ "count": presets.len() }),
+                        "success",
+                        None,
+                        Some("Listed kernel module presets"),
+                        "operator",
+                        None,
+                    );
+
+                    if is_json {
+                        println!("{}", json!({ "code": 0, "data": presets, "error": serde_json::Value::Null }));
+                    } else {
+                        println!("Available Kernel Module Presets ({}):", presets.len());
+                        for p in &presets {
+                            println!("  {} — {} ({} rules)", sanitize_terminal(&p.name), sanitize_terminal(&p.description), p.config.rules.len());
+                        }
+                    }
+                    0
+                }
+                Some("apply") => {
+                    let target_preset = rest.get(1).filter(|s| !s.starts_with("--")).map(|s| s.as_str());
+                    let preset_name = match target_preset {
+                        Some(p) => p,
+                        None => {
+                            let msg = "missing preset name for 'preset apply'";
+                            classify_and_emit(
+                                &mut ctx,
+                                "kernel_module",
+                                "preset-apply",
+                                json!({ "error": msg }),
+                                "failure",
+                                None,
+                                Some("Missing preset name"),
+                                "operator",
+                                None,
+                            );
+                            if is_json {
+                                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_PRESET_NAME", "message": msg } }));
+                            } else {
+                                eprintln!("{}", msg);
+                            }
+                            return 2;
+                        }
+                    };
+
+                    let store = match load_store() {
+                        Ok(s) => s,
+                        Err(e) => {
+                            classify_and_emit(
+                                &mut ctx,
+                                "kernel_module",
+                                "preset-apply",
+                                json!({ "error": &e }),
+                                "failure",
+                                Some(preset_name),
+                                Some("Failed to load store"),
+                                "operator",
+                                None,
+                            );
+                            if is_json {
+                                println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "LOAD_STORE_FAILED", "message": e } }));
+                            } else {
+                                eprintln!("failed to load store: {}", sanitize_terminal(&e));
+                            }
+                            return 1;
+                        }
+                    };
+
+                    let mut service = aiosh_core::kernel_module_service::KernelModuleService::new(store);
+                    if let Err(e) = service.apply_preset(preset_name) {
+                        classify_and_emit(
+                            &mut ctx,
+                            "kernel_module",
+                            "preset-apply",
+                            json!({ "error": &e }),
+                            "failure",
+                            Some(preset_name),
+                            Some("Failed to apply preset"),
+                            "operator",
+                            None,
+                        );
+                        if is_json {
+                            println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "PRESET_APPLY_FAILED", "message": e } }));
+                        } else {
+                            eprintln!("failed to apply preset: {}", sanitize_terminal(&e));
+                        }
+                        return 1;
+                    }
+
+                    if let Err(e) = save_store(&service.store) {
+                        classify_and_emit(
+                            &mut ctx,
+                            "kernel_module",
+                            "preset-apply",
+                            json!({ "error": &e }),
+                            "failure",
+                            Some(preset_name),
+                            Some("Failed to save store"),
+                            "operator",
+                            None,
+                        );
+                        if is_json {
+                            println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "SAVE_STORE_FAILED", "message": e } }));
+                        } else {
+                            eprintln!("failed to save store: {}", sanitize_terminal(&e));
+                        }
+                        return 1;
+                    }
+
+                    classify_and_emit(
+                        &mut ctx,
+                        "kernel_module",
+                        "preset-apply",
+                        json!({ "preset": preset_name, "applied": true }),
+                        "success",
+                        Some(preset_name),
+                        Some("Applied kernel module preset"),
+                        "operator",
+                        None,
+                    );
+
+                    if is_json {
+                        println!("{}", json!({ "code": 0, "data": { "preset": preset_name, "applied": true }, "error": serde_json::Value::Null }));
+                    } else {
+                        println!("Preset '{}' applied successfully.", sanitize_terminal(preset_name));
+                    }
+                    0
+                }
+                None => {
+                    let msg = "missing preset action (expected 'list' or 'apply')";
+                    classify_and_emit(
+                        &mut ctx,
+                        "kernel_module",
+                        "preset",
+                        json!({ "error": msg }),
+                        "failure",
+                        None,
+                        Some("Missing preset action"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_PRESET_ACTION", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    2
+                }
+                Some(other) => {
+                    let msg = format!("unknown preset action '{}' (expected 'list' or 'apply')", other);
+                    classify_and_emit(
+                        &mut ctx,
+                        "kernel_module",
+                        "preset",
+                        json!({ "error": &msg }),
+                        "failure",
+                        None,
+                        Some("Unknown preset action"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "UNKNOWN_PRESET_ACTION", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    2
+                }
+            }
+        }
+        Some("export") => {
+            let store = match load_store() {
+                Ok(s) => s,
+                Err(e) => {
+                    classify_and_emit(
+                        &mut ctx,
+                        "kernel_module",
+                        "export",
+                        json!({ "error": &e }),
+                        "failure",
+                        None,
+                        Some("Failed to load store"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "LOAD_STORE_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("failed to load store: {}", sanitize_terminal(&e));
+                    }
+                    return 1;
+                }
+            };
+
+            let modprobe_conf = store.export_modprobe_conf();
+            let modules_load_conf = store.export_modules_load_conf();
+
+            let modprobe_out = parse_flag(rest, "--modprobe");
+            if let Some(ref path_str) = modprobe_out {
+                if let Err(e) = std::fs::write(path_str, &modprobe_conf) {
+                    let msg = format!("failed to write modprobe file {}: {}", path_str, e);
+                    classify_and_emit(
+                        &mut ctx,
+                        "kernel_module",
+                        "export",
+                        json!({ "error": &msg }),
+                        "failure",
+                        None,
+                        Some("Export write error"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "EXPORT_WRITE_FAILED", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    return 1;
+                }
+            }
+
+            let autoload_out = parse_flag(rest, "--autoload");
+            if let Some(ref path_str) = autoload_out {
+                if let Err(e) = std::fs::write(path_str, &modules_load_conf) {
+                    let msg = format!("failed to write autoload file {}: {}", path_str, e);
+                    classify_and_emit(
+                        &mut ctx,
+                        "kernel_module",
+                        "export",
+                        json!({ "error": &msg }),
+                        "failure",
+                        None,
+                        Some("Export write error"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "EXPORT_WRITE_FAILED", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    return 1;
+                }
+            }
+
+            classify_and_emit(
+                &mut ctx,
+                "kernel_module",
+                "export",
+                json!({ "modprobe_lines": modprobe_conf.lines().count(), "autoload_lines": modules_load_conf.lines().count() }),
+                "success",
+                None,
+                Some("Exported kernel module configuration"),
+                "operator",
+                None,
+            );
+
+            if is_json {
+                println!("{}", json!({
+                    "code": 0,
+                    "data": {
+                        "modprobe_conf": modprobe_conf,
+                        "modules_load_conf": modules_load_conf,
+                    },
+                    "error": serde_json::Value::Null
+                }));
+            } else {
+                println!("# === /etc/modprobe.d/aios.conf ===\n{}", modprobe_conf);
+                println!("# === /etc/modules-load.d/aios.conf ===\n{}", modules_load_conf);
+            }
+            0
+        }
+        Some("--help") | Some("-h") | None => {
+            println!("aiosh mod — Kernel Module Management\n\nUsage:\n  aiosh mod list [--store <path>] [--proc-modules <path>] [--json]\n  aiosh mod show <name> [--store <path>] [--proc-modules <path>] [--json]\n  aiosh mod blacklist <module> [--store <path>] [--json]\n  aiosh mod unblacklist <module> [--store <path>] [--json]\n  aiosh mod options <module> <k=v...> [--store <path>] [--json]\n  aiosh mod autoload <module> [--store <path>] [--json]\n  aiosh mod unautoload <module> [--store <path>] [--json]\n  aiosh mod preset list [--json]\n  aiosh mod preset apply <preset_name> [--store <path>] [--json]\n  aiosh mod export [--store <path>] [--modprobe <path>] [--autoload <path>] [--json]");
+            0
+        }
+        Some(other) => {
+            let msg = format!("unknown mod subcommand: {}", other);
+            classify_and_emit(
+                &mut ctx,
+                "kernel_module",
+                "unknown",
+                json!({ "error": &msg }),
+                "failure",
+                None,
+                Some("Unknown kernel module subcommand"),
+                "operator",
+                None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "UNKNOWN_SUBCOMMAND", "message": msg } }));
+            } else {
+                eprintln!("{}", sanitize_terminal(&msg));
+            }
+            2
+        }
+    }
+}
+
 #[cfg(test)]
 mod task_cli_tests {
     use super::*;
@@ -10145,6 +11315,238 @@ mod task_cli_tests {
 
         // Clean up temp store file
         let _ = std::fs::remove_file(&temp_store_file);
+    }
+
+    #[test]
+    fn test_cmd_kernel_module_flow() {
+        // 1. Help flag
+        let code_help = cmd_kernel_module(&["--help".to_string()]);
+        assert_eq!(code_help, 0);
+
+        // 2. Unknown subcommand
+        let code_unknown = cmd_kernel_module(&["unknown_subcmd".to_string()]);
+        assert_eq!(code_unknown, 2);
+
+        // 3. Path injection / control character on --store
+        let code_bad_store = cmd_kernel_module(&["list".to_string(), "--store".to_string(), "bad\x00store".to_string(), "--json".to_string()]);
+        assert_eq!(code_bad_store, 2);
+
+        // Setup temporary store and proc_modules paths
+        let temp_dir = std::env::temp_dir();
+        let store_path = temp_dir.join(format!("aios_test_mod_store_{}.json", std::process::id()));
+        let store_str = store_path.to_string_lossy().to_string();
+
+        let mock_proc_path = temp_dir.join(format!("aios_test_proc_modules_{}.txt", std::process::id()));
+        let proc_content = "overlay 151552 1 - Live 0x0000000000000000\next4 983040 2 - Live 0x0000000000000000\n";
+        let _ = std::fs::write(&mock_proc_path, proc_content);
+        let proc_str = mock_proc_path.to_string_lossy().to_string();
+
+        // 4. List modules with mock proc and empty store
+        let code_list = cmd_kernel_module(&[
+            "list".to_string(),
+            "--store".to_string(),
+            store_str.clone(),
+            "--proc-modules".to_string(),
+            proc_str.clone(),
+            "--json".to_string(),
+        ]);
+        assert_eq!(code_list, 0);
+
+        // 5. Show module from mock proc
+        let code_show_proc = cmd_kernel_module(&[
+            "show".to_string(),
+            "overlay".to_string(),
+            "--store".to_string(),
+            store_str.clone(),
+            "--proc-modules".to_string(),
+            proc_str.clone(),
+            "--json".to_string(),
+        ]);
+        assert_eq!(code_show_proc, 0);
+
+        // 6. Show without module name (exit 2)
+        let code_show_no_arg = cmd_kernel_module(&["show".to_string(), "--json".to_string()]);
+        assert_eq!(code_show_no_arg, 2);
+
+        // 7. Show non-existent module (exit 1)
+        let code_show_missing = cmd_kernel_module(&[
+            "show".to_string(),
+            "nonexistent_mod".to_string(),
+            "--store".to_string(),
+            store_str.clone(),
+            "--proc-modules".to_string(),
+            proc_str.clone(),
+            "--json".to_string(),
+        ]);
+        assert_eq!(code_show_missing, 1);
+
+        // 8. Blacklist missing arg (exit 2)
+        let code_bl_no_arg = cmd_kernel_module(&["blacklist".to_string(), "--json".to_string()]);
+        assert_eq!(code_bl_no_arg, 2);
+
+        // 9. Blacklist valid module (exit 0)
+        let code_bl_ok = cmd_kernel_module(&[
+            "blacklist".to_string(),
+            "usb_storage".to_string(),
+            "--store".to_string(),
+            store_str.clone(),
+            "--json".to_string(),
+        ]);
+        assert_eq!(code_bl_ok, 0);
+
+        // Show blacklisted module (exit 0)
+        let code_show_bl = cmd_kernel_module(&[
+            "show".to_string(),
+            "usb_storage".to_string(),
+            "--store".to_string(),
+            store_str.clone(),
+            "--json".to_string(),
+        ]);
+        assert_eq!(code_show_bl, 0);
+
+        // 10. Conflict: Cannot autoload blacklisted module (exit 1)
+        let code_auto_conflict = cmd_kernel_module(&[
+            "autoload".to_string(),
+            "usb_storage".to_string(),
+            "--store".to_string(),
+            store_str.clone(),
+            "--json".to_string(),
+        ]);
+        assert_eq!(code_auto_conflict, 1);
+
+        // 11. Unblacklist (exit 0)
+        let code_unbl = cmd_kernel_module(&[
+            "unblacklist".to_string(),
+            "usb_storage".to_string(),
+            "--store".to_string(),
+            store_str.clone(),
+            "--json".to_string(),
+        ]);
+        assert_eq!(code_unbl, 0);
+
+        // 12. Autoload valid module (exit 0)
+        let code_auto_ok = cmd_kernel_module(&[
+            "autoload".to_string(),
+            "br_netfilter".to_string(),
+            "--store".to_string(),
+            store_str.clone(),
+            "--json".to_string(),
+        ]);
+        assert_eq!(code_auto_ok, 0);
+
+        // 13. Conflict: Cannot blacklist autoloaded module (exit 1)
+        let code_bl_conflict = cmd_kernel_module(&[
+            "blacklist".to_string(),
+            "br_netfilter".to_string(),
+            "--store".to_string(),
+            store_str.clone(),
+            "--json".to_string(),
+        ]);
+        assert_eq!(code_bl_conflict, 1);
+
+        // 14. Unautoload (exit 0)
+        let code_unauto = cmd_kernel_module(&[
+            "unautoload".to_string(),
+            "br_netfilter".to_string(),
+            "--store".to_string(),
+            store_str.clone(),
+            "--json".to_string(),
+        ]);
+        assert_eq!(code_unauto, 0);
+
+        // 15. Options valid (exit 0)
+        let code_opt_ok = cmd_kernel_module(&[
+            "options".to_string(),
+            "e1000e".to_string(),
+            "InterruptThrottleRate=1".to_string(),
+            "--store".to_string(),
+            store_str.clone(),
+            "--json".to_string(),
+        ]);
+        assert_eq!(code_opt_ok, 0);
+
+        // 16. Options missing parameters (exit 2)
+        let code_opt_no_param = cmd_kernel_module(&[
+            "options".to_string(),
+            "e1000e".to_string(),
+            "--store".to_string(),
+            store_str.clone(),
+            "--json".to_string(),
+        ]);
+        assert_eq!(code_opt_no_param, 2);
+
+        // 17. Options invalid parameter (exit 1)
+        let code_opt_invalid = cmd_kernel_module(&[
+            "options".to_string(),
+            "e1000e".to_string(),
+            "invalid;param=1".to_string(),
+            "--store".to_string(),
+            store_str.clone(),
+            "--json".to_string(),
+        ]);
+        assert_eq!(code_opt_invalid, 1);
+
+        // 18. Preset list (exit 0)
+        let code_preset_list = cmd_kernel_module(&["preset".to_string(), "list".to_string(), "--json".to_string()]);
+        assert_eq!(code_preset_list, 0);
+
+        // 19. Preset apply missing name (exit 2)
+        let code_preset_no_name = cmd_kernel_module(&["preset".to_string(), "apply".to_string(), "--json".to_string()]);
+        assert_eq!(code_preset_no_name, 2);
+
+        // 20. Preset apply unknown preset (exit 1)
+        let code_preset_unknown = cmd_kernel_module(&[
+            "preset".to_string(),
+            "apply".to_string(),
+            "nonexistent_preset".to_string(),
+            "--store".to_string(),
+            store_str.clone(),
+            "--json".to_string(),
+        ]);
+        assert_eq!(code_preset_unknown, 1);
+
+        // 21. Preset apply valid (exit 0)
+        let code_preset_ok = cmd_kernel_module(&[
+            "preset".to_string(),
+            "apply".to_string(),
+            "cis_hardened_baseline".to_string(),
+            "--store".to_string(),
+            store_str.clone(),
+            "--json".to_string(),
+        ]);
+        assert_eq!(code_preset_ok, 0);
+
+        // 22. Export stdout (exit 0)
+        let code_export = cmd_kernel_module(&[
+            "export".to_string(),
+            "--store".to_string(),
+            store_str.clone(),
+            "--json".to_string(),
+        ]);
+        assert_eq!(code_export, 0);
+
+        // 23. Export to files (exit 0)
+        let modprobe_file = temp_dir.join(format!("aios_test_modprobe_{}.conf", std::process::id()));
+        let autoload_file = temp_dir.join(format!("aios_test_autoload_{}.conf", std::process::id()));
+        let code_export_files = cmd_kernel_module(&[
+            "export".to_string(),
+            "--store".to_string(),
+            store_str.clone(),
+            "--modprobe".to_string(),
+            modprobe_file.to_string_lossy().to_string(),
+            "--autoload".to_string(),
+            autoload_file.to_string_lossy().to_string(),
+            "--json".to_string(),
+        ]);
+        assert_eq!(code_export_files, 0);
+        assert!(modprobe_file.exists());
+        assert!(autoload_file.exists());
+
+        // Clean up temp files
+        let _ = std::fs::remove_file(&store_path);
+        let _ = std::fs::remove_file(&mock_proc_path);
+        let _ = std::fs::remove_file(&modprobe_file);
+        let _ = std::fs::remove_file(&autoload_file);
     }
 }
 

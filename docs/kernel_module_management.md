@@ -114,3 +114,32 @@ This sub-epic establishes and verifies the core data structures, validation rule
 - `T-01608`: [Data Model Hardening](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01608-kernel-module-data-model-hardening.md)
 - `T-01609`: [Data Model Documentation](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01609-kernel-module-data-model-documentation.md)
 - `T-01610`: [Data Model Verification & Evidence](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01610-kernel-module-data-model-verification-evidenc.md)
+
+---
+
+## 5. Sub-Epic 2: Kernel Module Management Core Service (T-01611..T-01620)
+
+This sub-epic establishes and verifies the runtime coordinator (`KernelModuleService`) and persistent store (`KernelModuleStore`):
+- **Core Service Invariants (KS1..KS5)**:
+  - **KS1: Graceful Procfs Fallback**: Missing `/proc/modules` returns an empty list without error, ensuring stability across non-Linux hosts, chroots, and unprivileged container environments.
+  - **KS2: Pre-Commit Conflict Prevention**: Service rejects mutations attempting to blacklist an autoloaded module, or autoload a blacklisted/disabled module.
+  - **KS3: Atomic Persistence & Leak-Free Rollback**: Sibling staging files (`.tmp.<pid>.<filename>`) guarantee atomic replacement via `rename(2)` and clean up temporary files on error.
+  - **KS4: Idempotent Rule Management**: Duplicate blacklist entries are deduplicated, and parameter options are updated in-place without duplicating lines.
+  - **KS5: Bounded Document Size**: Strict 10 MiB ceiling (`MAX_MODULE_DOC_BYTES`) enforced symmetrically on store reads and writes.
+
+**Unit & Integration Testing**:
+- Unit tests: `cargo test -p aiosh-core --lib kernel_module_service` (6/6 passing).
+- Integration tests: `cargo test -p aiosh-core --test test_kernel_module_service` (6/6 passing).
+
+**Evidence Links:**
+- `T-01611`: [Core Service Research](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01611-kernel-module-core-service-research.md)
+- `T-01612`: [Core Service Specification](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01612-kernel-module-core-service-specification.md)
+- `T-01613`: [Core Service Scaffold](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01613-kernel-module-core-service-scaffold.md)
+- `T-01614`: [Core Service Implementation](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01614-kernel-module-core-service-implementation.md)
+- `T-01615`: [Core Service Unit Test](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01615-kernel-module-core-service-unit-test.md)
+- `T-01616`: [Core Service Integration](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01616-kernel-module-core-service-integration.md)
+- `T-01617`: [Core Service Security Review](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01617-kernel-module-core-service-security-review.md)
+- `T-01618`: [Core Service Hardening](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01618-kernel-module-core-service-hardening.md)
+- `T-01619`: [Core Service Documentation](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01619-kernel-module-core-service-documentation.md)
+- `T-01620`: [Core Service Verification & Evidence](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01620-kernel-module-core-service-verification-evidenc.md)
+

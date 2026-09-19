@@ -1,5 +1,28 @@
 # Progress Log
 
+## 2026-09-19 — T-01617..T-01626: Kernel Module Core Service CLOSED & CLI Surface Implemented (10/10 tasks)
+
+**What shipped:**
+- Completed Sub-Epic 2 (Kernel Module Management Core Service, T-01617..T-01620):
+  - T-01617: Core Service Security Review against threats KS-A1..KS-A5.
+  - T-01618: Core Service Hardening (staging files, leak-free rollback, 10 MiB limit).
+  - T-01619: Core Service Documentation in `docs/kernel_module_management.md`.
+  - T-01620: Sub-Epic 2 milestone closure verification.
+- Executed Sub-Epic 3 (Kernel Module Management CLI Surface, T-01621..T-01626):
+  - T-01621: CLI Surface Research (subcommand design, argument parsing, error envelopes).
+  - T-01622: CLI Surface Specification (formal syntax, exit codes, invariants KC1..KC5).
+  - T-01623: CLI Surface Scaffold (command routing in `aiosh-cli/src/main.rs`).
+  - T-01624: CLI Surface Implementation (`cmd_kernel_module` supporting `list`, `show`, `blacklist`, `unblacklist`, `options`, `autoload`, `unautoload`, `preset`, `export`).
+  - T-01625: CLI Surface Unit Test (`test_cmd_kernel_module_flow` in `main.rs`, 100% pass rate).
+  - T-01626: CLI Surface Integration (`code/aiosh-cli/tests/test_kernel_module_cli_smoke.py`, 100% pass rate).
+- Conducted comprehensive batch security audit in `docs/tasks/evidence/SECURITY_AUDIT_BATCH_T01617_T01626.md`.
+
+**Verified:**
+- `cargo test -p aiosh-cli --bin aiosh test_cmd_kernel_module_flow` (1 passed, 0 failed).
+- `python code/aiosh-cli/tests/test_kernel_module_cli_smoke.py` (ALL TESTS PASSED).
+- `python -c "import tools.task_ledger as tl; print(tl.validate_state())"` (valid, 1626 completed).
+- Next task pointer advances to **T-01627** (`Phase 1 — Linux Base System & Bootable Target / Kernel Module Management / CLI surface: Security Review`).
+
 ## 2026-09-19 — T-01607..T-01616: Kernel Module Data Model CLOSED & Core Service Implemented (10/10 tasks)
 
 **What shipped:**

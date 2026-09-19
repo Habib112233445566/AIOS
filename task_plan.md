@@ -33,6 +33,22 @@ Strategic decision to adopt **Kali Linux** as the primary underlying distributio
 - **Base Substrate**: Rebased OS target onto **Kali Linux Rolling (Debian-derived)**. Leverages Kali's 600+ pre-packaged penetration testing binaries, out-of-the-box kernel wireless injection drivers, and package ecosystem (`apt`).
 - **Tool Architecture (Pillar A)**: Zero from-scratch tool development. Wrap Kali's native binaries (`airmon-ng`, `airodump-ng`, `aircrack-ng`, `nmap`, `gobuster`, `arp-scan`, `hashcat`, `tshark`, `sqlmap`) with AIOS Policy Enforcement Point (PEP) gating, runtime bounds, and SQLite WAL audit logging.
 - **Desktop Interface (Pillar B)**: Deliver a Windows 10/11 desktop experience via XFCE `kali-undercover` or KDE Plasma Fluent themes, eliminating Linux terminal friction for operators.
+### 2026-09-19 — MILESTONE: Kernel Module Core Service CLOSED (T-01611..T-01620) & CLI Surface Implemented (T-01621..T-01626)
+
+Completed tasks T-01617 through T-01626:
+- **Kernel Module Management / Core Service Finalization (T-01617..T-01620)**:
+  - Sub-Epic 2 security review (threats KS-A1..KS-A5), hardening (staging files, leak-free rollback, 10 MiB limit), comprehensive documentation in `docs/kernel_module_management.md`, and Sub-Epic 2 milestone closure.
+- **Kernel Module Management / CLI Surface (T-01621..T-01626)**:
+  - Research on subcommand design, error envelopes, and argument parsing.
+  - Specification of command syntax, exit codes, and invariants KC1..KC5.
+  - Scaffolding `cmd_kernel_module` in `code/aiosh-rust/aiosh-cli/src/main.rs`.
+  - Implementation of full subcommands (`list`, `show`, `blacklist`, `unblacklist`, `options`, `autoload`, `unautoload`, `preset`, `export`).
+  - Unit testing in `main.rs` (`test_cmd_kernel_module_flow`, 100% pass rate).
+  - Integration smoke testing in `code/aiosh-cli/tests/test_kernel_module_cli_smoke.py` (ALL TESTS PASSED).
+- **Audit & Verification**:
+  - Comprehensive security audit in `docs/tasks/evidence/SECURITY_AUDIT_BATCH_T01617_T01626.md`.
+  - Next task pointer advances to **T-01627** (`Phase 1 — Linux Base System & Bootable Target / Kernel Module Management / CLI surface: Security Review`).
+
 ### 2026-09-19 — MILESTONE: Kernel Module Data Model CLOSED (T-01601..T-01610) & Core Service Initialized (T-01611..T-01616)
 
 Completed tasks T-01607 through T-01616:
