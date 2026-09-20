@@ -10734,8 +10734,130 @@ fn cmd_kernel_module(args: &[String]) -> i32 {
                 }
             }
         }
+        Some("check") => {
+            let auto_recover = has_flag(rest, "--auto-recover") || has_flag(rest, "--recover");
+            let store_arg = parse_flag(rest, "--store");
+            let resolved_store = match store_arg {
+                Some(ref p) => {
+                    if p.len() > 1024 || p.chars().any(|c| c.is_control()) {
+                        let msg = "store path cannot exceed 1024 characters and cannot contain control characters";
+                        classify_and_emit(
+                            &mut ctx,
+                            "kernel_module",
+                            "check",
+                            json!({ "error": msg }),
+                            "failure",
+                            None,
+                            Some("Invalid store path"),
+                            "operator",
+                            None,
+                        );
+                        if is_json {
+                            println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENT", "message": msg } }));
+                        } else {
+                            eprintln!("{}", sanitize_terminal(msg));
+                        }
+                        return 2;
+                    }
+                    p.clone()
+                }
+                None => resolved_store_path.clone(),
+            };
+
+            let path = std::path::Path::new(&resolved_store);
+            let report_res = if auto_recover {
+                aiosh_core::kernel_module_recovery::recover_store_file(path)
+            } else {
+                aiosh_core::kernel_module_recovery::check_store_file(path)
+            };
+
+            let report = match report_res {
+                Ok(r) => r,
+                Err(e) => {
+                    let action_name = if auto_recover { "recover" } else { "check" };
+                    classify_and_emit(
+                        &mut ctx,
+                        "kernel_module",
+                        action_name,
+                        json!({ "error": &e, "store_path": resolved_store }),
+                        "failure",
+                        None,
+                        Some("Store check/recovery execution failure"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "CHECK_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("store check failed: {}", sanitize_terminal(&e));
+                    }
+                    return 1;
+                }
+            };
+
+            let status_str = if report.healthy { "success" } else { "failure" };
+            let action_name = if auto_recover { "recover" } else { "check" };
+            classify_and_emit(
+                &mut ctx,
+                "kernel_module",
+                action_name,
+                json!({
+                    "healthy": report.healthy,
+                    "recovered": report.recovered,
+                    "store_path": report.store_path,
+                    "total_rules": report.total_rules,
+                    "valid_rules": report.valid_rules,
+                    "invalid_rules": report.invalid_rules,
+                    "total_autoload": report.total_autoload,
+                    "valid_autoload": report.valid_autoload,
+                    "invalid_autoload": report.invalid_autoload,
+                    "errors_count": report.errors.len(),
+                    "backup_path": report.backup_path,
+                }),
+                status_str,
+                None,
+                Some(if auto_recover { "Kernel module store recovery" } else { "Kernel module store integrity check" }),
+                "operator",
+                None,
+            );
+
+            if is_json {
+                let code = if report.healthy { 0 } else { 1 };
+                let err_val = if report.healthy {
+                    serde_json::Value::Null
+                } else {
+                    json!({
+                        "code": if report.recovered { "STORE_RECOVERED_WITH_ISSUES" } else { "STORE_INTEGRITY_VIOLATION" },
+                        "message": report.errors.join("; ")
+                    })
+                };
+                println!("{}", json!({
+                    "code": code,
+                    "data": report,
+                    "error": err_val
+                }));
+            } else {
+                println!("Kernel Module Store Integrity Report:");
+                println!("  Store: {}", sanitize_terminal(&report.store_path));
+                println!("  Status: {}", if report.healthy { "HEALTHY" } else { "UNHEALTHY" });
+                println!("  Rules: {} total ({} valid, {} invalid)", report.total_rules, report.valid_rules, report.invalid_rules);
+                println!("  Autoload: {} total ({} valid, {} invalid)", report.total_autoload, report.valid_autoload, report.invalid_autoload);
+                println!("  Auto-recovered: {}", if report.recovered { "yes" } else { "no" });
+                if let Some(ref bp) = report.backup_path {
+                    println!("  Quarantine Backup: {}", sanitize_terminal(bp));
+                }
+                if !report.errors.is_empty() {
+                    println!("  Integrity Errors ({}):", report.errors.len());
+                    for err in &report.errors {
+                        println!("    - {}", sanitize_terminal(err));
+                    }
+                }
+            }
+
+            if report.healthy { 0 } else { 1 }
+        }
         Some("--help") | Some("-h") | None => {
-            println!("aiosh mod — Kernel Module Management\n\nUsage:\n  aiosh mod list [--store <path>] [--proc-modules <path>] [--json]\n  aiosh mod show <name> [--store <path>] [--proc-modules <path>] [--json]\n  aiosh mod blacklist <module> [--store <path>] [--json]\n  aiosh mod unblacklist <module> [--store <path>] [--json]\n  aiosh mod options <module> <k=v...> [--store <path>] [--json]\n  aiosh mod autoload <module> [--store <path>] [--json]\n  aiosh mod unautoload <module> [--store <path>] [--json]\n  aiosh mod preset list [--json]\n  aiosh mod preset apply <preset_name> [--store <path>] [--json]\n  aiosh mod export [--store <path>] [--modprobe <path>] [--autoload <path>] [--json]\n  aiosh mod import [--store <path>] [--modprobe <path>] [--autoload <path>] [--json]\n  aiosh mod policy [--policy <path>] [--evaluate-store] [--module <name>] [--json]\n  aiosh mod observability [--store <path>] [--proc-modules <path>] [--policy <path>] [--json]\n  aiosh mod doc [list|get <topic>|search <query>] [--json]");
+            println!("aiosh mod — Kernel Module Management\n\nUsage:\n  aiosh mod list [--store <path>] [--proc-modules <path>] [--json]\n  aiosh mod show <name> [--store <path>] [--proc-modules <path>] [--json]\n  aiosh mod blacklist <module> [--store <path>] [--json]\n  aiosh mod unblacklist <module> [--store <path>] [--json]\n  aiosh mod options <module> <k=v...> [--store <path>] [--json]\n  aiosh mod autoload <module> [--store <path>] [--json]\n  aiosh mod unautoload <module> [--store <path>] [--json]\n  aiosh mod preset list [--json]\n  aiosh mod preset apply <preset_name> [--store <path>] [--json]\n  aiosh mod export [--store <path>] [--modprobe <path>] [--autoload <path>] [--json]\n  aiosh mod import [--store <path>] [--modprobe <path>] [--autoload <path>] [--json]\n  aiosh mod policy [--policy <path>] [--evaluate-store] [--module <name>] [--json]\n  aiosh mod observability [--store <path>] [--proc-modules <path>] [--policy <path>] [--json]\n  aiosh mod doc [list|get <topic>|search <query>] [--json]\n  aiosh mod check [--store <path>] [--auto-recover] [--json]");
             0
         }
         Some(other) => {
@@ -12191,11 +12313,52 @@ mod task_cli_tests {
         assert!(modprobe_file.exists());
         assert!(autoload_file.exists());
 
+        // 24. Check healthy store (exit 0)
+        let code_check_ok = cmd_kernel_module(&[
+            "check".to_string(),
+            "--store".to_string(),
+            store_str.clone(),
+            "--json".to_string(),
+        ]);
+        assert_eq!(code_check_ok, 0);
+
+        // 25. Check with control char on --store (exit 2)
+        let code_check_ctrl = cmd_kernel_module(&[
+            "check".to_string(),
+            "--store".to_string(),
+            "bad\x00store".to_string(),
+            "--json".to_string(),
+        ]);
+        assert_eq!(code_check_ctrl, 2);
+
+        // 26. Check corrupted store (exit 1)
+        let corrupt_path = temp_dir.join(format!("aios_corrupt_store_{}.json", std::process::id()));
+        let corrupt_str = corrupt_path.to_string_lossy().to_string();
+        let _ = std::fs::write(&corrupt_path, "{ broken json ... ");
+        let code_check_corrupt = cmd_kernel_module(&[
+            "check".to_string(),
+            "--store".to_string(),
+            corrupt_str.clone(),
+            "--json".to_string(),
+        ]);
+        assert_eq!(code_check_corrupt, 1);
+
+        // 27. Check with --auto-recover on corrupted store (exit 0)
+        let code_recover_ok = cmd_kernel_module(&[
+            "check".to_string(),
+            "--store".to_string(),
+            corrupt_str.clone(),
+            "--auto-recover".to_string(),
+            "--json".to_string(),
+        ]);
+        assert_eq!(code_recover_ok, 0);
+
         // Clean up temp files
         let _ = std::fs::remove_file(&store_path);
         let _ = std::fs::remove_file(&mock_proc_path);
         let _ = std::fs::remove_file(&modprobe_file);
         let _ = std::fs::remove_file(&autoload_file);
+        let _ = std::fs::remove_file(&corrupt_path);
     }
 }
 

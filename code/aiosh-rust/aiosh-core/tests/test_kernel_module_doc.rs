@@ -116,3 +116,25 @@ fn test_kd6_serialization_and_json_export() {
     let res_json = serde_json::to_string(&results).expect("serialize results");
     assert!(res_json.contains("wireless-pentest"));
 }
+
+#[test]
+fn test_kd7_hardening_bounds() {
+    let index = KernelModuleDocIndex::new();
+
+    // 1. Oversized query (> 256 chars) is safely rejected
+    let huge_query = "a".repeat(aiosh_core::kernel_module_doc::MAX_DOC_QUERY_LEN + 10);
+    assert!(index.search(&huge_query).is_empty());
+
+    // 2. Query with control characters is safely rejected
+    let ctrl_query = "modprobe\x00inject";
+    assert!(index.search(ctrl_query).is_empty());
+
+    // 3. Oversized topic ID (> 64 chars) is safely rejected
+    let huge_id = "a".repeat(aiosh_core::kernel_module_doc::MAX_TOPIC_ID_LEN + 10);
+    assert!(index.get_topic(&huge_id).is_none());
+
+    // 4. Topic ID with control characters is safely rejected
+    let ctrl_id = "modprobe\ndirectives";
+    assert!(index.get_topic(ctrl_id).is_none());
+}
+

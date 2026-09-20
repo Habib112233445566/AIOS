@@ -59,6 +59,15 @@ pub struct DocSearchResult {
     pub matched_tags: Vec<String>,
 }
 
+/// Maximum allowed length for search queries (256 characters, hardened T-01688).
+pub const MAX_DOC_QUERY_LEN: usize = 256;
+
+/// Maximum number of search results returned (50, hardened T-01688).
+pub const MAX_DOC_SEARCH_RESULTS: usize = 50;
+
+/// Maximum length for topic identifiers (64 characters, hardened T-01688).
+pub const MAX_TOPIC_ID_LEN: usize = 64;
+
 /// Offline in-memory index of kernel module documentation.
 #[derive(Debug, Clone)]
 pub struct KernelModuleDocIndex {
@@ -81,9 +90,13 @@ impl KernelModuleDocIndex {
         idx
     }
 
-    /// Looks up a topic by ID (case-insensitive) (KD2).
+    /// Looks up a topic by ID (case-insensitive) with defensive bounds (KD2, hardened T-01688).
     pub fn get_topic(&self, id: &str) -> Option<&DocTopic> {
-        self.topics.iter().find(|t| t.id.eq_ignore_ascii_case(id))
+        let id_clean = id.trim();
+        if id_clean.is_empty() || id_clean.len() > MAX_TOPIC_ID_LEN || id_clean.chars().any(|c| c.is_control()) {
+            return None;
+        }
+        self.topics.iter().find(|t| t.id.eq_ignore_ascii_case(id_clean))
     }
 
     /// Lists all topics in the index (KD1).
@@ -96,12 +109,13 @@ impl KernelModuleDocIndex {
         self.topics.iter().filter(|t| t.category == category).collect()
     }
 
-    /// Searches documentation topics with scored ranking (KD3).
+    /// Searches documentation topics with scored ranking and defensive bounds (KD3, hardened T-01688).
     pub fn search(&self, query: &str) -> Vec<DocSearchResult> {
-        let query_clean = query.trim().to_ascii_lowercase();
-        if query_clean.is_empty() {
+        let trimmed = query.trim();
+        if trimmed.is_empty() || trimmed.len() > MAX_DOC_QUERY_LEN || trimmed.chars().any(|c| c.is_control()) {
             return Vec::new();
         }
+        let query_clean = trimmed.to_ascii_lowercase();
 
         let mut results = Vec::new();
         for topic in &self.topics {
@@ -174,6 +188,7 @@ impl KernelModuleDocIndex {
             b.score.cmp(&a.score).then_with(|| a.topic_id.cmp(&b.topic_id))
         });
 
+        results.truncate(MAX_DOC_SEARCH_RESULTS);
         results
     }
 

@@ -61,6 +61,7 @@ pub mod kernel_module_config;
 pub mod kernel_module_doc;
 pub mod kernel_module_observability;
 pub mod kernel_module_policy;
+pub mod kernel_module_recovery;
 pub mod kernel_module_service;
 pub mod ledger;
 pub mod ledger_config;

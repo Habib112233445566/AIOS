@@ -490,6 +490,81 @@ aiosh mod observability --proc-modules /tmp/mock_proc_modules --store /tmp/custo
 - Documentation: `docs/tasks/evidence/T-01679-observability-documentation.md`.
 - Verification & Evidence: `docs/tasks/evidence/T-01680-observability-verification-evidenc.md`.
 
+---
+
+## 12. Sub-Epic 9: Kernel Module Documentation & Reference Subsystem (T-01681..T-01690)
+
+### 12.1 Overview & Invariants (KD1..KD6)
+The Documentation subsystem (`KernelModuleDocIndex`) provides an offline, self-contained documentation repository for Linux kernel module directives, CIS benchmark baselines, operational lifecycles, and security policies.
+
+| Invariant | Name | Guarantee & Acceptance Criterion | Enforced in Code? |
+|---|---|---|---|
+| **KD1** | Offline Self-Contained Registry | Pre-populates $\ge 7$ distinct canonical topics compiled directly into `aiosh-core`; requires zero network connectivity. | Yes |
+| **KD2** | Case-Insensitive ID Lookup | Case-insensitive topic retrieval via `get_topic`; returns `None` on unknown or invalid IDs. | Yes |
+| **KD3** | Deterministic Search & Ranking | Multi-tier ranking: Exact ID (+100), Tag match (+50), Title (+25), Summary (+15), Content (+10); deterministically ordered by score then topic ID. | Yes |
+| **KD4** | Multi-Format Rendering | Supports human-readable Markdown terminal output and structured JSON for automated pipelines. | Yes |
+| **KD5** | Deterministic JSON Serialization | `DocTopic`, `DocSearchResult`, and topic lists roundtrip losslessly to JSON. | Yes |
+| **KD6** | Cross-Surface Parity | CLI (`aiosh mod doc`) and MCP (`aios.kernel_module.doc`) produce identical documentation payloads. | Yes |
+
+### 12.2 Canonical Built-In Topics
+1. `modprobe-directives`: Directives syntax and semantics (`alias`, `blacklist`, `options`, `install`, `remove`, `softdep`).
+2. `cis-benchmark-hardening`: Disabling obsolete filesystems (`cramfs`, `freevxfs`, etc.) and protocols (`dccp`, `sctp`, etc.).
+3. `lifecycle-workflows`: Module load, unload, dependency resolution, refcounts, and state transitions.
+4. `observability-and-procfs`: Introspecting `/proc/modules`, `/sys/module/*`, memory footprints, and KASLR address protection.
+5. `security-policy-and-pep`: SP-KM1..SP-KM6 policy constraints, PEP capabilities, prohibited and protected module rules.
+6. `container-isolation`: Namespace virtualization, overlayfs parameters (`metacopy=on`), and network bridging.
+7. `wireless-pentest`: Driver configurations for hardware penetration testing (`ath9k_htc nohwcrypt=1`, `rtl8812au`).
+
+### 12.3 Operational Usage & Examples
+
+```bash
+# 1. List all available documentation topics
+aiosh mod doc list
+
+# 2. View specific topic formatted in Markdown
+aiosh mod doc get cis-benchmark-hardening
+
+# 3. Export specific topic in structured JSON
+aiosh mod doc get container-isolation --json
+
+# 4. Search documentation index by query
+aiosh mod doc search cramfs --json
+```
+
+```json
+// MCP Tool: aios.kernel_module.doc
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "aios.kernel_module.doc",
+    "arguments": {
+      "action": "search",
+      "query": "cramfs"
+    }
+  }
+}
+```
+
+### 12.4 Security & Hardening Constraints
+1. **Query & ID Length Limits**: `MAX_DOC_QUERY_LEN` (256 characters) and `MAX_TOPIC_ID_LEN` (64 characters) defeat ReDoS and memory exhaustion attacks.
+2. **Control Character Rejection**: Queries and topic IDs containing control characters are safely rejected.
+3. **Bounded Result Sets**: `MAX_DOC_SEARCH_RESULTS` (50 items) prevents unbounded heap allocation during search serialization.
+
+### 12.5 Verification Evidence
+- Research: `docs/tasks/evidence/T-01681-documentation-research.md`.
+- Specification: `docs/tasks/evidence/T-01682-documentation-specification.md`.
+- Scaffold: `docs/tasks/evidence/T-01683-documentation-scaffold.md`.
+- Implementation: `docs/tasks/evidence/T-01684-documentation-implementation.md`.
+- Unit Test: `docs/tasks/evidence/T-01685-documentation-unit-test.md`.
+- Integration: `docs/tasks/evidence/T-01686-documentation-integration.md`.
+- Security Review: `docs/tasks/evidence/T-01687-documentation-security-review.md`.
+- Hardening: `docs/tasks/evidence/T-01688-documentation-hardening.md`.
+- Documentation: `docs/tasks/evidence/T-01689-documentation-documentation.md`.
+- Verification & Evidence: `docs/tasks/evidence/T-01690-documentation-verification-evidenc.md`.
+
+
 
 
 

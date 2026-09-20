@@ -1321,6 +1321,19 @@ impl Server {
                 "additionalProperties": false
             }
         }));
+        tools.push(json!({
+            "name": "aios.kernel_module.check",
+            "description": "Validate on-disk kernel module store integrity and optionally perform automated recovery (KR1..KR6)",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "store_path": { "type": "string", "description": "Optional custom path to the kernel module store JSON file" },
+                    "auto_recover": { "type": "boolean", "description": "Automatically repair corrupted or invalid store with timestamped backup" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
         tools
     }
 
@@ -4816,6 +4829,39 @@ impl Server {
                     None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
                 )
             }
+            "aios.kernel_module.check" => {
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let auto_recover = arguments.get("auto_recover").and_then(|v| v.as_bool()).unwrap_or(false);
+
+                let f = move || -> Result<Value, String> {
+                    let resolved_store = match store_path_opt {
+                        Some(ref p) => {
+                            check_kernel_module_path_bounds(p, "store")?;
+                            p.clone()
+                        }
+                        None => std::env::var("AIOSH_KERNEL_MODULE_STORE").unwrap_or_else(|_| ".aios/kernel_modules.json".into()),
+                    };
+                    check_kernel_module_path_bounds(&resolved_store, "store")?;
+                    let path = std::path::Path::new(&resolved_store);
+
+                    let report = if auto_recover {
+                        aiosh_core::kernel_module_recovery::recover_store_file(path)?
+                    } else {
+                        aiosh_core::kernel_module_recovery::check_store_file(path)?
+                    };
+
+                    Ok(json!({
+                        "ok": report.healthy,
+                        "tool": "aios.kernel_module.check",
+                        "data": report,
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.kernel_module.check", "Validate and check kernel module store integrity", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
             _ => json!({"ok": false, "error": format!("unknown tool: {}", tool)}),
         }
     }
@@ -7230,6 +7276,7 @@ mod tests {
         assert!(tool_names.contains(&"aios.kernel_module.preset.list"));
         assert!(tool_names.contains(&"aios.kernel_module.preset.apply"));
         assert!(tool_names.contains(&"aios.kernel_module.export"));
+        assert!(tool_names.contains(&"aios.kernel_module.check"));
 
         let tmp_dir = std::env::temp_dir().join(format!("aios_mcp_km_test_{}", std::process::id()));
         let _ = std::fs::create_dir_all(&tmp_dir);
@@ -7340,6 +7387,37 @@ mod tests {
             "store_path": "bad\x07store"
         }));
         assert_eq!(res_bad_path.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 15. Check healthy store
+        let res_check_ok = server.call_tool("aios.kernel_module.check", &json!({
+            "store_path": store_path
+        }));
+        assert_eq!(res_check_ok.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_check_ok.pointer("/data/healthy").and_then(|v| v.as_bool()), Some(true));
+
+        // 16. Check corrupted store
+        let corrupt_path = tmp_dir.join("corrupted.json").to_string_lossy().to_string();
+        let _ = std::fs::write(&corrupt_path, "{ broken json ... ");
+        let res_check_corrupt = server.call_tool("aios.kernel_module.check", &json!({
+            "store_path": corrupt_path
+        }));
+        assert_eq!(res_check_corrupt.get("ok").and_then(|v| v.as_bool()), Some(false));
+        assert_eq!(res_check_corrupt.pointer("/data/healthy").and_then(|v| v.as_bool()), Some(false));
+
+        // 17. Check auto-recover on corrupted store
+        let res_recover_ok = server.call_tool("aios.kernel_module.check", &json!({
+            "store_path": corrupt_path,
+            "auto_recover": true
+        }));
+        assert_eq!(res_recover_ok.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_recover_ok.pointer("/data/healthy").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_recover_ok.pointer("/data/recovered").and_then(|v| v.as_bool()), Some(true));
+
+        // 18. Path control character rejection on check
+        let res_check_ctrl = server.call_tool("aios.kernel_module.check", &json!({
+            "store_path": "bad\x00path"
+        }));
+        assert_eq!(res_check_ctrl.get("ok").and_then(|v| v.as_bool()), Some(false));
 
         let _ = std::fs::remove_dir_all(&tmp_dir);
     }
