@@ -95,6 +95,7 @@ pub mod package_service;
 pub mod pentest;
 pub mod pep;
 pub mod pep_decision;
+pub mod pep_decision_service;
 pub mod release;
 pub mod release_config;
 pub mod repo_health;

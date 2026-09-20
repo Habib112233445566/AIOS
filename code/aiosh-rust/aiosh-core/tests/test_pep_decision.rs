@@ -238,3 +238,30 @@ fn test_pep_empty_rules_fail_closed_default_deny() {
         assert!(dec.validate_invariants().is_ok());
     }
 }
+
+#[test]
+fn test_pep_hardening_controls() {
+    // Path traversal in resource rejected
+    let traversal_err = PepRequest::new("agent:root", "fs:/secret/../keys", "read", None).unwrap_err();
+    assert!(matches!(traversal_err, PepDecisionError::InvalidResource(_)));
+
+    // Rule count bound enforced (> 1000 rules triggers default deny)
+    let req = PepRequest::new("agent:worker", "fs:/data", "read", None).unwrap();
+    let mut excessive_rules = Vec::new();
+    for i in 0..1005 {
+        excessive_rules.push(PepPolicyRule {
+            id: format!("rule_{}", i),
+            target_subject: Some("agent:*".to_string()),
+            target_resource: Some("fs:*".to_string()),
+            target_action: Some("read".to_string()),
+            effect: PepDecisionEffect::Permit,
+            obligations: Vec::new(),
+            description: "permit".to_string(),
+        });
+    }
+    let dec = evaluate_rules(&excessive_rules, &req, PepCombiningAlgorithm::DenyOverrides);
+    assert_eq!(dec.effect, PepDecisionEffect::Deny);
+    assert!(!dec.allowed);
+    assert!(dec.reason.contains("exceeds maximum allowed"));
+    assert!(dec.validate_invariants().is_ok());
+}

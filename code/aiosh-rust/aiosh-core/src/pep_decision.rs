@@ -22,6 +22,9 @@ pub const MAX_PEP_REASON_LEN: usize = 512;
 /// Maximum number of obligations permitted in a single decision.
 pub const MAX_PEP_OBLIGATIONS: usize = 32;
 
+/// Maximum number of rules permitted in a single evaluation.
+pub const MAX_PEP_RULES_PER_EVALUATION: usize = 1000;
+
 pub const PEP_ERR_INVALID_SUBJECT: &str = "PEP_ERR_INVALID_SUBJECT";
 pub const PEP_ERR_INVALID_RESOURCE: &str = "PEP_ERR_INVALID_RESOURCE";
 pub const PEP_ERR_INVALID_ACTION: &str = "PEP_ERR_INVALID_ACTION";
@@ -132,6 +135,11 @@ impl PepRequest {
             .map_err(PepDecisionError::InvalidSubject)?;
         validate_pep_string(&resource, "resource", MAX_PEP_RESOURCE_LEN)
             .map_err(PepDecisionError::InvalidResource)?;
+        if resource.contains("..") {
+            return Err(PepDecisionError::InvalidResource(
+                "resource URI cannot contain '..' path traversal components".to_string(),
+            ));
+        }
         validate_pep_string(&action, "action", MAX_PEP_ACTION_LEN)
             .map_err(PepDecisionError::InvalidAction)?;
 
@@ -312,6 +320,17 @@ pub fn evaluate_rules(
     algorithm: PepCombiningAlgorithm,
 ) -> PepDecision {
     let start = std::time::Instant::now();
+
+    if rules.len() > MAX_PEP_RULES_PER_EVALUATION {
+        return PepDecision::default_deny(
+            &req.id,
+            format!(
+                "rule count {} exceeds maximum allowed {}",
+                rules.len(),
+                MAX_PEP_RULES_PER_EVALUATION
+            ),
+        );
+    }
 
     match algorithm {
         PepCombiningAlgorithm::DenyOverrides => {

@@ -1781,6 +1781,31 @@ impl Server {
                 "additionalProperties": false
             }
         }));
+        tools.push(json!({
+            "name": "aios.pep.evaluate",
+            "description": "Evaluate an authorization request against policy rules using the PEP Decision Engine",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "subject": { "type": "string", "description": "Subject identifier (e.g. agent:researcher)" },
+                    "resource": { "type": "string", "description": "Target resource URI (e.g. fs:/data/reports)" },
+                    "action": { "type": "string", "description": "Action requested (e.g. read, write, execute)" },
+                    "algorithm": {
+                        "type": "string",
+                        "enum": ["deny_overrides", "permit_overrides", "first_applicable"],
+                        "description": "Rule combining algorithm (default: deny_overrides)"
+                    },
+                    "rules": {
+                        "type": "array",
+                        "description": "Optional inline policy rules to evaluate against",
+                        "items": { "type": "object" }
+                    },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "required": ["subject", "resource", "action"],
+                "additionalProperties": false
+            }
+        }));
         tools
     }
 
@@ -6289,6 +6314,44 @@ impl Server {
                 dispatch::recorded_call(
                     &mut self.ring, &self.pep,
                     "aios.capability.validate", "Validate capability store", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.pep.evaluate" => {
+                let subject = arguments.get("subject").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let resource = arguments.get("resource").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let action = arguments.get("action").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let algo_str = arguments.get("algorithm").and_then(|v| v.as_str()).unwrap_or("deny_overrides").to_string();
+                let rules_val = arguments.get("rules").cloned();
+
+                let f = move || -> Result<Value, String> {
+                    let req = aiosh_core::pep_decision::PepRequest::new(&subject, &resource, &action, None)
+                        .map_err(|e| e.to_string())?;
+
+                    let algo = match algo_str.to_ascii_lowercase().as_str() {
+                        "permit_overrides" => aiosh_core::pep_decision::PepCombiningAlgorithm::PermitOverrides,
+                        "first_applicable" => aiosh_core::pep_decision::PepCombiningAlgorithm::FirstApplicable,
+                        _ => aiosh_core::pep_decision::PepCombiningAlgorithm::DenyOverrides,
+                    };
+
+                    let rules: Vec<aiosh_core::pep_decision::PepPolicyRule> = if let Some(ref val) = rules_val {
+                        serde_json::from_value(val.clone()).map_err(|e| format!("invalid rules array: {}", e))?
+                    } else {
+                        Vec::new()
+                    };
+
+                    let decision = aiosh_core::pep_decision::evaluate_rules(&rules, &req, algo);
+                    decision.validate_invariants().map_err(|e| format!("decision invariant error: {}", e))?;
+
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.pep.evaluate",
+                        "decision": decision,
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.pep.evaluate", "Evaluate authorization request", arguments,
                     None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
                 )
             }

@@ -2357,6 +2357,37 @@ Still not read line-by-line (next pass starts here): `hardware_recovery.rs`/`net
     - **`PEPDEC6` (Audit Trail Integrity)**: Fully serializable for direct ingestion by the AIOS Audit Ring.
   - Verified with 8/8 Rust unit tests in `test_pep_decision.rs`. Zero warnings.
 
+---
+
+## 39. Post-Audit Addendum: Batch T-02106 through T-02115 Verification
+
+**Date:** 2026-09-21  
+**Scope:** Batch `T-02106` through `T-02115` (Phase 2 — Security Kernel & PEP Fabric: Sub-Epic 1 PEP Decision Engine Data Model Formal Closure & Sub-Epic 2 PEP Decision Core Service Launch & Implementation).  
+**Auditor:** Antigravity Autonomous Security Subsystem  
+**Verdict:** **PASS (Zero vulnerabilities)**
+
+### 1. Hardened Surface & Key Controls
+- **PEP Decision Engine Data Model Formal Closure (T-02106..T-02110)**:
+  - Formally closed Sub-Epic 1.
+  - Registered and integrated `aios.pep.evaluate` in `aiosh-mcp`.
+  - Threat-modeled vectors `THREAT-PEPDEC-01..05` covering path traversal, combining algorithm ambiguity, and unbounded obligation exhaustion.
+  - Implemented strict hardening in `code/aiosh-rust/aiosh-core/src/pep_decision.rs`:
+    - Rejection of `..` path traversal in resource URIs (`PEP_ERR_INVALID_RESOURCE`).
+    - Rule count bounded to `MAX_PEP_RULES_PER_EVALUATION` (1000 rules max), automatically failing closed on breach.
+    - Obligation limits bounded to `MAX_PEP_OBLIGATIONS = 32`.
+  - Authored comprehensive documentation in `docs/pep_decision_engine.md`.
+  - Verified with 9/9 Rust unit tests and Python MCP smoke tests.
+
+- **PEP Decision Core Service (T-02111..T-02115)**:
+  - Researched, specified, scaffolded, implemented, and unit-tested `PepDecisionService` in `code/aiosh-rust/aiosh-core/src/pep_decision_service.rs` and re-exported in `lib.rs`.
+  - Enforced invariants `PEPSERV1..PEPSERV6`:
+    - **`PEPSERV1` & `PEPSERV2` (Thread Safety & Atomic Persistence)**: Atomic file persistence via temporary file rename; symlinks strictly rejected.
+    - **`PEPSERV3` (Multi-Index Lookup)**: Maintains indexed lookup across `by_subject` and `by_action`.
+    - **`PEPSERV5` (Non-Destructive Quarantine)**: Corrupted or unparseable policy stores are backed up to `<path>.bak.<timestamp>` with mode `0600` on Unix platforms before initializing a fresh store.
+    - **`PEPSERV6` (Capacity Enforcement)**: Hard limit of `MAX_RULES_IN_SERVICE = 5000` enforced at rule addition.
+  - Verified with 8/8 Rust unit tests in `test_pep_decision_service.rs`. Zero warnings.
+
+
 
 
 
