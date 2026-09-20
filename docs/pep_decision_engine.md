@@ -301,7 +301,40 @@ Evaluates an access request against the persistent policy store or inline rules.
 
 ---
 
-## 8. Evidence & Traceability
+## 8. Configuration Subsystem (`pep_config`)
+
+The PEP Decision Engine is configured via `PepConfig` in `aiosh-core`, supporting JSON configuration files, environment variables, and compiled fail-safe defaults.
+
+### 8.1 Configuration Invariants (`PEPCONF1..PEPCONF6`)
+- **`PEPCONF1` (Path Hygiene)**: `store_path` must be $\le 1024$ chars, end in `.json`, contain zero control characters, and contain no `..` parent traversal components.
+- **`PEPCONF2` (Resource & Registry Bounds)**: `max_rules` bounded within $[1, 50\,000]$ (default: 5,000); `max_store_bytes` bounded within $[1\,024, 104\,857\,600]$ (default: 10 MiB).
+- **`PEPCONF3` (Algorithm Governance)**: `default_algorithm` restricted strictly to known combining algorithms: `deny_overrides`, `permit_overrides`, `first_applicable`.
+- **`PEPCONF4` (Audit & Quarantine Settings)**: `audit_all_evaluations` (default: true) and `auto_quarantine_corrupt` (default: true).
+- **`PEPCONF5` (Atomic Persistence & Symlink Rejection)**: Atomic file persistence via `.tmp.<pid>` rename pattern; symlinks strictly rejected before loading.
+- **`PEPCONF6` (Environment Precedence)**: CLI flag `--store` > `AIOSH_PEP_STORE_PATH` > `AIOSH_PEP_CONFIG` file > Defaults.
+
+### 8.2 JSON Configuration Schema
+```json
+{
+  "version": "1.0.0",
+  "store_path": ".aios/pep_policies.json",
+  "max_store_bytes": 10485760,
+  "max_rules": 5000,
+  "default_algorithm": "deny_overrides",
+  "audit_all_evaluations": true,
+  "auto_quarantine_corrupt": true
+}
+```
+
+### 8.3 Environment Variables
+- `AIOSH_PEP_CONFIG`: Path to JSON configuration file.
+- `AIOSH_PEP_STORE_PATH`: Overrides the policy store JSON file path.
+- `AIOSH_PEP_MAX_RULES`: Overrides the maximum in-memory rule registry capacity (1..50,000).
+- `AIOSH_PEP_DEFAULT_ALGORITHM`: Overrides the default combining algorithm (`deny_overrides`, `permit_overrides`, `first_applicable`).
+
+---
+
+## 9. Evidence & Traceability
 
 - `T-02106`: [Data Model Integration](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02106-data-model-integration.md)
 - `T-02107`: [Data Model Security Review](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02107-data-model-security-review.md)
@@ -338,5 +371,16 @@ Evaluates an access request against the persistent policy store or inline rules.
 - `T-02138`: [MCP/API Surface Hardening](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02138-mcp-api-surface-hardening.md)
 - `T-02139`: [MCP/API Surface Documentation](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02139-mcp-api-surface-documentation.md)
 - `T-02140`: [MCP/API Surface Verification & Evidence](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02140-mcp-api-surface-verification-evidenc.md)
+- `T-02141`: [Configuration Research](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02141-configuration-research.md)
+- `T-02142`: [Configuration Specification](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02142-configuration-specification.md)
+- `T-02143`: [Configuration Scaffold](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02143-configuration-scaffold.md)
+- `T-02144`: [Configuration Implementation](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02144-configuration-implementation.md)
+- `T-02145`: [Configuration Unit Tests](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02145-configuration-unit-test.md)
+- `T-02146`: [Configuration Integration](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02146-configuration-integration.md)
+- `T-02147`: [Configuration Security Review](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02147-configuration-security-review.md)
+- `T-02148`: [Configuration Hardening](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02148-configuration-hardening.md)
+- `T-02149`: [Configuration Documentation](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02149-configuration-documentation.md)
+- `T-02150`: [Configuration Verification & Evidence](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02150-configuration-verification-evidenc.md)
+
 
 

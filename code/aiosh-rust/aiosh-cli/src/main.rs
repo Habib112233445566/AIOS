@@ -14786,7 +14786,28 @@ fn cmd_pep(args: &[String]) -> i32 {
     let rest = if args.len() > 1 { &args[1..] } else { &[] };
     let is_json = has_flag(rest, "--json");
 
-    let store_path_str = parse_flag(rest, "--store").unwrap_or_else(|| format!("{}/pep_policies.json", ai_home()));
+    let (store_path_str, config_err) = match parse_flag(rest, "--store") {
+        Some(s) => (s, None),
+        None => match aiosh_core::PepConfig::from_env() {
+            Ok(c) => (c.store_path.to_string_lossy().to_string(), None),
+            Err(e) => ("".to_string(), Some(e)),
+        },
+    };
+
+    if let Some(err) = config_err {
+        let msg = format!("invalid configuration: {}", err);
+        classify_and_emit(
+            &mut ctx, "pep", sub.unwrap_or("unknown"), json!({ "error": &msg }),
+            "failure", None, Some("Invalid configuration"), "operator", None,
+        );
+        if is_json {
+            println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_CONFIGURATION", "message": msg } }));
+        } else {
+            eprintln!("{}", sanitize_terminal(&msg));
+        }
+        return 2;
+    }
+
     let store_path = std::path::Path::new(&store_path_str);
 
     if let Err(e) = aiosh_core::pep_decision_service::validate_pep_service_path(store_path) {

@@ -154,14 +154,26 @@ impl PepDecisionService {
         self.evaluate_with_algorithm(req, self.default_algorithm)
     }
 
+    /// Returns candidate rules relevant to the given request, sorted deterministically by ID (PEPSERV3).
+    pub fn candidate_rules(&self, req: &PepRequest) -> Vec<PepPolicyRule> {
+        let mut candidates: Vec<PepPolicyRule> = self
+            .rules
+            .values()
+            .filter(|r| r.matches(req))
+            .cloned()
+            .collect();
+        candidates.sort_by(|a, b| a.id.cmp(&b.id));
+        candidates
+    }
+
     /// Evaluates an authorization request against registered rules using specified algorithm.
     pub fn evaluate_with_algorithm(
         &self,
         req: &PepRequest,
         algorithm: PepCombiningAlgorithm,
     ) -> PepDecision {
-        let rules_vec: Vec<PepPolicyRule> = self.rules.values().cloned().collect();
-        evaluate_rules(&rules_vec, req, algorithm)
+        let candidates = self.candidate_rules(req);
+        evaluate_rules(&candidates, req, algorithm)
     }
 
     /// Persists policy rules atomically to disk (PEPSERV5).
