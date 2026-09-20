@@ -291,4 +291,42 @@ aiosh hw <scan|list|show|summary|verify> [OPTIONS]
 - Documentation: `docs/tasks/evidence/T-01729-cli-surface-documentation.md`.
 - Verification & Evidence: `docs/tasks/evidence/T-01730-cli-surface-verification-evidenc.md`.
 
+---
+
+## 10. Hardware Detection MCP & Agent Surface (Sub-Epic 4)
+
+### 10.1 Overview & Architecture
+The Model Context Protocol (MCP) surface is exposed via the `aiosh-mcp` binary communicating over JSON-RPC 2.0 stdio. It provides programmatic host hardware discovery, inspection, and verification capabilities to AI agents, orchestrators, and automated reasoning tools.
+
+All tool invocations route through `dispatch::recorded_call`, enforcing Policy Enforcement Point (PEP) evaluation and writing SHA-256 hash-chained records to the SQLite WAL audit ring.
+
+### 10.2 Tool Catalog & Schemas
+| Tool Name | Purpose | Key Arguments | Return Data |
+| :--- | :--- | :--- | :--- |
+| `aios.hardware.scan` | Comprehensive host discovery across subsystems | `classes` (list), `include_attributes` (bool), `sysfs_path`, `procfs_path` | Complete `HardwareInventory` JSON |
+| `aios.hardware.list` | Filtered list of discovered hardware devices | `classes` (list), `sysfs_path`, `procfs_path` | `{"devices": [...], "count": usize}` |
+| `aios.hardware.get` | Detailed inspection of a specific device | `device_id` (string, required), `sysfs_path`, `procfs_path` | `{"device": <HardwareDevice>}` |
+| `aios.hardware.summary` | Aggregate device counts per classification | `sysfs_path`, `procfs_path` | `{"summary": {...}, "total": usize}` |
+| `aios.hardware.verify` | Invariant verification (live or file-based) | `file_path` (string), `sysfs_path`, `procfs_path` | `{"valid": bool, "device_count": usize}` |
+
+### 10.3 Protocol Invariants (HM1..HM5)
+- **HM1 (Schema Conformity)**: Every hardware tool sets `"additionalProperties": false` in its JSON Schema in `tools/list`.
+- **HM2 (Envelope Uniformity)**: Every tool returns `{"ok": true, "tool": "<name>", "data": ...}` on success, or `{"ok": false, "error": "<msg>"}` on error.
+- **HM3 (Audit Trail Invariant)**: Every call (including early validation rejections) is recorded in the SQLite WAL audit ring.
+- **HM4 (Parameter Hygiene)**: String arguments enforce strict bounds: paths $\le 1024$ chars, device IDs $\le 256$ chars, control characters rejected, offline verify files $\le 10$ MB.
+- **HM5 (Hermetic Testability)**: Tools accept `sysfs_path` and `procfs_path` overrides, enabling isolated execution without host `/sys` access or root privileges.
+
+### 10.4 Sub-Epic 4 Verification Evidence
+- Research: `docs/tasks/evidence/T-01731-mcp-api-research.md`.
+- Specification: `docs/tasks/evidence/T-01732-mcp-api-specification.md`.
+- Scaffold: `docs/tasks/evidence/T-01733-mcp-api-scaffold.md`.
+- Implementation: `docs/tasks/evidence/T-01734-mcp-api-implementation.md`.
+- Unit Test: `docs/tasks/evidence/T-01735-mcp-api-unit-test.md`.
+- Integration: `docs/tasks/evidence/T-01736-mcp-api-integration.md`.
+- Security Review: `docs/tasks/evidence/T-01737-mcp-api-security-review.md`.
+- Hardening: `docs/tasks/evidence/T-01738-mcp-api-hardening.md`.
+- Documentation: `docs/tasks/evidence/T-01739-mcp-api-documentation.md`.
+- Verification & Evidence: `docs/tasks/evidence/T-01740-mcp-api-verification-evidenc.md`.
+
+
 

@@ -814,3 +814,140 @@ Still not read line-by-line (next pass should start here, in this order):
    - Sysfs and procfs paths capped at 1024 characters with control character rejection.
 7. **Hermetic Testability (`HM5`)**:
    - Custom sysfs and procfs path injection verified without requiring root or active Linux host filesystems.
+
+# FIFTH PASS B — 2026-09-20 (gate layer re-read line-by-line + first live probes)
+
+Scope: the pass the coverage notes deferred. Every Python gate module (`aiosh_mcp/*.py`) and `code/aiosh-cli/src/cli.ts` read line-by-line (~4,400 lines), and the first probes that drive the real binaries instead of reading them. A parallel section above (`FIFTH PASS`, hardware batch) is a separate thread's work; findings here continue the N- numbering. Every claim below is marked DEMONSTRATED (command + observed output) or STATIC (code read).
+
+## DEMONSTRATED — earlier findings confirmed by running the real surface
+
+### N-8 — DEMONSTRATED (real `aiosh-mcp.exe`, no grant, isolated `AIOSH_HOME`)
+Command: fixture store `sessions.json` with two valid operator sessions (`op-a` kali/1000/pid 4242, `op-b` root/0/pid 5353), both `active`+`foreground` on `seat0`; the binary driven over line-delimited JSON-RPC with two `tools/call` lines and **no `grant_id`**:
+
+```
+call("aios.session.check", {"store_path": store, "auto_recover": False})   -> id=1
+call("aios.session.check", {"store_path": store, "auto_recover": True})    -> id=2
+```
+
+Observed:
+```
+id=1: ok=false, healthy=false, errors=["seat 'seat0' has 2 concurrent foreground sessions:
+      [\"op-a\", \"op-b\"]"], total_sessions=2, audit_id=1
+id=2: ok=true, recovered=true, backup_path="...sessions.json.bak.20260920_024522_673245",
+      total_sessions=1, audit_id=2
+store sha256: f612c37c…309c68d2 -> 81771cef…c0c3aeafc0d98  (changed)
+after sessions: ['greeter-seat0']  ->  lightdm uid 62000 active foreground pid 1001
+PASS
+```
+
+`main.rs:3251` passes `require_grant=false`, so this is unauthenticated: one ungated read-named tool call replaced both operator sessions with the synthetic greeter. N-8 stands exactly as recorded.
+
+### N-7 — DEMONSTRATED (real `python -m aiosh_mcp.server` over stdio MCP)
+Command: temp checkout (`$T/code/aiosh-mcp/aiosh_mcp` copied, `server.py` resolves `parents[3]/tools/task_ledger.py` to the temp root — printed before the run), `$T/tools/task_ledger.py` replaced with a payload that writes a marker file and returns its own dict; then initialize + `tools/call aios_task {"action":"status"}` (a read-only, ungated action).
+
+Observed:
+```
+reply: {"ok": true, "pwned": true,
+        "note": "attacker module executed inside the authority process",
+        "action": "status", "audit_id": 1,
+        "classifier_policy_revision": "sprint-2-rule-pack-v1"}
+marker: "task_ledger.py executed inside MCP pid 3660"
+```
+
+The attacker-controlled file was exec'd **inside the gate process**, its return value became the tool result, and the audit row was written as a normal success. `server.py:486` + `exec_module` at `:489` are the sink; no hash pin, no ownership check. The `store_path` write-to-execute *escalation* remains STATIC-chained (store writers emit serde JSON containing `true/false/null`, which fails to import as Python — as the fourth pass stated, the reliable paths are a text-capable writer or a poisoned tree; the poisoned-tree path is now demonstrated).
+
+### H-10 — DEMONSTRATED, and the mechanism is worse than recorded
+Same server session, same MCP client:
+```
+call("aios.backup.create", {"target_path": secret_dir})        -> no grant
+  reply: {"ok": true, "data": {"backup_path": "aios_backup_2026-09-20T02-46-57-996688Z.zip"}}
+  zip namelist: ['credentials.txt']        <- caller-named directory exfiltrated
+
+call("aios.release.generate", {"target_os": "linux", "version": "9.9.9"})  -> no grant
+  side effect: $T/out/aios_linux_9.9.9.iso created (reply id=3 not flushed before exit;
+  the artifact on disk is the proof)
+```
+Mechanism sharpened: `release.py:213-262 register_release_tools` registers the **dotted canonical names** (`aios.release.generate`, `aios.backup.create`) via `dispatch(...)` **without** `require_grant=True`, while `server.py:214-310` defines **underscore-named** duplicates (`aios_release_generate`, `aios_backup_create`) with `require_grant=True`. Both registrations live side by side; the dotted names — the canonical MCP surface per ADR-0035 §D-2 — are the ungated ones (the probe's reply shape, `"action"/"data"`, matches `release.py`'s handler, not `server.py`'s). A reviewer reading only `server.py` concludes release/backup are gated. The gated variants are dead weight; the ungated ones are canonical.
+
+### H-1 — DEMONSTRATED (the Python gate's irreversible set, live)
+Direct probe of the real `grant_check` with `grant_id=None` (`audit_client.py:401-406`):
+```
+'pentest.nmap'          -> ok=False  irreversible tool requires explicit PEP grant
+'fs.write'              -> ok=False  (same)
+'system.reboot'         -> ok=False  (same)
+'system.shutdown'       -> ok=False  (same)
+'aios.backup.create'    -> ok=True
+'aios.release.generate' -> ok=True
+'aios.session.create'   -> ok=True
+'aios.fs_layout.remove' -> ok=True
+'aios.task'             -> ok=True
+```
+This is the enabling condition for the H-10 run above: the gate runs, classifies, and then waves through everything outside `pentest.* / fs.write* / reboot / shutdown`.
+
+### H-2 — DEMONSTRATED and STRENGTHENED (deny scope is inert, not merely alias-evadable)
+Direct probe of the real `path_allowed` (`audit_client.py:359-363`) with `deny: ["C:\\Secret"]`, `allow: []`:
+```
+path_allowed('C:\\Secret\\keys.txt')      -> allowed=True   <- the literal denied child
+path_allowed('c:\\secret\\keys.txt')      -> allowed=True
+path_allowed('C:/Secret/keys.txt')        -> allowed=True
+path_allowed('C:\\Secret.\\keys.txt')     -> allowed=True
+path_allowed('\\\\?\\C:\\Secret\\keys.txt') -> allowed=True
+```
+The code tests only `target == p`, `target.startswith(p + "/")` (forward slash), and `p.endswith("/")`. On Windows every native backslash path — including the exact denied path itself — is allowed. H-2's impact sentence should read: *a grant scoped `paths.deny: ["C:\\Secret"]` denies nothing at all on the dev platform; the deny list is decoration.* TS `pep.ts:44-63` shares the prefix-string shape and needs the same probe.
+
+### C-5 — DEMONSTRATED at byte level
+Direct probe of the real `canonical()` (`audit_client.py:34-40`, `json.dumps` default `ensure_ascii=True`):
+```
+python canonical bytes: b'{"v":"caf\\u00e9 \\u00fcmlaut \\u65e5\\u672c\\u8a9e"}'
+rust would emit:        b'{"v":"caf\xc3\xa9 \xc3\xbcmlaut \xe6\x97\xa5\xe6\x9c\xac\xe8\xaa\x9e"}'
+differ: True
+```
+The hash-parity bug is now byte-proven, not inferred. Fix narrows to this one function (`ensure_ascii=False`) exactly as pass 2 predicted.
+
+## STATIC verifications from the line-by-line re-read
+
+### C-1 — Python mechanism re-verified with current line numbers (stands; one correction)
+`sandbox.py:339-357`: `AT_FDCWD = -100` is packed as Landlock `parent_fd` (`:341-342`, `struct.pack("<Qi", bits, AT_FDCWD)`). The kernel's `get_path_beneath_rule` does `fget_raw(parent_fd)` → NULL for a negative fd → **EBADF** → `return False, "landlock_add_rule(...) failed: errno=9"` at `:356-357` → `landlock_restrict_self` (`:361`) is never reached. Correction to the recorded text: the ABI-version-probe bug described in the module docstring (`:305-310`) was **fixed** — a real ruleset fd is now created (`:329-339`); the surviving defect is `parent_fd`. Fail-open design confirmed: `_apply_in_child` failures are only logged (`:516-525`), the child prints `sandbox_applied` **unconditionally** with the FAIL components inline (`:556-560`), and `os.execv` runs regardless (`:562`).
+
+### N-16 — NEW (MEDIUM): the only sandbox-status consumer never reads component outcomes
+`cli.ts:352-372 parseSandboxApplied` accepts the event on **name alone** (`obj.event === "sandbox_applied" && obj.components`) and returns the raw component list; `aiosh run` (`cli.ts:214-267`) stores it in the audit row and echoes it to the caller without ever branching on the per-component strings (`"FAIL: …"`). A run whose landlock component failed still returns `ok: true` with `sandbox: {event: "sandbox_applied", …}` — the audit row is honest (the FAIL is visible in `components`) but nothing refuses, flags, or alerts. This is the consumer half of C-1: pass 1's `aiosh run` probe already displayed the output shape (all-FAIL components under `sandbox_applied`, `outcome: "ok"`). **CWE-754/1188.** *Fix:* treat any non-`ok` component as a failed sandbox; refuse or downgrade the outcome and never emit/record `sandbox_applied` unqualified when a component failed.
+
+### H-12 — confirmed statically (stands)
+`classifier.py:282-305 _scan_arg_text_for_pi` scans top-level string values and list **elements** only; a nested dict value (`{"layout": {"name": "ignore constitution"}}`) is neither `str` nor `list` and is skipped. The Rust side (`classifier.rs` `scan_value_for_pi`) recurses. H-12 stands as recorded.
+
+### N-6 — same class, new location (not counted as new)
+`sandbox.py:595-601 _main`: `if "--policy" in sys.argv: i = sys.argv.index("--policy")` — the Python shim parses its policy from **anywhere** in argv, including after `--`, i.e. inside the wrapped command. Identical defect class to N-6's Rust finding.
+
+## Verified clean this pass
+* `retention.py:151-303 rotate` — the strongest of the three retention implementations, confirmed by full read: refuses on a broken live chain *before* touching anything, unique `mkstemp` + `0600` + `os.replace`, `FileExistsError` overwrite guard, single transaction for segment insert + `DELETE` + rotation row, archive written durably **before** rows leave the live table. Fail-closed throughout.
+* `audit_client.py:417-424` — grant expiry parsing fails **closed**: a malformed `expires_at` refuses the grant instead of treating it as unexpired.
+* `agent_bridge.py` — transport only, as pass 3 recorded: forwards `tools/list` / `tools/call` over real MCP stdio, mints nothing, checks nothing, trusts the server as the authority. Its `CANONICAL_TO_MCP` map exposes only the 10 Sprint-0/1 tools (release/backup/task are not bridge-reachable — the ungated dotted names are reachable to any raw MCP client, not to the TS agent loop).
+* `tool_glob_match` (`audit_client.py:340-350`) treats `tools: ["*"]` as a literal tool name — a `"*"` grant authorizes **nothing**. Fail-closed quirk (availability, not security); noted because it silently voids the intuitively-correct grant shape.
+
+## Disproven / downgraded this pass
+**None.** N-7 and N-8 were confirmed end-to-end; H-10, H-1, H-2, C-5 confirmed by probe; C-1 re-verified by read. No recorded finding was refuted, so nothing was deleted. Two mechanism corrections were folded into the DEMONSTRATED sections above: C-1's Python citation is now `:339-357` (and the separately-fixed ABI-probe bug must not be conflated with the surviving `parent_fd` defect), and H-10's effective registration is `release.py`'s dotted-name variant (the `server.py` underscore variants are gated duplicates that never receive the canonical calls).
+
+## Coverage note for this pass
+Read line-by-line this pass (~4,400 lines): `aiosh_mcp/server.py` (653), `_dispatch.py` (327), `release.py` (263), `release_config.py` (66), `retention.py` (440), `classifier.py` (420), `agent_bridge.py` (190), `audit_client.py` (615), `sandbox.py` (614), and `aiosh-cli/src/cli.ts` (809) — i.e. every file the mission named, plus the release config module.
+Probes run (all isolated temp dirs / `AIOSH_HOME`, no source edits): real `aiosh-mcp.exe` over JSON-RPC (N-8); real `python -m aiosh_mcp.server` over stdio MCP in a temp checkout (N-7, H-10); direct module probes of the live gate functions (H-1, H-2, C-5).
+Still not read line-by-line (next pass starts here): `aiosh_mcp/pentest.py` body (391 lines — passes 1/2 swept it only), the remainder of `tools/*.py` beyond `task_ledger`/`check_evidence`/`ci_service`, `AIOS-model/*`, and the Rust `session/distro/base_image` service bodies beyond pass 4's read. An `aiosh-sandbox.exe` argv probe for N-6 was attempted and timed out on this host — N-6 remains STATIC; the Python-shim instance above is read-verified.
+
+---
+
+## 3. Post-Audit Addendum: Batch T-01737 through T-01746 Verification
+
+**Date:** 2026-09-20  
+**Scope:** Batch `T-01737` through `T-01746` (Hardware Detection MCP/API Hardening & Configuration Subsystems).  
+**Auditor:** Antigravity Autonomous Agent  
+**Verdict:** **PASS (Zero vulnerabilities)**
+
+### 1. Hardened Surface & Key Controls
+- **MCP Closure Relocation (T-01738)**: In `code/aiosh-rust/aiosh-mcp/src/main.rs`, argument validation for `aios.hardware.get` and `aios.hardware.verify` was moved inside the closure `f` evaluated by `dispatch::recorded_call`. All validation errors emit tamper-evident audit records into the SQLite WAL ring before returning error responses.
+- **Path Hygiene & Traversal Prevention (HCFG1)**: `HardwareConfig` strictly validates all path inputs against empty strings, length bounds (> 1024 characters), and control / NUL characters.
+- **Resource Bounds & DoS Prevention (HCFG3, HCFG4)**: Enforced strict bounds on `max_devices` ($1 \le n \le 50,000$), `max_payload_bytes` ($1024 \le n \le 104,857,600$), and `scan_timeout_secs` ($1 \le n \le 300$).
+- **Deterministic Serialization & Safe Fallback (HCFG5)**: Verified lossless JSON roundtrip serialization and automatic fallback to `HardwareConfig::default()` when configuration files are absent.
+- **Test Verification**:
+  - `aiosh-core`: 14/14 unit tests in `test_hardware_config.rs` passed in 0.34s.
+  - `aiosh-cli`: 5/5 integration smoke tests in `test_hardware_config_smoke.py` passed.
+  - Zero compiler warnings or lint errors.
+

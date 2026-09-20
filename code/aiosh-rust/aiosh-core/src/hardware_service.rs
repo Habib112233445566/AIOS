@@ -53,6 +53,11 @@ impl HardwareService {
         }
     }
 
+    /// Creates a HardwareService configured via HardwareConfig.
+    pub fn with_config(config: &crate::hardware_config::HardwareConfig) -> Self {
+        Self::with_roots(&config.sysfs_path, &config.procfs_path)
+    }
+
     /// Returns the active sysfs root path.
     pub fn sysfs_root(&self) -> &Path {
         &self.sysfs_root
@@ -122,6 +127,15 @@ impl HardwareService {
         }
 
         Ok(inv)
+    }
+
+    /// Scans using defaults specified in HardwareConfig.
+    pub fn scan_with_config(&self, config: &crate::hardware_config::HardwareConfig) -> Result<HardwareInventory, String> {
+        let options = HardwareScanOptions {
+            classes: config.enabled_classes.clone(),
+            include_attributes: config.include_attributes,
+        };
+        self.scan(&options)
     }
 
     /// Retrieves the cached hardware inventory if present.

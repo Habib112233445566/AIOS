@@ -4999,39 +4999,40 @@ impl Server {
                 )
             }
             "aios.hardware.get" => {
-                let device_id = match arguments.get("device_id").and_then(|v| v.as_str()) {
-                    Some(id) if !id.trim().is_empty() => id.trim().to_string(),
-                    _ => return json!({ "ok": false, "error": "missing required parameter 'device_id'" }),
-                };
-                if device_id.len() > 256 {
-                    return json!({ "ok": false, "error": "device_id cannot exceed 256 characters" });
-                }
-                if device_id.chars().any(|c| c.is_control()) {
-                    return json!({ "ok": false, "error": "device_id cannot contain control characters" });
-                }
-
+                let dev_id_opt = arguments.get("device_id").and_then(|v| v.as_str()).map(|s| s.to_string());
                 let sysfs_opt = arguments.get("sysfs_path").and_then(|v| v.as_str()).map(|s| s.to_string());
                 let procfs_opt = arguments.get("procfs_path").and_then(|v| v.as_str()).map(|s| s.to_string());
-                let dev_id = device_id.clone();
+                let target_name = dev_id_opt.clone();
 
                 let f = move || -> Result<Value, String> {
+                    let device_id = match dev_id_opt {
+                        Some(ref id) if !id.trim().is_empty() => id.trim().to_string(),
+                        _ => return Err("missing required parameter 'device_id'".to_string()),
+                    };
+                    if device_id.len() > 256 {
+                        return Err("device_id cannot exceed 256 characters".to_string());
+                    }
+                    if device_id.chars().any(|c| c.is_control()) {
+                        return Err("device_id cannot contain control characters".to_string());
+                    }
+
                     let service = resolve_hardware_service(&sysfs_opt, &procfs_opt)?;
                     let inv = service.scan(&aiosh_core::HardwareScanOptions::default())
                         .map_err(|e| format!("hardware scan failed: {}", e))?;
-                    if let Some(dev) = inv.devices.into_iter().find(|d| d.id == dev_id) {
+                    if let Some(dev) = inv.devices.into_iter().find(|d| d.id == device_id) {
                         Ok(json!({
                             "ok": true,
                             "tool": "aios.hardware.get",
                             "data": { "device": dev },
                         }))
                     } else {
-                        Err(format!("device '{}' not found in hardware inventory", dev_id))
+                        Err(format!("device '{}' not found in hardware inventory", device_id))
                     }
                 };
                 dispatch::recorded_call(
                     &mut self.ring, &self.pep,
                     "aios.hardware.get", "Inspect specific hardware device details", arguments,
-                    Some(&device_id), grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                    target_name.as_deref(), grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
                 )
             }
             "aios.hardware.summary" => {
@@ -5063,16 +5064,16 @@ impl Server {
                 let sysfs_opt = arguments.get("sysfs_path").and_then(|v| v.as_str()).map(|s| s.to_string());
                 let procfs_opt = arguments.get("procfs_path").and_then(|v| v.as_str()).map(|s| s.to_string());
 
-                if let Some(ref fp) = file_path_opt {
-                    if fp.len() > 1024 {
-                        return json!({ "ok": false, "error": "file_path cannot exceed 1024 characters" });
-                    }
-                    if fp.chars().any(|c| c.is_control()) {
-                        return json!({ "ok": false, "error": "file_path cannot contain control characters" });
-                    }
-                }
-
                 let f = move || -> Result<Value, String> {
+                    if let Some(ref fp) = file_path_opt {
+                        if fp.len() > 1024 {
+                            return Err("file_path cannot exceed 1024 characters".to_string());
+                        }
+                        if fp.chars().any(|c| c.is_control()) {
+                            return Err("file_path cannot contain control characters".to_string());
+                        }
+                    }
+
                     let inv = if let Some(ref path_str) = file_path_opt {
                         let path = std::path::Path::new(path_str);
                         if !path.exists() || !path.is_file() {

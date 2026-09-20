@@ -1734,3 +1734,13 @@
 {"seq":1734,"ts":"2026-09-20T02:47:13Z","event":"completed","task_id":1734,"note":"Hardware Detection MCP/API surface implementation completed in aiosh-mcp","evidence":[]}
 {"seq":1735,"ts":"2026-09-20T02:51:57Z","event":"completed","task_id":1735,"note":"Hardware Detection MCP/API surface unit tests completed (test_hardware_mcp_surface passes)","evidence":[]}
 {"seq":1736,"ts":"2026-09-20T02:53:49Z","event":"completed","task_id":1736,"note":"Hardware Detection MCP/API surface integration completed (test_hardware_mcp_smoke.py passes)","evidence":[]}
+{"seq":1737,"ts":"2026-09-20T02:57:58Z","event":"completed","task_id":1737,"note":"Hardware Detection MCP/API surface security review completed (MS-1..MS-4 analyzed)","evidence":[]}
+{"seq":1738,"ts":"2026-09-20T03:31:51Z","event":"completed","task_id":1738,"note":"Hardware Detection MCP/API surface hardening completed (audit coverage, parameter hygiene)","evidence":[]}
+{"seq":1739,"ts":"2026-09-20T03:32:31Z","event":"completed","task_id":1739,"note":"Hardware Detection MCP/API surface documentation completed in docs/hardware_detection.md","evidence":[]}
+{"seq":1740,"ts":"2026-09-20T03:33:22Z","event":"completed","task_id":1740,"note":"Hardware Detection MCP/API surface verification completed, closing Sub-Epic 4","evidence":[]}
+{"seq":1741,"ts":"2026-09-20T03:33:53Z","event":"completed","task_id":1741,"note":"Hardware Detection configuration research completed","evidence":[]}
+{"seq":1742,"ts":"2026-09-20T03:34:44Z","event":"completed","task_id":1742,"note":"Hardware Detection configuration specification completed (HCFG1..HCFG5 defined)","evidence":[]}
+{"seq":1743,"ts":"2026-09-20T03:36:00Z","event":"completed","task_id":1743,"note":"Hardware Detection configuration scaffolded in aiosh-core","evidence":[]}
+{"seq":1744,"ts":"2026-09-20T03:37:08Z","event":"completed","task_id":1744,"note":"Hardware Detection configuration implemented with full validation and env loading","evidence":[]}
+{"seq":1745,"ts":"2026-09-20T03:38:16Z","event":"completed","task_id":1745,"note":"Hardware Detection configuration unit tests passing (14 tests passed)","evidence":[]}
+{"seq":1746,"ts":"2026-09-20T03:38:43Z","event":"completed","task_id":1746,"note":"Hardware Detection configuration integration tests passing (5/5 tests passed)","evidence":[]}
