@@ -2051,3 +2051,38 @@ Read line-by-line: `pentest.rs` (597), `train_slm.py` (210), `train_unsloth.py` 
   - `aiosh-mcp`: `test_capability_mcp_smoke.py` passing end-to-end against compiled `aiosh-mcp.exe`.
   - Zero compiler warnings or lint regressions across Rust and Python suites.
 
+---
+
+## 33. Post-Audit Addendum: Batch T-02037 through T-02046 Verification
+
+**Date:** 2026-09-20  
+**Scope:** Batch `T-02037` through `T-02046` (Capability Model Sub-Epic 4 MCP/API Surface Formal Closure & Sub-Epic 5 Configuration Subsystem).  
+**Auditor:** Antigravity Autonomous Security Subsystem  
+**Verdict:** **PASS (Zero vulnerabilities)**
+
+### 1. Hardened Surface & Key Controls
+- **Capability Model MCP/API Surface Closure & Hardening (T-02037..T-02040)**:
+  - Evaluated threat vectors `THREAT-CAPMCP-01..06` covering parameter injection, privilege escalation, unauthorized root issuance, cascade revocation bypass, registry/store denial of service, and persistence path traversal.
+  - Hardened `code/aiosh-rust/aiosh-mcp/src/main.rs`:
+    - Enforced `validate_mcp_string` on all string inputs (limiting IDs $\le 128$, subjects/issuers $\le 256$, types/rights $\le 64$, targets/paths $\le 1024$) and strictly rejecting ASCII control characters (`< 32` or `\0`).
+    - Enforced bounds checking on quotas: `max_invocations` $\in [1, 100\,000\,000]$, `quota_bytes` $\in [1, 10\,000\,000\,000]$, and `expires_in_secs` $\in [1, 315\,360\,000]$.
+    - Standardized JSON-RPC error codes (`-32602 Invalid params`, `-32000 Execution error`).
+    - Documented all 7 MCP capability tools, JSON-RPC schemas, and security invariants in Section 9 of `docs/capability_model.md`.
+    - Formally closed Sub-Epic 4 with 1/1 Rust unit test and 2/2 Python integration tests in `test_capability_mcp_smoke.py`.
+- **Capability Model Configuration Subsystem (T-02041..T-02046)**:
+  - Researched, specified, scaffolded, implemented, unit-tested, and integrated `CapabilityConfig` in `code/aiosh-rust/aiosh-core/src/capability_config.rs` and re-exported in `lib.rs`.
+  - Enforced invariants:
+    - **Path Hygiene & Traversal Prevention**: `store_path` must be non-empty, $\le 1024$ characters, contain no ASCII control characters, and contain no parent directory traversal (`..`) components.
+    - **Resource & Registry Caps**: `max_capabilities` bounded to $[1, 1\,000\,000]$ (default: 10,000); `max_store_bytes` bounded to $[1\,024, 104\,857\,600]$ bytes (1 KiB to 100 MiB; default: 10 MiB).
+    - **Expiration Bounds**: `default_expires_secs` bounded to $[1, 315\,360\,000]$ seconds (1 second to 10 years).
+    - **Environment Ingestion**: Ingests `AIOS_CAPABILITY_CONFIG` (JSON config file path), `AIOS_CAPABILITY_STORE_PATH`, `AIOS_CAPABILITY_MAX_CAPABILITIES`, and `AIOS_CAPABILITY_MAX_STORE_BYTES`.
+    - **Safe Bounded Read**: Config file loading capped at `MAX_CONFIG_BYTES = 64 * 1024` (64 KiB).
+    - **Service Integration**: Integrated `CapabilityConfig` into `CapabilityService`, driving dynamic registry capacity and persistence size limits.
+- **Test Verification**:
+  - `aiosh-mcp`: `test_capability_mcp_tools` passing in 0.13s.
+  - `aiosh-core`: 5/5 unit tests in `test_capability_config.rs` passing in 0.02s.
+  - `aiosh-mcp`: `test_capability_mcp_smoke.py` passing end-to-end against compiled `aiosh-mcp.exe`.
+  - `aiosh-mcp`: `test_capability_config_smoke.py` passing (3/3 tests) validating schema parity, runtime env overrides, and path hygiene.
+  - Zero compiler warnings or test regressions across Rust and Python suites.
+
+

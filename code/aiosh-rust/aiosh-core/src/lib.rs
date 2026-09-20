@@ -28,6 +28,7 @@ pub mod base_image_recovery;
 pub mod base_image_service;
 pub mod canonical;
 pub mod capability;
+pub mod capability_config;
 pub mod capability_service;
 pub mod ci;
 pub mod ci_config;

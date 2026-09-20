@@ -5720,6 +5720,10 @@ impl Server {
                     .to_string();
 
                 let f = move || -> Result<Value, String> {
+                    validate_mcp_string(&store_path_str, "store_path", 1024)?;
+                    if let Some(ref subj) = subject_opt {
+                        validate_mcp_string(subj, "subject", 256)?;
+                    }
                     let path = std::path::Path::new(&store_path_str);
                     let service = aiosh_core::capability_service::CapabilityService::load_or_create(path)?;
                     let caps = if active_only {
@@ -5760,6 +5764,8 @@ impl Server {
                     if id_for_closure.is_empty() {
                         return Err("Missing required field 'id'".into());
                     }
+                    validate_mcp_string(&id_for_closure, "id", 128)?;
+                    validate_mcp_string(&store_path_str, "store_path", 1024)?;
                     let path = std::path::Path::new(&store_path_str);
                     let service = aiosh_core::capability_service::CapabilityService::load_or_create(path)?;
                     let cap = service.get_capability(&id_for_closure)
@@ -5798,6 +5804,26 @@ impl Server {
                 let f = move || -> Result<Value, String> {
                     if issuer.is_empty() || subject.is_empty() || scope_type.is_empty() || scope_target.is_empty() || rights_raw.is_empty() {
                         return Err("Missing required fields for capability issuance".into());
+                    }
+                    validate_mcp_string(&issuer, "issuer", 256)?;
+                    validate_mcp_string(&subject, "subject", 256)?;
+                    validate_mcp_string(&scope_type, "scope_type", 64)?;
+                    validate_mcp_string(&scope_target, "scope_target", 1024)?;
+                    validate_mcp_string(&store_path_str, "store_path", 1024)?;
+                    if let Some(inv) = max_inv {
+                        if inv == 0 || inv > 100_000_000 {
+                            return Err("max_invocations must be between 1 and 100,000,000".into());
+                        }
+                    }
+                    if let Some(qb) = quota_b {
+                        if qb == 0 || qb > 10_000_000_000 {
+                            return Err("quota_bytes must be between 1 and 10,000,000,000".into());
+                        }
+                    }
+                    if let Some(exp) = expires_in {
+                        if exp == 0 || exp > 315_360_000 {
+                            return Err("expires_in_secs must be between 1 and 315,360,000".into());
+                        }
                     }
                     let scope = parse_mcp_scope(&scope_type, &scope_target)?;
                     let mut rights = Vec::new();
@@ -5855,6 +5881,30 @@ impl Server {
                     if parent_id.is_empty() || new_subject.is_empty() || rights_raw.is_empty() {
                         return Err("Missing required fields (parent_id, new_subject, subset_rights)".into());
                     }
+                    validate_mcp_string(&parent_id, "parent_id", 128)?;
+                    validate_mcp_string(&new_subject, "new_subject", 256)?;
+                    if let Some(ref st) = narrowed_scope_type {
+                        validate_mcp_string(st, "narrowed_scope_type", 64)?;
+                    }
+                    if let Some(ref tgt) = narrowed_scope_target {
+                        validate_mcp_string(tgt, "narrowed_scope_target", 1024)?;
+                    }
+                    validate_mcp_string(&store_path_str, "store_path", 1024)?;
+                    if let Some(inv) = max_inv {
+                        if inv == 0 || inv > 100_000_000 {
+                            return Err("max_invocations must be between 1 and 100,000,000".into());
+                        }
+                    }
+                    if let Some(qb) = quota_b {
+                        if qb == 0 || qb > 10_000_000_000 {
+                            return Err("quota_bytes must be between 1 and 10,000,000,000".into());
+                        }
+                    }
+                    if let Some(exp) = expires_in {
+                        if exp == 0 || exp > 315_360_000 {
+                            return Err("expires_in_secs must be between 1 and 315,360,000".into());
+                        }
+                    }
                     let narrowed_scope = match (&narrowed_scope_type, &narrowed_scope_target) {
                         (Some(st), Some(tgt)) => Some(parse_mcp_scope(st, tgt)?),
                         _ => None,
@@ -5904,6 +5954,8 @@ impl Server {
                     if id.is_empty() {
                         return Err("Missing required field 'id'".into());
                     }
+                    validate_mcp_string(&id, "id", 128)?;
+                    validate_mcp_string(&store_path_str, "store_path", 1024)?;
                     let path = std::path::Path::new(&store_path_str);
                     let mut service = aiosh_core::capability_service::CapabilityService::load_or_create(path)?;
                     let revoked_ids = service.revoke_capability(&id).map_err(|e| e.to_string())?;
@@ -5939,6 +5991,11 @@ impl Server {
                     if subject_for_closure.is_empty() || scope_type.is_empty() || scope_target.is_empty() || right_str.is_empty() {
                         return Err("Missing required fields (subject, scope_type, scope_target, right)".into());
                     }
+                    validate_mcp_string(&subject_for_closure, "subject", 256)?;
+                    validate_mcp_string(&scope_type, "scope_type", 64)?;
+                    validate_mcp_string(&scope_target, "scope_target", 1024)?;
+                    validate_mcp_string(&right_str, "right", 64)?;
+                    validate_mcp_string(&store_path_str, "store_path", 1024)?;
                     let scope = parse_mcp_scope(&scope_type, &scope_target)?;
                     let right = parse_mcp_right(&right_str)?;
                     let path = std::path::Path::new(&store_path_str);
@@ -5983,6 +6040,7 @@ impl Server {
                     .to_string();
 
                 let f = move || -> Result<Value, String> {
+                    validate_mcp_string(&store_path_str, "store_path", 1024)?;
                     let path = std::path::Path::new(&store_path_str);
                     let mut service = aiosh_core::capability_service::CapabilityService::load_or_create(path)?;
                     let pruned_count = service.prune_expired(chrono::Utc::now());
@@ -6138,6 +6196,16 @@ impl Server {
             },
         )
     }
+}
+
+fn validate_mcp_string(val: &str, name: &str, max_len: usize) -> Result<(), String> {
+    if val.len() > max_len {
+        return Err(format!("Field '{}' exceeds maximum length of {} characters", name, max_len));
+    }
+    if val.chars().any(|c| c.is_control() || c == '\0') {
+        return Err(format!("Field '{}' contains forbidden control characters", name));
+    }
+    Ok(())
 }
 
 fn parse_mcp_scope(scope_type: &str, scope_target: &str) -> Result<aiosh_core::capability::CapabilityScope, String> {

@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use crate::capability::{
     Capability, CapabilityConstraints, CapabilityError, CapabilityRight, CapabilityScope,
 };
+use crate::capability_config::CapabilityConfig;
 
 /// Maximum permissible file size for capability registry persistence (10 MB).
 pub const MAX_CAPABILITY_STORE_SIZE: u64 = 10_485_760;
@@ -44,19 +45,61 @@ pub fn validate_service_path(path: &Path) -> Result<(), String> {
 }
 
 /// Authoritative in-memory registry and lifecycle manager for capabilities (CSERV1..CSERV6).
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CapabilityService {
     capabilities: HashMap<String, Capability>,
     by_subject: HashMap<String, HashSet<String>>,
     by_parent: HashMap<String, HashSet<String>>,
     #[serde(skip)]
     storage_path: Option<PathBuf>,
+    #[serde(skip)]
+    config: CapabilityConfig,
+}
+
+impl Default for CapabilityService {
+    fn default() -> Self {
+        Self {
+            capabilities: HashMap::new(),
+            by_subject: HashMap::new(),
+            by_parent: HashMap::new(),
+            storage_path: None,
+            config: CapabilityConfig::default(),
+        }
+    }
 }
 
 impl CapabilityService {
     /// Creates a new, empty capability service.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Configures the capability service with a custom configuration.
+    pub fn with_config(mut self, config: CapabilityConfig) -> Self {
+        self.config = config;
+        self
+    }
+
+    /// Returns a reference to the active configuration.
+    pub fn config(&self) -> &CapabilityConfig {
+        &self.config
+    }
+
+    /// Initializes a capability service from a validated configuration.
+    pub fn from_config(config: CapabilityConfig) -> Result<Self, String> {
+        config.validate()?;
+        let store_path = config.store_path.clone();
+        let mut service = if store_path.exists() {
+            Self::load_from_path(&store_path)?
+        } else {
+            Self::new()
+        };
+        if config.auto_prune_on_load {
+            service.prune_expired(Utc::now());
+        }
+        service.storage_path = Some(store_path);
+        service.config = config;
+        Ok(service)
     }
 
     /// Configures the backing storage path for capability persistence.
@@ -84,10 +127,10 @@ impl CapabilityService {
         rights: Vec<CapabilityRight>,
         constraints: CapabilityConstraints,
     ) -> Result<Capability, CapabilityError> {
-        if self.capabilities.len() >= MAX_CAPABILITIES_IN_REGISTRY {
+        if self.capabilities.len() >= self.config.max_capabilities {
             return Err(CapabilityError::ValidationError(format!(
                 "{}: registry capacity limit reached ({})",
-                CSERV_VALIDATION_ERROR, MAX_CAPABILITIES_IN_REGISTRY
+                CSERV_VALIDATION_ERROR, self.config.max_capabilities
             )));
         }
 
@@ -135,10 +178,10 @@ impl CapabilityService {
         subset_rights: Vec<CapabilityRight>,
         narrowed_constraints: Option<CapabilityConstraints>,
     ) -> Result<Capability, CapabilityError> {
-        if self.capabilities.len() >= MAX_CAPABILITIES_IN_REGISTRY {
+        if self.capabilities.len() >= self.config.max_capabilities {
             return Err(CapabilityError::ValidationError(format!(
                 "{}: registry capacity limit reached ({})",
-                CSERV_VALIDATION_ERROR, MAX_CAPABILITIES_IN_REGISTRY
+                CSERV_VALIDATION_ERROR, self.config.max_capabilities
             )));
         }
 
@@ -323,10 +366,10 @@ impl CapabilityService {
         let serialized = serde_json::to_string_pretty(self)
             .map_err(|e| format!("{}: serialization failed: {}", CSERV_VALIDATION_ERROR, e))?;
 
-        if serialized.len() as u64 > MAX_CAPABILITY_STORE_SIZE {
+        if serialized.len() as u64 > self.config.max_store_bytes {
             return Err(format!(
                 "{}: serialized capability registry exceeds maximum size {} bytes",
-                CSERV_VALIDATION_ERROR, MAX_CAPABILITY_STORE_SIZE
+                CSERV_VALIDATION_ERROR, self.config.max_store_bytes
             ));
         }
 

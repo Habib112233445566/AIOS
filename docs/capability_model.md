@@ -235,4 +235,102 @@ aiosh capability <list|show|issue|attenuate|revoke|check|prune> [options]
 - `1`: Operational error (not found, unauthorized issuer, access denied)
 - `2`: Argument / syntax error (invalid flag value, path traversal, control characters)
 
+---
+
+## 9. MCP / API Tool Surface Reference (`aios.capability.*`)
+
+In accordance with ADR-0035 §D-2, the Model Context Protocol (MCP) is the exclusive external tool protocol exposed to AI models and autonomous agents. The capability surface provides seven dedicated tools under the `aios.capability.*` namespace.
+
+### 9.1 Tool Inventory
+
+| MCP Tool Name | Purpose | Consequential | Gated by PEP |
+|---|---|---|---|
+| `aios.capability.list` | Enumerate capabilities with subject/active filters | No | No |
+| `aios.capability.get` | Retrieve capability details by ID | No | No |
+| `aios.capability.issue` | Issue root capability (restricted to authorized callers) | Yes | Yes |
+| `aios.capability.attenuate` | Derive child capability with monotonic reduction | Yes | Yes |
+| `aios.capability.revoke` | Cascade revocation to capability and all descendants | Yes | Yes |
+| `aios.capability.check` | Fast permission check with optional quota consumption | Optional (`consume: true`) | Optional |
+| `aios.capability.prune` | Prune expired leaf capabilities without active children | Yes | Yes |
+
+### 9.2 Tool Usage Examples (JSON-RPC)
+
+#### 1. Issue Root Capability (`aios.capability.issue`)
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "aios.capability.issue",
+    "arguments": {
+      "issuer": "kernel",
+      "subject": "agent:worker",
+      "scope_type": "filesystem",
+      "scope_target": "/var/data",
+      "rights": ["read", "write", "delegate"],
+      "max_invocations": 100,
+      "expires_in_secs": 3600
+    }
+  }
+}
+```
+
+#### 2. Attenuate Child Capability (`aios.capability.attenuate`)
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "tools/call",
+  "params": {
+    "name": "aios.capability.attenuate",
+    "arguments": {
+      "parent_id": "cap_1726848000_a1b2c3",
+      "new_subject": "agent:subworker",
+      "subset_rights": ["read"],
+      "max_invocations": 10
+    }
+  }
+}
+```
+
+#### 3. Access Check with Quota Consumption (`aios.capability.check`)
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "method": "tools/call",
+  "params": {
+    "name": "aios.capability.check",
+    "arguments": {
+      "subject": "agent:worker",
+      "scope_type": "filesystem",
+      "scope_target": "/var/data",
+      "right": "read",
+      "consume": true
+    }
+  }
+}
+```
+
+#### 4. Cascade Revocation (`aios.capability.revoke`)
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 4,
+  "method": "tools/call",
+  "params": {
+    "name": "aios.capability.revoke",
+    "arguments": {
+      "id": "cap_1726848000_a1b2c3"
+    }
+  }
+}
+```
+
+### 9.3 Invariants & Security Constraints
+- **Audit Invariant (ADR-0035 §A F-2)**: Every MCP tool call executes through `dispatch::recorded_call`, writing exactly one SHA-256 hash-chained audit row to the SQLite WAL audit ring.
+- **Input Bounds**: String fields are constrained to $\le 128$ chars (IDs), $\le 256$ chars (subjects/issuers), and $\le 1024$ chars (paths/targets). Control characters are strictly rejected.
+- **Atomic Persistence**: Backing store updates are committed atomically via temporary files (`.tmp.<pid>`), preventing corruption during unexpected termination.
+
 
