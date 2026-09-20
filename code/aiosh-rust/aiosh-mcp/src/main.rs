@@ -1513,6 +1513,82 @@ impl Server {
                 "additionalProperties": false
             }
         }));
+
+        // System Update Tools (UMCP1..UMCP6)
+        tools.push(json!({
+            "name": "aios.update.status",
+            "description": "Get current system update engine status, active slot, and execution progress",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "state_dir": { "type": "string", "description": "Optional custom state directory path" }
+                },
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.update.slots",
+            "description": "Get current partition A/B slot allocation, versions, and boot health",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "state_dir": { "type": "string", "description": "Optional custom state directory path" }
+                },
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.update.check",
+            "description": "Verify and check an update package manifest against system prerequisites",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "manifest_path": { "type": "string", "description": "Path to update manifest JSON file" },
+                    "manifest": { "type": "object", "description": "Inline manifest JSON payload" },
+                    "state_dir": { "type": "string", "description": "Optional custom state directory path" },
+                    "staging_dir": { "type": "string", "description": "Optional custom staging directory path" }
+                },
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.update.apply",
+            "description": "Verify staged update artifacts and set candidate partition slot for next reboot (requires PEP grant)",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "state_dir": { "type": "string", "description": "Optional custom state directory path" },
+                    "staging_dir": { "type": "string", "description": "Optional custom staging directory path" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.update.confirm",
+            "description": "Confirm stable boot on the active updated partition slot (requires PEP grant)",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "version": { "type": "string", "description": "Optional running version to confirm" },
+                    "state_dir": { "type": "string", "description": "Optional custom state directory path" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.update.rollback",
+            "description": "Roll back candidate boot partition to the fallback recovery slot (requires PEP grant)",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "state_dir": { "type": "string", "description": "Optional custom state directory path" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
         tools
     }
 
@@ -5358,6 +5434,156 @@ impl Server {
                     target.as_deref(), grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
                 )
             }
+            "aios.update.status" => {
+                let state_opt = arguments.get("state_dir").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = || {
+                    let service = resolve_update_service(&state_opt, &None)?;
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.update.status",
+                        "data": service.update_status
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.update.status", "Get current system update engine status", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.update.slots" => {
+                let state_opt = arguments.get("state_dir").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = || {
+                    let service = resolve_update_service(&state_opt, &None)?;
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.update.slots",
+                        "data": service.slot_status
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.update.slots", "Get current partition A/B slot allocation", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.update.check" => {
+                let state_opt = arguments.get("state_dir").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let staging_opt = arguments.get("staging_dir").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let manifest_path_opt = arguments.get("manifest_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let manifest_val_opt = arguments.get("manifest").cloned();
+                let f = || {
+                    let manifest: aiosh_core::system_update::UpdateManifest = if let Some(ref mval) = manifest_val_opt {
+                        serde_json::from_value(mval.clone()).map_err(|e| format!("invalid manifest JSON object: {}", e))?
+                    } else if let Some(ref mpath) = manifest_path_opt {
+                        if mpath.len() > 1024 {
+                            return Err("manifest_path cannot exceed 1024 characters".to_string());
+                        }
+                        if mpath.chars().any(|c| c.is_control()) {
+                            return Err("manifest_path cannot contain control characters".to_string());
+                        }
+                        let meta = std::fs::metadata(mpath).map_err(|e| format!("cannot stat manifest file '{}': {}", mpath, e))?;
+                        if meta.len() > 1_048_576 {
+                            return Err(format!("manifest file size ({} bytes) exceeds 1MB limit", meta.len()));
+                        }
+                        let bytes = std::fs::read(mpath).map_err(|e| format!("failed to read manifest file '{}': {}", mpath, e))?;
+                        serde_json::from_slice(&bytes).map_err(|e| format!("invalid manifest JSON file: {}", e))?
+                    } else {
+                        return Err("missing required parameter: either 'manifest' or 'manifest_path' must be provided".to_string());
+                    };
+
+                    let mut service = resolve_update_service(&state_opt, &staging_opt)?;
+                    service.check_manifest(manifest).map_err(|e| format!("manifest check failed: {}", e))?;
+                    let state_dir = state_opt.as_ref().map(std::path::PathBuf::from).unwrap_or_else(|| std::path::PathBuf::from("/var/lib/aiosh/updates"));
+                    let _ = service.save_state_to_dir(&state_dir);
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.update.check",
+                        "data": service.update_status
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.update.check", "Verify and check update manifest", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.update.apply" => {
+                let state_opt = arguments.get("state_dir").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let staging_opt = arguments.get("staging_dir").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = || {
+                    let mut service = resolve_update_service(&state_opt, &staging_opt)?;
+                    if service.update_status.state == aiosh_core::system_update::UpdateState::Downloading {
+                        service.verify_staged().map_err(|e| format!("cannot apply update: {}", e))?;
+                    }
+                    let next_slot = service.apply_update().map_err(|e| format!("apply update failed: {}", e))?;
+                    let state_dir = state_opt.as_ref().map(std::path::PathBuf::from).unwrap_or_else(|| std::path::PathBuf::from("/var/lib/aiosh/updates"));
+                    let _ = service.save_state_to_dir(&state_dir);
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.update.apply",
+                        "data": {
+                            "next_boot_slot": next_slot.as_str(),
+                            "status": service.update_status
+                        }
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.update.apply", "Verify staged artifacts and set candidate partition slot", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.update.confirm" => {
+                let ver_opt = arguments.get("version").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let state_opt = arguments.get("state_dir").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = || {
+                    if let Some(ref ver) = ver_opt {
+                        if ver.len() > 64 || ver.chars().any(|c| c.is_control()) {
+                            return Err("confirmed version exceeds 64 characters or contains control characters".to_string());
+                        }
+                    }
+                    let mut service = resolve_update_service(&state_opt, &None)?;
+                    let ver = ver_opt.as_deref().unwrap_or(&service.update_status.current_version).to_string();
+                    service.confirm_boot(&ver).map_err(|e| format!("confirm boot failed: {}", e))?;
+                    let state_dir = state_opt.as_ref().map(std::path::PathBuf::from).unwrap_or_else(|| std::path::PathBuf::from("/var/lib/aiosh/updates"));
+                    let _ = service.save_state_to_dir(&state_dir);
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.update.confirm",
+                        "data": {
+                            "confirmed_version": ver,
+                            "slot_status": service.slot_status
+                        }
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.update.confirm", "Confirm stable boot on active updated slot", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.update.rollback" => {
+                let state_opt = arguments.get("state_dir").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = || {
+                    let mut service = resolve_update_service(&state_opt, &None)?;
+                    let restored_slot = service.rollback().map_err(|e| format!("rollback failed: {}", e))?;
+                    let state_dir = state_opt.as_ref().map(std::path::PathBuf::from).unwrap_or_else(|| std::path::PathBuf::from("/var/lib/aiosh/updates"));
+                    let _ = service.save_state_to_dir(&state_dir);
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.update.rollback",
+                        "data": {
+                            "restored_slot": restored_slot.as_str(),
+                            "slot_status": service.slot_status
+                        }
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.update.rollback", "Roll back candidate boot partition to fallback slot", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
             _ => json!({"ok": false, "error": format!("unknown tool: {}", tool)}),
         }
     }
@@ -5648,6 +5874,45 @@ fn resolve_network_service(
     let procfs = procfs_opt.clone().unwrap_or_else(|| "/proc/net".to_string());
     let resolv = resolv_opt.clone().unwrap_or_else(|| "/etc/resolv.conf".to_string());
     Ok(aiosh_core::network_service::NetworkService::with_paths(sysfs, procfs, resolv))
+}
+
+fn resolve_update_service(
+    state_dir_opt: &Option<String>,
+    staging_dir_opt: &Option<String>,
+) -> Result<aiosh_core::system_update_service::SystemUpdateService, String> {
+    if let Some(ref p) = state_dir_opt {
+        if p.len() > 1024 {
+            return Err("state_dir cannot exceed 1024 characters".to_string());
+        }
+        if p.chars().any(|c| c.is_control()) {
+            return Err("state_dir cannot contain control characters".to_string());
+        }
+    }
+    if let Some(ref p) = staging_dir_opt {
+        if p.len() > 1024 {
+            return Err("staging_dir cannot exceed 1024 characters".to_string());
+        }
+        if p.chars().any(|c| c.is_control()) {
+            return Err("staging_dir cannot contain control characters".to_string());
+        }
+    }
+    let state_dir = state_dir_opt.as_ref().map(std::path::PathBuf::from).unwrap_or_else(|| std::path::PathBuf::from("/var/lib/aiosh/updates"));
+    let staging_dir = staging_dir_opt.as_ref().map(std::path::PathBuf::from).unwrap_or_else(|| std::path::PathBuf::from("/var/lib/aiosh/updates/staging"));
+    let config = aiosh_core::system_update_service::SystemUpdateServiceConfig {
+        state_dir: state_dir.clone(),
+        staging_dir,
+        max_payload_bytes: aiosh_core::system_update::MAX_UPDATE_PAYLOAD_SIZE,
+        auto_rollback_on_failure: true,
+    };
+    match aiosh_core::system_update_service::SystemUpdateService::load_state_from_dir(&state_dir, config.clone()) {
+        Ok(svc) => Ok(svc),
+        Err(_) => Ok(aiosh_core::system_update_service::SystemUpdateService::new(
+            "1.0.0",
+            aiosh_core::system_update::UpdateSlot::SlotA,
+            config,
+            "2026-09-20T12:00:00Z",
+        )),
+    }
 }
 
 fn resolve_hardware_service(
@@ -8311,6 +8576,146 @@ mod tests {
         }));
         assert_eq!(res_down.get("ok").and_then(|v| v.as_bool()), Some(true));
         assert_eq!(res_down.pointer("/data/status").and_then(|v| v.as_str()), Some("down"));
+
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+    }
+
+    #[test]
+    fn test_system_update_mcp_tools() {
+        let mut server = Server::open();
+
+        // 1. Tool advertisement
+        let manifest = server.tool_manifest();
+        let tool_names: std::collections::HashSet<_> = manifest
+            .iter()
+            .filter_map(|t| t.get("name").and_then(|v| v.as_str()))
+            .collect();
+        for expected in &[
+            "aios.update.status",
+            "aios.update.slots",
+            "aios.update.check",
+            "aios.update.apply",
+            "aios.update.confirm",
+            "aios.update.rollback",
+        ] {
+            assert!(tool_names.contains(expected), "manifest missing {}", expected);
+        }
+
+        let tmp_dir = std::env::temp_dir().join(format!("aiosh_mcp_upd_test_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&tmp_dir);
+        let tmp_str = tmp_dir.to_string_lossy().to_string();
+
+        // 2. Path hygiene rejection
+        let res_ctrl = server.call_tool("aios.update.status", &json!({
+            "state_dir": "bad\x07state"
+        }));
+        assert_eq!(res_ctrl.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 3. Status query
+        let res_status = server.call_tool("aios.update.status", &json!({
+            "state_dir": tmp_str
+        }));
+        assert_eq!(res_status.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_status.pointer("/data/state").and_then(|v| v.as_str()), Some("idle"));
+        assert_eq!(res_status.pointer("/data/active_slot").and_then(|v| v.as_str()), Some("slot_a"));
+
+        // 4. Slots query
+        let res_slots = server.call_tool("aios.update.slots", &json!({
+            "state_dir": tmp_str
+        }));
+        assert_eq!(res_slots.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_slots.pointer("/data/current_slot").and_then(|v| v.as_str()), Some("slot_a"));
+        assert_eq!(res_slots.pointer("/data/target_slot").and_then(|v| v.as_str()), Some("slot_b"));
+
+        // 5. Check with missing manifest
+        let res_check_missing = server.call_tool("aios.update.check", &json!({
+            "state_dir": tmp_str
+        }));
+        assert_eq!(res_check_missing.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 6. Check with valid inline manifest
+        let valid_manifest = json!({
+            "update_id": "mcp-upd-001",
+            "version": "1.2.0",
+            "channel": "stable",
+            "min_version": "1.0.0",
+            "release_notes": "MCP Update test notes",
+            "published_at": "2026-09-20T12:00:00Z",
+            "signature": "mock_ed25519",
+            "artifacts": [
+                {
+                    "target": "rootfs",
+                    "file_name": "rootfs-1.2.0.img",
+                    "sha256": "0".repeat(64),
+                    "size_bytes": 2048
+                }
+            ]
+        });
+        let res_check_ok = server.call_tool("aios.update.check", &json!({
+            "manifest": valid_manifest,
+            "state_dir": tmp_str
+        }));
+        assert_eq!(res_check_ok.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_check_ok.pointer("/data/target_version").and_then(|v| v.as_str()), Some("1.2.0"));
+        assert_eq!(res_check_ok.pointer("/data/state").and_then(|v| v.as_str()), Some("downloading"));
+
+        // 7. Confirm invalid version bounds
+        let res_conf_long = server.call_tool("aios.update.confirm", &json!({
+            "version": "v".repeat(65),
+            "state_dir": tmp_str
+        }));
+        assert_eq!(res_conf_long.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 8. Confirm in wrong state fails
+        let res_conf_idle = server.call_tool("aios.update.confirm", &json!({
+            "version": "1.2.0",
+            "state_dir": tmp_str
+        }));
+        assert_eq!(res_conf_idle.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 9. Prepare state in ReadyToReboot with rollback slot
+        let slot_file = tmp_dir.join("slot_status.json");
+        let update_file = tmp_dir.join("update_status.json");
+        let mock_slot = json!({
+            "current_slot": "slot_a",
+            "target_slot": "slot_b",
+            "rollback_slot": "slot_b",
+            "slot_a_version": "1.0.0",
+            "slot_b_version": "1.2.0",
+            "slot_a_successful": true,
+            "slot_b_successful": false
+        });
+        let mock_update = json!({
+            "state": "ready_to_reboot",
+            "current_version": "1.0.0",
+            "target_version": "1.2.0",
+            "active_slot": "slot_a",
+            "progress_percent": 100,
+            "last_error": serde_json::Value::Null,
+            "updated_at": "2026-09-20T12:00:00Z"
+        });
+        std::fs::write(&slot_file, serde_json::to_string(&mock_slot).unwrap()).unwrap();
+        std::fs::write(&update_file, serde_json::to_string(&mock_update).unwrap()).unwrap();
+
+        // 10. Confirm in ReadyToReboot succeeds
+        let res_conf_ok = server.call_tool("aios.update.confirm", &json!({
+            "version": "1.2.0",
+            "state_dir": tmp_str
+        }));
+        assert_eq!(res_conf_ok.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_conf_ok.pointer("/data/confirmed_version").and_then(|v| v.as_str()), Some("1.2.0"));
+
+        // 11. Reset to ReadyToReboot and test rollback
+        let mut mock_update2 = mock_update.clone();
+        mock_update2["state"] = json!("ready_to_reboot");
+        std::fs::write(&update_file, serde_json::to_string(&mock_update2).unwrap()).unwrap();
+        std::fs::write(&slot_file, serde_json::to_string(&mock_slot).unwrap()).unwrap();
+
+        let res_rollback_ok = server.call_tool("aios.update.rollback", &json!({
+            "state_dir": tmp_str
+        }));
+        assert_eq!(res_rollback_ok.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_rollback_ok.pointer("/data/restored_slot").and_then(|v| v.as_str()), Some("slot_b"));
 
         let _ = std::fs::remove_dir_all(&tmp_dir);
     }

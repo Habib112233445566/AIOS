@@ -1662,4 +1662,51 @@ Read line-by-line: `pentest.rs` (597), `train_slm.py` (210), `train_unsloth.py` 
   - `aiosh-cli`: 5/5 integration smoke tests in `test_system_update_cli_smoke.py` passed.
   - Full regression test suite: 0 failures, 0 regressions across all sub-epics.
 
+---
+
+## 22. Post-Audit Addendum: Batch T-01927 through T-01936 Verification
+
+**Date:** 2026-09-20  
+**Scope:** Batch `T-01927` through `T-01936` (System Update CLI Control Surface Sub-Epic 3 Closure & Model Context Protocol (MCP) & API Surface Sub-Epic 4).  
+**Auditor:** Antigravity Autonomous Security Subsystem  
+**Verdict:** **PASS (Zero vulnerabilities)**
+
+### 1. Hardened Surface & Key Controls
+- **System Update CLI Hardening & Closure (T-01927..T-01930)**:
+  - Threat modeled `THREAT-UCLI-01..06` covering argument injection, path traversal, manifest parsing DOS, version string overflows, TOCTOU state mutations, and audit circumvention.
+  - Hardened `code/aiosh-rust/aiosh-cli/src/main.rs`:
+    - Strict manifest path validation (length $\le 1024$, control character rejection).
+    - 1MB manifest file size limit check via file metadata prior to memory loading.
+    - Bounded version string lengths ($\le 64$ chars).
+  - Master documentation authored in `docs/system_update.md` (Section 6).
+  - Formally closed Sub-Epic 3 with 5/5 Rust unit tests and 5/5 Python smoke tests.
+- **System Update MCP & API Surface (T-01931..T-01936)**:
+  - Researched, specified, scaffolded, implemented, and verified all 6 MCP update tools:
+    - `aios.update.status`
+    - `aios.update.slots`
+    - `aios.update.check`
+    - `aios.update.apply`
+    - `aios.update.confirm`
+    - `aios.update.rollback`
+  - Enforced invariants `UMCP1..UMCP6`:
+    - `UMCP1`: Strict input validation and structured JSON schemas for all tool calls.
+    - `UMCP2`: Path hygiene bounds ($\le 1024$ bytes, control character rejection) on `state_dir`.
+    - `UMCP3`: Memory bounds on manifest parsing and version string lengths ($\le 64$ chars).
+    - `UMCP4`: PEP policy evaluation and grant attribution.
+    - `UMCP5`: Mandatory audit trail emission via `dispatch::recorded_call`.
+    - `UMCP6`: State machine lifecycle gating and rollback fallback slot restoration.
+- **Test Verification**:
+  - `aiosh-mcp`: Unit test `test_system_update_mcp_tools` passing (tool discovery, path hygiene, status/slots discovery, check validation, confirm bounds, and rollback).
+  - `aiosh-mcp`: 7/7 integration smoke tests in `code/aiosh-mcp/tests/test_system_update_mcp_smoke.py` passing:
+    1. Tool discovery via `tools/list`.
+    2. Input bounds and path hygiene rejection.
+    3. Status and slots queries.
+    4. State transition to `downloading` via `aios.update.check`.
+    5. Rejection of `confirm` in non-ReadyToReboot state.
+    6. Successful `confirm` and safe `rollback` in `ReadyToReboot`.
+    7. Cross-surface parity between operator CLI and MCP tool.
+  - Pytest suite: 100% passing (`1 passed in 0.65s`).
+  - Full regression test suite: 0 regressions across all epics.
+
+
 

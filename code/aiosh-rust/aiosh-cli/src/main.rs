@@ -13704,6 +13704,65 @@ fn cmd_update(args: &[String]) -> i32 {
                 }
             };
 
+            if mpath.len() > 1024 {
+                let msg = "manifest file path cannot exceed 1024 characters";
+                classify_and_emit(
+                    &mut ctx, "update", "check", json!({ "error": msg }),
+                    "failure", None, Some(msg), "operator", None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "PATH_TOO_LONG", "message": msg } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(msg));
+                }
+                return 2;
+            }
+
+            if mpath.chars().any(|c| c.is_control()) {
+                let msg = "manifest file path cannot contain control characters";
+                classify_and_emit(
+                    &mut ctx, "update", "check", json!({ "error": msg }),
+                    "failure", None, Some(msg), "operator", None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "PATH_CONTAINS_CONTROL_CHAR", "message": msg } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(msg));
+                }
+                return 2;
+            }
+
+            let meta = match std::fs::metadata(mpath) {
+                Ok(m) => m,
+                Err(e) => {
+                    let msg = format!("failed to read manifest metadata '{}': {}", mpath, e);
+                    classify_and_emit(
+                        &mut ctx, "update", "check", json!({ "error": &msg }),
+                        "failure", None, Some("Manifest stat failed"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "READ_ERROR", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    return 1;
+                }
+            };
+
+            if meta.len() > 1_048_576 {
+                let msg = format!("manifest file size ({} bytes) exceeds maximum limit of 1MB", meta.len());
+                classify_and_emit(
+                    &mut ctx, "update", "check", json!({ "error": &msg }),
+                    "failure", None, Some("Manifest too large"), "operator", None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "MANIFEST_TOO_LARGE", "message": msg } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(&msg));
+                }
+                return 1;
+            }
+
             let manifest_bytes = match std::fs::read(mpath) {
                 Ok(b) => b,
                 Err(e) => {
@@ -13818,6 +13877,20 @@ fn cmd_update(args: &[String]) -> i32 {
             let pos = extract_update_positional_args(rest);
             let ver_arg = pos.first().copied();
             let ver = ver_arg.map(|s| s.to_string()).unwrap_or_else(|| service.update_status.current_version.clone());
+
+            if ver.len() > 64 || ver.chars().any(|c| c.is_control()) {
+                let msg = "confirmed version exceeds 64 characters or contains control characters";
+                classify_and_emit(
+                    &mut ctx, "update", "confirm", json!({ "error": msg }),
+                    "failure", None, Some(msg), "operator", None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_VERSION_STRING", "message": msg } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(msg));
+                }
+                return 2;
+            }
 
             match service.confirm_boot(&ver) {
                 Ok(()) => {
@@ -13998,6 +14071,16 @@ mod update_cli_tests {
         let bad_json_path = tmp_dir.join("bad.json");
         std::fs::write(&bad_json_path, b"not valid json").unwrap();
         assert_eq!(cmd_update(&s(&["check", &bad_json_path.to_string_lossy(), "--state-dir", &tmp_str, "--json"])), 1);
+
+        // Path hygiene checks on manifest path
+        let long_path = "b".repeat(1025);
+        assert_eq!(cmd_update(&s(&["check", &long_path, "--state-dir", &tmp_str, "--json"])), 2);
+        assert_eq!(cmd_update(&s(&["check", "bad\nmanifest\npath", "--state-dir", &tmp_str, "--json"])), 2);
+
+        // Version string validation in confirm
+        let long_ver = "v".repeat(65);
+        assert_eq!(cmd_update(&s(&["confirm", &long_ver, "--state-dir", &tmp_str, "--json"])), 2);
+        assert_eq!(cmd_update(&s(&["confirm", "bad\nver", "--state-dir", &tmp_str, "--json"])), 2);
 
         let _ = std::fs::remove_dir_all(&tmp_dir);
     }

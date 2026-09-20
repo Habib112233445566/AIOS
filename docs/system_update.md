@@ -216,3 +216,68 @@ pub struct SystemUpdateServiceConfig {
 | `THREAT-USVC-03` | Stale Temporary Files | Pre-existing `.tmp` files unlinked before writing state. |
 | `THREAT-USVC-04` | Corrupted State File | `slot_status.validate()?` executed immediately after loading state JSON from disk. |
 
+---
+
+## 6. Operator CLI Subsystem
+
+The operator CLI (`aiosh update` / `aiosh upd`) provides an interactive and machine-readable command-line interface for human administrators and autonomous agents to manage update staging, application, boot confirmation, and rollback.
+
+### 6.1 Command Grammar
+```bash
+aiosh update <subcommand> [args...] [flags...]
+aiosh upd <subcommand> [args...] [flags...]
+```
+
+### 6.2 Available Subcommands
+- **`status`**: Queries the overall update service state, active partition slot, version numbers, and transfer progress percentage.
+- **`slots`**: Displays detailed partition slot status (current slot, target slot, rollback slot, version strings, and successful boot indicators for Slot A and Slot B).
+- **`check <manifest.json>`**: Reads and verifies the specified update manifest file, validating metadata, target artifacts, release channel, and signature. Transitions state to `Downloading`.
+- **`apply`**: Finalizes update staging, verifies payloads against cryptographic digests, sets the next boot slot to the updated partition, and transitions state to `ReadyToReboot`.
+- **`confirm [version]`**: Confirms successful boot of the new version on the updated partition slot. Sets `slot_successful` to `true` and resets state to `Idle`.
+- **`rollback`**: Triggers immediate partition rollback to the designated fallback slot (`rollback_slot`) and resets state to `Idle`.
+
+### 6.3 Command Flags & Options
+- `--state-dir <path>`: Specifies custom directory for `slot_status.json` and `update_status.json` persistence (default: `/var/lib/aiosh/updates`).
+- `--staging-dir <path>`: Specifies directory for payload artifacts (default: `/var/lib/aiosh/updates/staging`).
+- `--version <ver>`: Overrides current running system version (default: `1.0.0`).
+- `--slot <slot>`: Overrides default active partition slot (`slot_a` or `slot_b`).
+- `--json`: Formats all stdout output using the standardized JSON result envelope.
+- `--help`, `-h`: Displays usage instructions and supported subcommands.
+
+### 6.4 Exit Code Contract
+| Exit Code | Meaning | Examples |
+|---|---|---|
+| `0` | **Success** | Query succeeded, manifest accepted, update applied, boot confirmed. |
+| `1` | **Domain / Operational Failure** | Manifest read error, state machine transition failure, corrupt payload digest, confirmation when not in `ReadyToReboot`. |
+| `2` | **Syntax / Path Hygiene Error** | Unknown subcommand, missing required arguments, path length $> 1024$, control characters in paths or versions. |
+
+### 6.5 JSON Output Envelope Contract
+When invoked with `--json`, commands emit a structured envelope:
+```json
+{
+  "code": 0,
+  "data": { ... },
+  "error": null
+}
+```
+On error, `code` is non-zero, `data` is `null`, and `error` contains a machine-readable code and descriptive message:
+```json
+{
+  "code": 2,
+  "data": null,
+  "error": {
+    "code": "PATH_TOO_LONG",
+    "message": "state-dir path cannot exceed 1024 characters"
+  }
+}
+```
+
+### 6.6 Operator CLI Invariants (UCLI1..UCLI6)
+- **`UCLI1` (Deterministic Routing)**: Only authorized subcommands are dispatched; unrecognized subcommands immediately return exit code 2.
+- **`UCLI2` (Path Hygiene Enforcement)**: Every filesystem path argument (`--state-dir`, `--staging-dir`, `check <path>`) is bounded to $\le 1024$ bytes and checked for control characters.
+- **`UCLI3` (Structured Serialization)**: `--json` flag guarantees canonical JSON envelope output across both stdout successes and error conditions.
+- **`UCLI4` (Audit Trail Integrity)**: All operator interactions are emitted as structured audit events via `classify_and_emit` into the SQLite WAL audit ring.
+- **`UCLI5` (Hermetic Isolation)**: Custom state and staging directory flags enable completely isolated operation without side-effects on host partitions.
+- **`UCLI6` (Terminal Safety)**: All strings printed in human-readable mode are filtered through `sanitize_terminal()`, preventing ANSI injection attacks.
+
+

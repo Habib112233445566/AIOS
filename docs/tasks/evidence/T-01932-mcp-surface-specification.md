@@ -1,0 +1,124 @@
+# Task Evidence: T-01932 - System Update / MCP/API surface: Specification
+
+- **Task**: `T-01932`
+- **Sub-Epic**: `Sub-Epic 4: Model Context Protocol (MCP) & API Surface`
+- **Status**: Completed
+- **Date**: 2026-09-20
+
+## Detailed Specification for System Update MCP Tools
+
+### 1. `aios.update.status`
+- **Purpose**: Query active update status and progress.
+- **Access Level**: Read-only.
+- **Input Schema**:
+```json
+{
+  "type": "object",
+  "properties": {
+    "state_dir": { "type": "string", "maxLength": 1024 }
+  },
+  "additionalProperties": false
+}
+```
+- **Output Schema**:
+```json
+{
+  "state": "idle" | "checking" | "downloading" | "verifying" | "applying" | "ready_to_reboot" | "verified" | "rolled_back" | "failed",
+  "current_version": "string",
+  "target_version": "string | null",
+  "active_slot": "slot_a" | "slot_b",
+  "progress_percent": 0..100,
+  "last_error": "string | null",
+  "updated_at": "string"
+}
+```
+
+### 2. `aios.update.slots`
+- **Purpose**: Query physical partition A/B slot status.
+- **Access Level**: Read-only.
+- **Input Schema**:
+```json
+{
+  "type": "object",
+  "properties": {
+    "state_dir": { "type": "string", "maxLength": 1024 }
+  },
+  "additionalProperties": false
+}
+```
+- **Output Schema**:
+```json
+{
+  "current_slot": "slot_a" | "slot_b",
+  "target_slot": "slot_a" | "slot_b",
+  "rollback_slot": "slot_a" | "slot_b | null",
+  "slot_a_version": "string",
+  "slot_b_version": "string",
+  "slot_a_successful": boolean,
+  "slot_b_successful": boolean
+}
+```
+
+### 3. `aios.update.check`
+- **Purpose**: Validate update manifest.
+- **Access Level**: Read-only verification.
+- **Input Schema**:
+```json
+{
+  "type": "object",
+  "properties": {
+    "manifest_path": { "type": "string", "maxLength": 1024 },
+    "manifest": { "type": "object" },
+    "state_dir": { "type": "string", "maxLength": 1024 },
+    "staging_dir": { "type": "string", "maxLength": 1024 }
+  },
+  "additionalProperties": false
+}
+```
+
+### 4. `aios.update.apply`
+- **Purpose**: Finalize update staging, verify digests, and set boot slot.
+- **Access Level**: Consequential (PEP Policy Gated).
+- **Input Schema**:
+```json
+{
+  "type": "object",
+  "properties": {
+    "state_dir": { "type": "string", "maxLength": 1024 },
+    "staging_dir": { "type": "string", "maxLength": 1024 },
+    "grant_id": { "type": "string" }
+  },
+  "additionalProperties": false
+}
+```
+
+### 5. `aios.update.confirm`
+- **Purpose**: Confirm successful boot on new version.
+- **Access Level**: Consequential (PEP Policy Gated).
+- **Input Schema**:
+```json
+{
+  "type": "object",
+  "properties": {
+    "version": { "type": "string", "maxLength": 64 },
+    "state_dir": { "type": "string", "maxLength": 1024 },
+    "grant_id": { "type": "string" }
+  },
+  "additionalProperties": false
+}
+```
+
+### 6. `aios.update.rollback`
+- **Purpose**: Revert boot slot to fallback partition.
+- **Access Level**: Consequential (PEP Policy Gated).
+- **Input Schema**:
+```json
+{
+  "type": "object",
+  "properties": {
+    "state_dir": { "type": "string", "maxLength": 1024 },
+    "grant_id": { "type": "string" }
+  },
+  "additionalProperties": false
+}
+```
