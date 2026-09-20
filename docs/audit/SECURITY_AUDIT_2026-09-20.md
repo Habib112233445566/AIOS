@@ -2085,4 +2085,40 @@ Read line-by-line: `pentest.rs` (597), `train_slm.py` (210), `train_unsloth.py` 
   - `aiosh-mcp`: `test_capability_config_smoke.py` passing (3/3 tests) validating schema parity, runtime env overrides, and path hygiene.
   - Zero compiler warnings or test regressions across Rust and Python suites.
 
+---
+
+## 34. Post-Audit Addendum: Batch T-02047 through T-02056 Verification
+
+**Date:** 2026-09-20  
+**Scope:** Batch `T-02047` through `T-02056` (Capability Model Sub-Epic 5 Configuration Subsystem Formal Closure & Sub-Epic 6 Automated Tests).  
+**Auditor:** Antigravity Autonomous Security Subsystem  
+**Verdict:** **PASS (Zero vulnerabilities)**
+
+### 1. Hardened Surface & Key Controls
+- **Capability Model Configuration Subsystem Formal Closure (T-02047..T-02050)**:
+  - Evaluated threat vectors `THREAT-CAPCFG-01..06` covering path traversal, resource exhaustion, unbounded file ingestion, control character injection, persistence corruption, and environment variable manipulation.
+  - Hardened `code/aiosh-rust/aiosh-core/src/capability_config.rs`:
+    - Enforced symlink rejection on configuration file reads (`symlink_metadata`).
+    - Enforced strict numeric parsing and error propagation on environment variables (`AIOS_CAPABILITY_MAX_CAPABILITIES`, `AIOS_CAPABILITY_MAX_STORE_BYTES`).
+    - Enforced ASCII control character rejection on `version` and `store_path`.
+    - Enforced mandatory `.json` file extension on `store_path`.
+    - Documented schema, defaults, env overrides, and security controls in Section 10 of `docs/capability_model.md`.
+    - Formally closed Sub-Epic 5 with 5/5 Rust unit tests in `test_capability_config.rs` and 3/3 Python integration tests in `test_capability_config_smoke.py`.
+- **Capability Model Automated Tests (T-02051..T-02056)**:
+  - Researched, specified, scaffolded, implemented, unit-tested, and integrated automated test suites across Rust and Python surfaces.
+  - Formulated and enforced invariants `CAPTEST1..CAPTEST6`:
+    - `CAPTEST1`: Hermetic isolation using temporary directory fixtures (`MockCapabilityEnv`).
+    - `CAPTEST2`: Lineage integrity across multi-tier capability hierarchies (Root $\rightarrow$ Tier 1 $\rightarrow$ Tier 2 $\rightarrow$ Tier 3).
+    - `CAPTEST3`: Monotonic attenuation enforcement (rejection of right expansion, scope widening, quota increases, or expiration extensions).
+    - `CAPTEST4`: Cascade completeness (revoking an intermediate capability transitively revokes all descendant capabilities while preserving ancestors).
+    - `CAPTEST5`: Quota atomicity and bounded enforcement (invocation decrement, byte quota accumulation, fail-closed denial upon exhaustion).
+    - `CAPTEST6`: Fault tolerance and path protection (corrupted JSON rejection, symlink rejection, path traversal rejection).
+- **Test Verification**:
+  - `aiosh-core`: 5/5 unit tests in `test_capability_config.rs` passing in 0.01s.
+  - `aiosh-core`: 7/7 automated unit tests in `test_capability_automated.rs` passing in 0.04s.
+  - `aiosh-mcp`: 3/3 checks in `test_capability_config_smoke.py` passing.
+  - `aiosh-mcp`: 3/3 checks in `test_capability_automated_smoke.py` passing end-to-end against compiled `aiosh-mcp.exe`.
+  - Zero compiler warnings or test regressions across Rust and Python suites.
+
+
 

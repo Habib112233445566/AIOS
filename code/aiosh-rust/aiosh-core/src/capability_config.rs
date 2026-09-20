@@ -78,6 +78,11 @@ impl CapabilityConfig {
         if !path.exists() {
             return Err(format!("Config file not found at {}", path.display()));
         }
+        if let Ok(meta) = std::fs::symlink_metadata(path) {
+            if meta.file_type().is_symlink() {
+                return Err(format!("Config file at {} is a symlink", path.display()));
+            }
+        }
         let mut file = File::open(path)
             .map_err(|e| format!("Failed to open config file {}: {}", path.display(), e))?;
         let mut content = String::new();
@@ -99,20 +104,27 @@ impl CapabilityConfig {
         let mut config = Self::default();
 
         if let Ok(store_path) = std::env::var("AIOS_CAPABILITY_STORE_PATH") {
-            if !store_path.trim().is_empty() {
-                config.store_path = PathBuf::from(store_path);
+            let trimmed = store_path.trim();
+            if !trimmed.is_empty() {
+                config.store_path = PathBuf::from(trimmed);
             }
         }
 
         if let Ok(max_caps) = std::env::var("AIOS_CAPABILITY_MAX_CAPABILITIES") {
-            if let Ok(parsed) = max_caps.trim().parse::<usize>() {
-                config.max_capabilities = parsed;
+            let trimmed = max_caps.trim();
+            if !trimmed.is_empty() {
+                config.max_capabilities = trimmed
+                    .parse::<usize>()
+                    .map_err(|e| format!("Invalid AIOS_CAPABILITY_MAX_CAPABILITIES '{}': {}", trimmed, e))?;
             }
         }
 
         if let Ok(max_bytes) = std::env::var("AIOS_CAPABILITY_MAX_STORE_BYTES") {
-            if let Ok(parsed) = max_bytes.trim().parse::<u64>() {
-                config.max_store_bytes = parsed;
+            let trimmed = max_bytes.trim();
+            if !trimmed.is_empty() {
+                config.max_store_bytes = trimmed
+                    .parse::<u64>()
+                    .map_err(|e| format!("Invalid AIOS_CAPABILITY_MAX_STORE_BYTES '{}': {}", trimmed, e))?;
             }
         }
 
@@ -127,6 +139,9 @@ impl CapabilityConfig {
         }
         if self.version.len() > 32 {
             return Err("CapabilityConfig 'version' exceeds maximum length of 32 characters".into());
+        }
+        if self.version.chars().any(|c| c.is_control()) {
+            return Err("CapabilityConfig 'version' contains control characters".into());
         }
 
         let path_str = self.store_path.to_string_lossy();
@@ -143,6 +158,10 @@ impl CapabilityConfig {
             if let std::path::Component::ParentDir = component {
                 return Err("CapabilityConfig 'store_path' path traversal ('..') is not allowed".into());
             }
+        }
+        match self.store_path.extension().and_then(|ext| ext.to_str()) {
+            Some("json") => (),
+            _ => return Err("CapabilityConfig 'store_path' must have a .json extension".into()),
         }
 
         if self.max_store_bytes < MIN_STORE_BYTES || self.max_store_bytes > MAX_STORE_BYTES {

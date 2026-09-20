@@ -333,4 +333,52 @@ In accordance with ADR-0035 §D-2, the Model Context Protocol (MCP) is the exclu
 - **Input Bounds**: String fields are constrained to $\le 128$ chars (IDs), $\le 256$ chars (subjects/issuers), and $\le 1024$ chars (paths/targets). Control characters are strictly rejected.
 - **Atomic Persistence**: Backing store updates are committed atomically via temporary files (`.tmp.<pid>`), preventing corruption during unexpected termination.
 
+---
+
+## 10. Configuration Subsystem Reference (`CapabilityConfig`)
+
+The Capability Configuration subsystem (`code/aiosh-rust/aiosh-core/src/capability_config.rs`) manages registry sizing, persistence locations, expiration defaults, and security policies for the Capability Model.
+
+### 10.1 Schema & Defaults
+
+| Field | Type | Default | Validation Range / Constraints |
+|---|---|---|---|
+| `version` | `String` | `"1.0.0"` | Non-empty, $\le 32$ chars, no control characters |
+| `store_path` | `PathBuf` | `".aios/capability_store.json"` | Non-empty, $\le 1024$ chars, no control chars, no `..` traversal, `.json` extension |
+| `max_store_bytes` | `u64` | `10_485_760` (10 MiB) | $1\,024 \le x \le 104\,857\,600$ (1 KiB to 100 MiB) |
+| `max_capabilities` | `usize` | `10_000` | $1 \le x \le 1\,000\,000$ |
+| `default_expires_secs` | `Option<u64>` | `None` | If `Some(x)`: $1 \le x \le 315\,360\,000$ (1s to 10 years) |
+| `enforce_strict_monotonic` | `bool` | `true` | Boolean flag |
+| `auto_prune_on_load` | `bool` | `true` | Boolean flag |
+
+### 10.2 Configuration JSON Example
+```json
+{
+  "version": "1.0.0",
+  "store_path": ".aios/capability_store.json",
+  "max_store_bytes": 10485760,
+  "max_capabilities": 10000,
+  "default_expires_secs": null,
+  "enforce_strict_monotonic": true,
+  "auto_prune_on_load": true
+}
+```
+
+### 10.3 Environment Variable Overrides
+
+| Environment Variable | Target Field | Description & Error Behavior |
+|---|---|---|
+| `AIOS_CAPABILITY_CONFIG` | Config File Path | Path to JSON configuration file (read bounded to 64 KiB; symlinks rejected) |
+| `AIOS_CAPABILITY_STORE_PATH` | `store_path` | Path to capability persistence JSON file (validated against traversal and control chars) |
+| `AIOS_CAPABILITY_MAX_CAPABILITIES` | `max_capabilities` | Maximum in-memory capability count (parsed as `usize`; rejects invalid non-numeric strings) |
+| `AIOS_CAPABILITY_MAX_STORE_BYTES` | `max_store_bytes` | Maximum serialized store file size in bytes (parsed as `u64`; rejects non-numeric strings) |
+
+### 10.4 Hardening & Security Controls
+1. **Bounded File Ingestion**: Configuration file reads are bounded to `MAX_CONFIG_BYTES = 64 * 1024` (64 KiB) using `take()`.
+2. **Symlink Defense**: `CapabilityConfig::from_path` verifies `symlink_metadata` and immediately rejects symlinks to prevent redirection attacks.
+3. **Strict Path Hygiene**: Path traversal (`..`) components and ASCII control characters are rejected.
+4. **Mandatory `.json` Extension**: Persistence file path must explicitly possess a `.json` extension.
+5. **Fail-Closed Validation**: Any out-of-range value or parsing error halts initialization with an explicit error.
+
+
 
