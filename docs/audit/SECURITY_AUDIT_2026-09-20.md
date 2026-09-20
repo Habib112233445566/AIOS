@@ -1559,3 +1559,35 @@ Read line-by-line: `pentest.rs` (597), `train_slm.py` (210), `train_unsloth.py` 
   - `aiosh-cli`: 6/6 integration smoke tests in `test_network_recovery_smoke.py` passed in 0.12s.
   - Regression suite: 0 regressions across all 9 previously closed sub-epics.
 
+---
+
+## 19. Post-Audit Addendum: Batch T-01897 through T-01906 Verification
+
+**Date:** 2026-09-20  
+**Scope:** Batch `T-01897` through `T-01906` (Network Bootstrap Sub-Epic 10 Closure, Full Epic Network Bootstrap Completion, and System Update Mechanism Data Model Sub-Epic 1).  
+**Auditor:** Antigravity Autonomous Security Subsystem  
+**Verdict:** **PASS (Zero vulnerabilities)**
+
+### 1. Hardened Surface & Key Controls
+- **Network Bootstrap Recovery & Formal Epic Closure (T-01897..T-01900)**:
+  - Evaluated threat vectors `THREAT-NVAL-01..06` (quarantine collision, race conditions, DNS poisoning, route loops, unvalidated JSON, disk exhaustion).
+  - Hardened `network_recovery.rs`:
+    - Microsecond timestamp plus process ID naming for quarantine files (`.bak.{ts}_{pid}`).
+    - DNS fallback address validation ensuring valid IPv4/IPv6 format before insertion.
+    - RAII `TempFileGuard` ensuring atomic temporary file cleanup.
+  - Authored Sections 13 and 14 in `docs/network_bootstrap.md`, officially closing Sub-Epic 10 and the entire 100-task Epic Network Bootstrap (`T-01801` through `T-01900`).
+- **System Update Mechanism Data Model (T-01901..T-01906)**:
+  - Researched, specified, scaffolded, implemented, and tested `system_update.rs` in `aiosh-core`.
+  - Enforced invariants `UPD1..UPD6`:
+    - `UPD1`: A/B dual-slot model with exclusive active partition, `.other()` toggling, and invariant rejection if `current_slot == target_slot` (`UPD_SLOT_ERROR`).
+    - `UPD2`: Version string boundary constraints (1..64 chars), Update ID bounds (1..128 chars), and channel enum validation (`stable`, `beta`, `nightly`, `development`).
+    - `UPD3`: Exact 64-character ASCII hex SHA-256 digest validation (`UPD_DIGEST_ERROR`) and payload size bounds ($1 \le \text{size} \le 10$ GB).
+    - `UPD4`: Linear state machine transitions (`Idle -> Checking/Downloading -> Verifying -> Applying -> ReadyToReboot -> Verified/RolledBack -> Idle`) with illegal leaps rejected (`UPD_STATE_ERROR`).
+    - `UPD5`: Rollback safeguard tracking in `SystemSlotStatus`.
+    - `UPD6`: Canonical cross-substrate JSON serialization parity.
+- **Test Verification**:
+  - `aiosh-core`: 7/7 unit tests in `test_system_update.rs` passed in 0.00s.
+  - `aiosh-cli`: 5/5 integration smoke tests in `test_system_update_smoke.py` passed in 0.10s.
+  - Sub-Epic 10 recovery tests: 8/8 unit tests and 6/6 smoke tests passed.
+  - Regression suite: 0 regressions across all prior modules.
+

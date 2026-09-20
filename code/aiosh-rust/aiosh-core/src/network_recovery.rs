@@ -481,8 +481,8 @@ pub fn recover_network_file(path: &Path) -> Result<NetworkRecoveryReport, String
 
     // If file exists and is damaged/corrupted or oversized, quarantine it (NVAL5)
     if path.exists() {
-        let ts = Utc::now().format("%Y%m%d_%H%M%S").to_string();
-        let bak = path.with_extension(format!("bak.{}", ts));
+        let ts = Utc::now().format("%Y%m%d_%H%M%S_%f").to_string();
+        let bak = path.with_extension(format!("bak.{}_{}", ts, std::process::id()));
         fs::copy(path, &bak)
             .map_err(|e| format!("{}: failed to quarantine corrupted file to {}: {}", NVAL_IO_ERROR, bak.display(), e))?;
         let bak_str = bak.to_string_lossy().to_string();

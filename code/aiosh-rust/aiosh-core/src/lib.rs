@@ -110,6 +110,7 @@ pub mod session_observability;
 pub mod session_policy;
 pub mod session_recovery;
 pub mod session_service;
+pub mod system_update;
 pub mod task_service;
 pub mod toolchain_config;
 pub mod toolchain_service;
@@ -201,6 +202,12 @@ pub use network_recovery::{
     NetworkValidationReport, MAX_NETWORK_STORE_SIZE,
 };
 pub use types::GENESIS_HASH;
+pub use system_update::{
+    PartitionTarget, SystemSlotStatus, SystemUpdateStatus, UpdateArtifact,
+    UpdateChannel, UpdateManifest, UpdateSlot, UpdateState,
+    MAX_UPDATE_ID_LEN, MAX_UPDATE_PAYLOAD_SIZE, MAX_UPDATE_VERSION_LEN,
+    UPD_DIGEST_ERROR, UPD_SLOT_ERROR, UPD_STATE_ERROR, UPD_VALIDATION_ERROR,
+};
 
 
 
