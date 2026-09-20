@@ -116,6 +116,9 @@ pub fn validate_policy_path(path: &Path) -> Result<(), String> {
 
 /// Parses semantic version into (major, minor, patch) tuple for comparison.
 fn parse_semver(v: &str) -> Option<(u64, u64, u64)> {
+    if v.len() > MAX_UPDATE_VERSION_LEN || v.chars().any(|c| c.is_control()) {
+        return None;
+    }
     let clean = v.trim().trim_start_matches('v');
     let parts: Vec<&str> = clean.split('.').collect();
     if parts.len() < 2 {
@@ -171,6 +174,13 @@ impl SystemUpdateSecurityPolicy {
             ));
         }
 
+        if self.trusted_public_keys.len() > 32 {
+            return Err(format!(
+                "{}: trusted_public_keys count ({}) exceeds maximum limit (32)",
+                UPOL_VALIDATION_ERROR, self.trusted_public_keys.len()
+            ));
+        }
+
         for key in &self.trusted_public_keys {
             if key.trim().is_empty() || key.len() > 256 {
                 return Err(format!(
@@ -186,6 +196,13 @@ impl SystemUpdateSecurityPolicy {
             }
         }
 
+        if self.revoked_versions.len() > 1024 {
+            return Err(format!(
+                "{}: revoked_versions count ({}) exceeds maximum limit (1024)",
+                UPOL_VALIDATION_ERROR, self.revoked_versions.len()
+            ));
+        }
+
         for ver in &self.revoked_versions {
             if ver.trim().is_empty() || ver.len() > MAX_UPDATE_VERSION_LEN {
                 return Err(format!(
@@ -193,6 +210,13 @@ impl SystemUpdateSecurityPolicy {
                     UPOL_VALIDATION_ERROR, MAX_UPDATE_VERSION_LEN
                 ));
             }
+        }
+
+        if self.revoked_update_ids.len() > 1024 {
+            return Err(format!(
+                "{}: revoked_update_ids count ({}) exceeds maximum limit (1024)",
+                UPOL_VALIDATION_ERROR, self.revoked_update_ids.len()
+            ));
         }
 
         Ok(())
@@ -363,6 +387,15 @@ impl SystemUpdateSecurityPolicy {
     pub fn from_file(path: &Path) -> Result<Self, String> {
         validate_policy_path(path)?;
 
+        if let Ok(meta) = fs::symlink_metadata(path) {
+            if meta.file_type().is_symlink() {
+                return Err(format!(
+                    "{}: policy path {:?} is a symbolic link (symlink attack rejected)",
+                    UPOL_VALIDATION_ERROR, path
+                ));
+            }
+        }
+
         let meta = fs::metadata(path)
             .map_err(|e| format!("{}: cannot read policy metadata at {:?}: {}", UPOL_IO_ERROR, path, e))?;
 
@@ -387,6 +420,15 @@ impl SystemUpdateSecurityPolicy {
     pub fn save_to_file(&self, path: &Path) -> Result<(), String> {
         validate_policy_path(path)?;
         self.validate()?;
+
+        if let Ok(meta) = fs::symlink_metadata(path) {
+            if meta.file_type().is_symlink() {
+                return Err(format!(
+                    "{}: destination path {:?} is a symbolic link (symlink attack rejected)",
+                    UPOL_VALIDATION_ERROR, path
+                ));
+            }
+        }
 
         if let Some(parent) = path.parent() {
             if !parent.as_os_str().is_empty() && !parent.exists() {

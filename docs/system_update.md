@@ -494,3 +494,67 @@ python code/aiosh-mcp/tests/test_system_update_e2e_smoke.py
 - Integration: [`docs/tasks/evidence/T-01956-automated-tests-integration.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01956-automated-tests-integration.md)
 - Security Review: [`docs/tasks/evidence/T-01957-automated-tests-security-review.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01957-automated-tests-security-review.md)
 - Hardening: [`docs/tasks/evidence/T-01958-automated-tests-hardening.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01958-automated-tests-hardening.md)
+
+---
+
+## 10. System Update Security Policy Subsystem
+
+### 10.1 Overview & Architecture
+The System Update Security Policy Subsystem provides governance, authorization, anti-rollback protection, and cryptographic key gating for all system update operations in AIOS:
+- **Core Module**: [`code/aiosh-rust/aiosh-core/src/system_update_policy.rs`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/code/aiosh-rust/aiosh-core/src/system_update_policy.rs).
+- **Execution Modes (`UpdatePolicyMode`)**:
+  - `Enforcing`: Any fatal policy violation immediately denies update application (verdict: `"deny"`).
+  - `Audit`: Violations are recorded and logged, but the update is permitted (verdict: `"audit"`).
+  - `Permissive`: Violations are recorded without blocking (verdict: `"allow"`).
+
+### 10.2 Invariants Enforced (UPOL1 - UPOL6)
+1. **`UPOL1` (Channel Authorization)**: Manifest update channel must belong to `allowed_channels` (default: `[stable]`). Violations emit `UPOL1_CHANNEL_DISALLOWED`.
+2. **`UPOL2` (Signature & Key Trust Enforcement)**: When `require_signature` is enabled, unsigned manifests emit `UPOL2_SIGNATURE_MISSING`. If `trusted_public_keys` is non-empty, signatures must match one of the trusted keys or emit `UPOL2_KEY_UNTRUSTED`.
+3. **`UPOL3` (Anti-Rollback & Downgrade Prevention)**: When `disallow_downgrades` is enabled, candidate versions strictly older than the currently running version (evaluated via semver parsing) are rejected with `UPOL3_DOWNGRADE_ATTEMPT`.
+4. **`UPOL4` (Partition Target Governance)**: Every artifact target must be listed in `allowed_partition_targets`. Additionally, all targets in `required_partition_targets` (e.g. `rootfs`) must be present in the manifest.
+5. **`UPOL5` (Resource & Quota Caps)**: Total payload size cannot exceed `max_payload_bytes` (clamped between 1 MB and 10 GB), and total artifact count cannot exceed `max_artifacts_count` (capped between 1 and 32).
+6. **`UPOL6` (Revocation Denylisting)**: Candidate versions matching `revoked_versions` or update IDs matching `revoked_update_ids` are denied with `UPOL6_VERSION_REVOKED` or `UPOL6_UPDATE_ID_REVOKED`.
+
+### 10.3 Invocation Examples
+
+#### Run Policy Unit Test Suite
+```bash
+cargo test --manifest-path code/aiosh-rust/Cargo.toml -p aiosh-core --test test_system_update_policy -- --nocapture
+```
+
+#### Run Policy Python Smoke Suite
+```bash
+python code/aiosh-mcp/tests/test_system_update_policy_smoke.py
+```
+
+#### Example Policy Configuration (`update_policy.json`)
+```json
+{
+  "mode": "enforcing",
+  "allowed_channels": ["stable"],
+  "require_signature": true,
+  "trusted_public_keys": ["prod_key_2026_01"],
+  "disallow_downgrades": true,
+  "allowed_partition_targets": ["rootfs", "kernel", "initramfs"],
+  "required_partition_targets": ["rootfs"],
+  "max_payload_bytes": 4294967296,
+  "max_artifacts_count": 8,
+  "revoked_versions": ["1.0.0-vulnerable"],
+  "revoked_update_ids": ["upd-2026-cve-001"]
+}
+```
+
+### 10.4 Constraints & Known Limitations
+- **Key Store Capacity**: Capped at 32 trusted public keys and 1024 revoked versions/update IDs to prevent memory exhaustion and search degradation.
+- **Path Hygiene**: Policy file paths are capped at 1024 characters, cannot contain control characters or `..` directory traversal, and reject symbolic links.
+
+### 10.5 Evidence Artifacts
+- Research: [`docs/tasks/evidence/T-01961-security-policy-research.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01961-security-policy-research.md)
+- Specification: [`docs/tasks/evidence/T-01962-security-policy-specification.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01962-security-policy-specification.md)
+- Scaffold: [`docs/tasks/evidence/T-01963-security-policy-scaffold.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01963-security-policy-scaffold.md)
+- Implementation: [`docs/tasks/evidence/T-01964-security-policy-implementation.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01964-security-policy-implementation.md)
+- Unit Testing: [`docs/tasks/evidence/T-01965-security-policy-unit-test.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01965-security-policy-unit-test.md)
+- Integration: [`docs/tasks/evidence/T-01966-security-policy-integration.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01966-security-policy-integration.md)
+- Security Review: [`docs/tasks/evidence/T-01967-security-policy-security-review.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01967-security-policy-security-review.md)
+- Hardening: [`docs/tasks/evidence/T-01968-security-policy-hardening.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01968-security-policy-hardening.md)
+
