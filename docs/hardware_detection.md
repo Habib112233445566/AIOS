@@ -381,6 +381,55 @@ pub struct HardwareConfig {
 - Documentation: `docs/tasks/evidence/T-01749-configuration-documentation.md`.
 - Verification & Evidence: `docs/tasks/evidence/T-01750-configuration-verification-evidenc.md`.
 
+---
+
+## 12. Hardware Detection Automated Test Subsystem (Sub-Epic 6)
+
+### 12.1 Overview & Architecture
+The Automated Test Subsystem enables isolated, deterministic, and root-free testing of the entire hardware discovery pipeline across heterogeneous environments (bare metal, virtualized containers, Windows developer workstations, CI/CD runners).
+
+Test fixtures are generated dynamically using `MockSysfsBuilder`, simulating PCI, USB, Storage Block, Network, CPU, and DMI/Platform topologies with full fault injection capabilities.
+
+### 12.2 Test Harness API (`MockSysfsBuilder`)
+```rust
+pub struct MockSysfsBuilder {
+    pub temp_dir: TempDir,
+    pub sysfs_root: PathBuf,
+    pub procfs_root: PathBuf,
+}
+
+impl MockSysfsBuilder {
+    pub fn new() -> Self;
+    pub fn add_pci(&mut self, slot: &str, vendor: &str, device: &str, class_code: &str, driver: Option<&str>) -> &mut Self;
+    pub fn add_usb(&mut self, id: &str, vendor: &str, product: &str, manufacturer: &str, prod_name: &str) -> &mut Self;
+    pub fn add_block(&mut self, name: &str, size_sectors: u64, rotational: bool, model: &str) -> &mut Self;
+    pub fn add_net(&mut self, name: &str, mac: &str, speed: i32, operstate: &str) -> &mut Self;
+    pub fn add_cpu(&mut self, cpu_id: usize, model: &str, mhz: f64) -> &mut Self;
+    pub fn add_dmi(&mut self, vendor: &str, product: &str, version: &str) -> &mut Self;
+    pub fn roots(&self) -> (&Path, &Path);
+}
+```
+
+### 12.3 Automated Testing Invariants (AT1..AT5)
+- **AT1 (Hermetic Isolation)**: All mock discovery executions run strictly within isolated temporary directories without accessing or reading the host `/sys` or `/proc` filesystems.
+- **AT2 (Fault Injection Robustness)**: Probers must gracefully handle corrupted hex codes (`0xZZZZ`, `0x`), truncated files, missing optional attributes (`size`, `rotational`, `speed`), and symlinks without panicking.
+- **AT3 (Deterministic Identification & Classification)**: Synthetic device fixtures must deterministically map to normalized device IDs (`pci:0000:00:02.0`, `usb:1-1`, `block:sda`, `net:eth0`, `cpu:0`, `system:dmi`) and accurate `DeviceClass` classifications.
+- **AT4 (Invariant Compliance)**: Inventories generated through mock hierarchies must satisfy all domain model invariants (`HD1..HD5`) and deterministic device sorting (`HS3`).
+- **AT5 (Scale & Traversal Bounds)**: Directory traversal must strictly respect `MAX_PROBE_ENTRIES = 1024`, ensuring scans complete well within the execution timeout budget.
+
+### 12.4 Sub-Epic 6 Verification Evidence
+- Research: `docs/tasks/evidence/T-01751-automated-tests-research.md`.
+- Specification: `docs/tasks/evidence/T-01752-automated-tests-specification.md`.
+- Scaffold: `docs/tasks/evidence/T-01753-automated-tests-scaffold.md`.
+- Implementation: `docs/tasks/evidence/T-01754-automated-tests-implementation.md`.
+- Unit Test: `docs/tasks/evidence/T-01755-automated-tests-unit-test.md`.
+- Integration: `docs/tasks/evidence/T-01756-automated-tests-integration.md`.
+- Security Review: `docs/tasks/evidence/T-01757-automated-tests-security-review.md`.
+- Hardening: `docs/tasks/evidence/T-01758-automated-tests-hardening.md`.
+- Documentation: `docs/tasks/evidence/T-01759-automated-tests-documentation.md`.
+- Verification & Evidence: `docs/tasks/evidence/T-01760-automated-tests-verification-evidenc.md`.
+
+
 
 
 

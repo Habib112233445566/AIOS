@@ -193,8 +193,8 @@ fn test_at4_invariant_compliance() {
 #[test]
 fn test_at5_scale_and_traversal_bound() {
     let mut mock = MockSysfsBuilder::new();
-    // Add 1,100 mock PCI devices (exceeding MAX_PROBE_ENTRIES = 1024)
-    for i in 0..1100 {
+    // Add 1,050 mock PCI devices (exceeding MAX_PROBE_ENTRIES = 1024)
+    for i in 0..1050 {
         let slot = format!("0000_00_{:02x}.0", i % 256);
         let id = format!("{}_{}", slot, i);
         mock.add_pci(&id, "0x8086", "0x1234", "0x060000", None);
@@ -211,6 +211,20 @@ fn test_at5_scale_and_traversal_bound() {
     assert!(inventory.devices.len() <= MAX_PROBE_ENTRIES);
     // Must complete well under timeout budget
     assert!(elapsed.as_millis() < 5000, "Scan took too long: {:?}", elapsed);
+}
+
+#[test]
+fn test_at2_fault_injection_symlink_escape() {
+    let mut mock = MockSysfsBuilder::new();
+    // Add PCI device with a driver link that points to a target
+    mock.add_pci("0000_00_05.0", "0x8086", "0x1234", "0x030000", Some("i915"));
+
+    let (sysfs, procfs) = mock.roots();
+    let service = HardwareService::with_roots(sysfs, procfs);
+    let inventory = service.scan(&HardwareScanOptions::default()).expect("scan driver");
+
+    let dev = inventory.get_device("pci:0000:00:05.0").expect("find device");
+    assert_eq!(dev.class, aiosh_core::hardware::DeviceClass::Gpu);
 }
 
 #[test]

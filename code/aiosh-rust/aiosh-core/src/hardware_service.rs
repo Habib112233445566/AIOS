@@ -138,6 +138,17 @@ impl HardwareService {
         self.scan(&options)
     }
 
+    /// Scans host devices and applies security policy (filters prohibited devices, masks sensitive attributes).
+    pub fn scan_with_policy(
+        &self,
+        options: &HardwareScanOptions,
+        policy: &crate::hardware_policy::HardwareSecurityPolicy,
+    ) -> Result<(HardwareInventory, crate::hardware_policy::HardwarePolicyReport), String> {
+        let mut inventory = self.scan(options)?;
+        let report = policy.apply_and_sanitize(&mut inventory);
+        Ok((inventory, report))
+    }
+
     /// Retrieves the cached hardware inventory if present.
     pub fn get_cached_inventory(&self) -> Option<HardwareInventory> {
         self.cached_inventory.read().ok().and_then(|guard| guard.clone())

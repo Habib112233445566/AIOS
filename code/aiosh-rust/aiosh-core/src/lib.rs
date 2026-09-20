@@ -58,6 +58,7 @@ pub mod handoff_config;
 pub mod handoff_service;
 pub mod hardware;
 pub mod hardware_config;
+pub mod hardware_policy;
 pub mod hardware_service;
 pub mod kernel_module;
 pub mod kernel_module_config;
@@ -163,6 +164,9 @@ pub use hardware::{
     MAX_DEVICE_ID_LEN, MAX_DEVICE_NAME_LEN, MAX_JSON_PAYLOAD_SIZE, MAX_PATH_LEN,
 };
 pub use hardware_config::HardwareConfig;
+pub use hardware_policy::{
+    HardwarePolicyMode, HardwarePolicyReport, HardwarePolicyViolation, HardwareSecurityPolicy,
+};
 pub use hardware_service::{HardwareScanOptions, HardwareService};
 pub use types::GENESIS_HASH;
 

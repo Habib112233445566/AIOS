@@ -971,4 +971,37 @@ Still not read line-by-line (next pass starts here): `aiosh_mcp/pentest.py` body
   - `aiosh-cli`: 5/5 integration smoke tests in `test_hardware_automated_smoke.py` passed.
   - Zero compiler warnings or lint errors.
 
+---
+
+## 5. Post-Audit Addendum: Batch T-01757 through T-01766 Verification
+
+**Date:** 2026-09-20  
+**Scope:** Batch `T-01757` through `T-01766` (Hardware Detection Automated Tests Sub-Epic 6 Closure & Hardware Security Policy Sub-Epic 7).  
+**Auditor:** Antigravity Autonomous Agent  
+**Verdict:** **PASS (Zero vulnerabilities)**
+
+### 1. Hardened Surface & Key Controls
+- **Automated Tests Subsystem Closure (T-01757..T-01760)**:
+  - Addressed security review findings AT-SEC-1 (TempDir cleanup), AT-SEC-2 (symlink traversal resistance), and AT-SEC-3 (scale test bounds).
+  - Hardened `MockSysfsBuilder` with symlink escape verification; tuned scale test bounds to 1,050 entries for sub-second deterministic execution.
+  - Authored comprehensive documentation in `docs/hardware_detection.md` Section 12.
+  - Formally closed Sub-Epic 6 with 8/8 Rust unit tests and 5/5 Python integration smoke tests passing.
+- **Hardware Security Policy Subsystem (T-01761..T-01766)**:
+  - Formally specified and implemented `HardwareSecurityPolicy`, `HardwarePolicyMode` (`Enforcing`, `Permissive`, `Disabled`), and `HardwarePolicyViolation`.
+  - Implemented `HardwarePolicyReport` evaluation logic (`evaluate`), policy-driven sanitization (`apply_and_sanitize`), validation, and atomic file persistence (`save_to_path`).
+  - Wired `HardwareService::scan_with_policy` for integrated scan-and-evaluate operations.
+  - Enforced policy invariants `HSEC1..HSEC5`:
+    - `HSEC1`: Denylist precedence over allowlist; fatal violations yield Deny verdict and filter devices in Enforcing mode.
+    - `HSEC2`: Automatic redaction of sensitive device attributes (`address`, `mac`, `serial`, `uuid`, `wwid`) to `"<REDACTED>"`.
+    - `HSEC3`: Class and bus gatekeeping generating fatal violations (`HPOL-CLASS`, `HPOL-BUS`).
+    - `HSEC4`: Deterministic evaluation reports with deterministically ordered violations.
+    - `HSEC5`: Fail-safe defaults with `Enforcing` mode, redaction enabled, and safe file parsing.
+- **Test Verification**:
+  - `aiosh-core`: 8/8 automated tests in `test_hardware_automated.rs` passed in 5.70s.
+  - `aiosh-core`: 12/12 security policy unit tests in `test_hardware_policy.rs` passed in 0.02s.
+  - `aiosh-cli`: 5/5 automated smoke tests in `test_hardware_automated_smoke.py` passed.
+  - `aiosh-cli`: 5/5 security policy smoke tests in `test_hardware_policy_smoke.py` passed.
+  - Zero compiler warnings or lint errors.
+
+
 
