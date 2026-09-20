@@ -74,19 +74,19 @@ impl NetworkConfig {
         ] {
             let s = path
                 .to_str()
-                .ok_or_else(|| format!("NCONF1 violation: {} must be valid UTF-8", name))?;
+                .ok_or_else(|| format!("NCONF_VALIDATION_ERROR: {} must be valid UTF-8", name))?;
             if s.trim().is_empty() {
-                return Err(format!("NCONF1 violation: {} cannot be empty", name));
+                return Err(format!("NCONF_VALIDATION_ERROR: {} cannot be empty", name));
             }
             if s.len() > 1024 {
                 return Err(format!(
-                    "NCONF1 violation: {} exceeds maximum length of 1024 characters",
+                    "NCONF_VALIDATION_ERROR: {} exceeds maximum length of 1024 characters",
                     name
                 ));
             }
             if s.chars().any(|c| c.is_control() || c == '\0') {
                 return Err(format!(
-                    "NCONF1 violation: {} cannot contain control characters",
+                    "NCONF_VALIDATION_ERROR: {} cannot contain control characters",
                     name
                 ));
             }
@@ -95,7 +95,7 @@ impl NetworkConfig {
                 .any(|c| matches!(c, std::path::Component::ParentDir))
             {
                 return Err(format!(
-                    "NCONF1 violation: {} cannot contain parent directory traversal ('..')",
+                    "NCONF_VALIDATION_ERROR: {} cannot contain parent directory traversal ('..')",
                     name
                 ));
             }
@@ -104,19 +104,19 @@ impl NetworkConfig {
         // NCONF2: Capacity limits
         if self.max_interfaces == 0 || self.max_interfaces > 10_000 {
             return Err(format!(
-                "NCONF2 violation: max_interfaces must be between 1 and 10,000 (got {})",
+                "NCONF_VALIDATION_ERROR: max_interfaces must be between 1 and 10,000 (got {})",
                 self.max_interfaces
             ));
         }
         if self.max_routes == 0 || self.max_routes > 50_000 {
             return Err(format!(
-                "NCONF2 violation: max_routes must be between 1 and 50,000 (got {})",
+                "NCONF_VALIDATION_ERROR: max_routes must be between 1 and 50,000 (got {})",
                 self.max_routes
             ));
         }
         if self.max_dns_servers == 0 || self.max_dns_servers > 64 {
             return Err(format!(
-                "NCONF2 violation: max_dns_servers must be between 1 and 64 (got {})",
+                "NCONF_VALIDATION_ERROR: max_dns_servers must be between 1 and 64 (got {})",
                 self.max_dns_servers
             ));
         }
@@ -124,13 +124,13 @@ impl NetworkConfig {
         // NCONF3: Resource & timeout bounds
         if self.max_payload_bytes < 1024 || self.max_payload_bytes > 104_857_600 {
             return Err(format!(
-                "NCONF3 violation: max_payload_bytes must be between 1024 and 104,857,600 (got {})",
+                "NCONF_VALIDATION_ERROR: max_payload_bytes must be between 1024 and 104,857,600 (got {})",
                 self.max_payload_bytes
             ));
         }
         if self.scan_timeout_secs == 0 || self.scan_timeout_secs > 300 {
             return Err(format!(
-                "NCONF3 violation: scan_timeout_secs must be between 1 and 300 (got {})",
+                "NCONF_VALIDATION_ERROR: scan_timeout_secs must be between 1 and 300 (got {})",
                 self.scan_timeout_secs
             ));
         }
@@ -138,7 +138,7 @@ impl NetworkConfig {
         // NCONF4: Fallback DNS validation
         if self.fallback_dns_servers.len() > self.max_dns_servers {
             return Err(format!(
-                "NCONF4 violation: fallback_dns_servers count ({}) exceeds max_dns_servers ({})",
+                "NCONF_VALIDATION_ERROR: fallback_dns_servers count ({}) exceeds max_dns_servers ({})",
                 self.fallback_dns_servers.len(),
                 self.max_dns_servers
             ));
@@ -147,13 +147,13 @@ impl NetworkConfig {
             let trimmed = dns.trim();
             if trimmed.is_empty() {
                 return Err(format!(
-                    "NCONF4 violation: fallback_dns_servers[{}] cannot be empty",
+                    "NCONF_VALIDATION_ERROR: fallback_dns_servers[{}] cannot be empty",
                     idx
                 ));
             }
             if trimmed.parse::<IpAddr>().is_err() {
                 return Err(format!(
-                    "NCONF4 violation: fallback_dns_servers[{}] '{}' is not a valid IP address",
+                    "NCONF_VALIDATION_ERROR: fallback_dns_servers[{}] '{}' is not a valid IP address",
                     idx, trimmed
                 ));
             }
@@ -167,20 +167,31 @@ impl NetworkConfig {
         if !path.exists() {
             return Ok(Self::default());
         }
-        let metadata = fs::metadata(path)
-            .map_err(|e| format!("Failed to read metadata for {}: {}", path.display(), e))?;
+        let metadata = fs::metadata(path).map_err(|e| {
+            format!(
+                "NCONF_IO_ERROR: Failed to read metadata for {}: {}",
+                path.display(),
+                e
+            )
+        })?;
         if metadata.len() > MAX_CONFIG_FILE_BYTES {
             return Err(format!(
-                "Network config file {} size {} exceeds maximum allowed ({} bytes)",
+                "NCONF_VALIDATION_ERROR: Network config file {} size {} exceeds maximum allowed ({} bytes)",
                 path.display(),
                 metadata.len(),
                 MAX_CONFIG_FILE_BYTES
             ));
         }
-        let content = fs::read_to_string(path)
-            .map_err(|e| format!("Failed to read network config from {}: {}", path.display(), e))?;
-        let config: NetworkConfig = serde_json::from_str(&content)
-            .map_err(|e| format!("Failed to parse network config JSON: {}", e))?;
+        let content = fs::read_to_string(path).map_err(|e| {
+            format!(
+                "NCONF_IO_ERROR: Failed to read network config from {}: {}",
+                path.display(),
+                e
+            )
+        })?;
+        let config: NetworkConfig = serde_json::from_str(&content).map_err(|e| {
+            format!("NCONF_PARSE_ERROR: Failed to parse network config JSON: {}", e)
+        })?;
         config.validate()?;
         Ok(config)
     }
@@ -197,14 +208,15 @@ impl NetworkConfig {
         if !parent.as_os_str().is_empty() && !parent.exists() {
             fs::create_dir_all(parent).map_err(|e| {
                 format!(
-                    "Failed to create parent directory {}: {}",
+                    "NCONF_IO_ERROR: Failed to create parent directory {}: {}",
                     parent.display(),
                     e
                 )
             })?;
         }
-        let json = serde_json::to_string_pretty(self)
-            .map_err(|e| format!("Failed to serialize network config: {}", e))?;
+        let json = serde_json::to_string_pretty(self).map_err(|e| {
+            format!("NCONF_SERIALIZATION_ERROR: Failed to serialize network config: {}", e)
+        })?;
 
         // Atomic write via temporary sibling file + rename
         let tmp_file_name = format!(
@@ -220,17 +232,25 @@ impl NetworkConfig {
             parent.join(tmp_file_name)
         };
 
-        fs::write(&tmp_path, &json).map_err(|e| {
-            format!(
-                "Failed to write network config temp file {}: {}",
+        if let Err(e) = fs::write(&tmp_path, &json) {
+            let _ = fs::remove_file(&tmp_path);
+            return Err(format!(
+                "NCONF_IO_ERROR: Failed to write network config temp file {}: {}",
                 tmp_path.display(),
                 e
-            )
-        })?;
+            ));
+        }
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(&tmp_path, fs::Permissions::from_mode(0o600));
+        }
+
         if let Err(e) = fs::rename(&tmp_path, path) {
             let _ = fs::remove_file(&tmp_path);
             return Err(format!(
-                "Failed to atomically rename {} to {}: {}",
+                "NCONF_IO_ERROR: Failed to atomically rename {} to {}: {}",
                 tmp_path.display(),
                 path.display(),
                 e

@@ -1396,6 +1396,42 @@ Read line-by-line: `pentest.rs` (597), `train_slm.py` (210), `train_unsloth.py` 
   - `aiosh-cli`: 6/6 integration smoke tests in `test_network_config_smoke.py` passed in 0.17s.
   - Zero compiler warnings or lint errors across Rust and Python suites.
 
+---
+
+## 14. Post-Audit Addendum: Batch T-01847 through T-01856 Verification
+
+**Date:** 2026-09-20  
+**Scope:** Batch `T-01847` through `T-01856` (Network Bootstrap Configuration Sub-Epic 5 Closure & Network Bootstrap Automated Tests Sub-Epic 6).  
+**Auditor:** Antigravity Autonomous Agent  
+**Verdict:** **PASS (Zero vulnerabilities)**
+
+### 1. Hardened Surface & Key Controls
+- **Network Bootstrap Configuration Closure (T-01847..T-01850)**:
+  - Security review evaluated threat vectors `THREAT-NCONF-01..06` (path traversal, DoS via unbounded collections, oversized config documents, DNS injection, persistence corruption, env variable manipulation).
+  - Hardened `network_config.rs`:
+    - Structured error classifications: `NCONF_VALIDATION_ERROR`, `NCONF_IO_ERROR`, `NCONF_PARSE_ERROR`, `NCONF_SERIALIZATION_ERROR`.
+    - Immediate cleanup of temporary files on write/rename errors in `save_to_path()`, preventing temporary file leaks.
+    - File permissions set to `0600` on Unix systems before atomic rename.
+    - Enforced `MAX_CONFIG_FILE_BYTES = 1,048,576` (1 MB) via `fs::metadata()` before reading files into memory.
+  - Authored Section 8 in `docs/network_bootstrap.md`.
+  - Formally closed Sub-Epic 5 with 20/20 Rust unit tests in `test_network_config.rs` and 6/6 Python integration tests in `test_network_config_smoke.py`.
+- **Network Bootstrap Automated Tests (T-01851..T-01856)**:
+  - Researched, specified, scaffolded, implemented, unit tested, and integrated automated test suites across Rust and Python surfaces.
+  - Formulated and enforced invariants `NTEST1..NTEST6`:
+    - `NTEST1`: Hermetic isolation using temporary directory fixtures (`MockNetworkEnv`) without mutating host kernel networking.
+    - `NTEST2`: Cross-surface parity between CLI and MCP data model representations.
+    - `NTEST3`: Fault injection (corrupt route table, empty resolv.conf, path traversal in interface names) failing gracefully without panics.
+    - `NTEST4`: Audit trail integrity on state queries and mutations.
+    - `NTEST5`: Dynamic configuration integration via environment variables (`AIOS_NETWORK_*`).
+    - `NTEST6`: Deterministic cleanup of temporary fixtures on test completion.
+- **Test Verification**:
+  - `aiosh-core`: 20/20 unit tests in `test_network_config.rs` passed in 0.01s.
+  - `aiosh-core`: 6/6 automated integration tests in `test_network_automated.rs` passed in 0.11s.
+  - `aiosh-cli`: 6/6 config smoke tests in `test_network_config_smoke.py` passed in 0.17s.
+  - `aiosh-cli`: 5/5 automated E2E smoke tests in `test_network_e2e_smoke.py` passed in 0.14s.
+  - Full regression test suite: 0 failures, 0 regressions across all 6 sub-epics.
+
+
 
 
 

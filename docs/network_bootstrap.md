@@ -265,3 +265,86 @@ The MCP tool surface exposes network inspection and control capabilities to auto
 - When running in containers or unprivileged environments, link state changes (`up`, `down`) will fail gracefully if the process lacks `CAP_NET_ADMIN`.
 - Path override parameters are intended for hermetic CI testing and containerized testing environments.
 
+---
+
+## 8. Network Bootstrap Configuration Subsystem (`NetworkConfig`)
+
+The Network Bootstrap Configuration Subsystem manages persistent configuration, validation bounds, environment variable ingestion, and default fallbacks for host network bootstrap operations.
+
+### Data Structure
+
+```rust
+pub struct NetworkConfig {
+    pub default_store_path: PathBuf,       // .aios/network_state.json
+    pub sysfs_net_path: PathBuf,           // /sys/class/net
+    pub procfs_path: PathBuf,              // /proc/net
+    pub resolv_conf_path: PathBuf,         // /etc/resolv.conf
+    pub max_interfaces: usize,             // default: 1024, range: 1..10,000
+    pub max_routes: usize,                 // default: 4096, range: 1..50,000
+    pub max_dns_servers: usize,            // default: 32, range: 1..64
+    pub max_payload_bytes: u64,            // default: 10 MB, range: 1024..104,857,600
+    pub scan_timeout_secs: u64,            // default: 30s, range: 1..300s
+    pub fallback_dns_servers: Vec<String>, // default: ["1.1.1.1", "8.8.8.8"]
+}
+```
+
+### Invariants (`NCONF1..NCONF6`)
+
+1. **`NCONF1` (Path Hygiene)**:
+   - Paths (`default_store_path`, `sysfs_net_path`, `procfs_path`, `resolv_conf_path`) must be non-empty, valid UTF-8, $\le 1024$ characters, contain no ASCII control characters or null bytes (`\0`), and contain no parent directory traversal components (`..`).
+2. **`NCONF2` (Capacity Limits)**:
+   - `1 <= max_interfaces <= 10,000`
+   - `1 <= max_routes <= 50,000`
+   - `1 <= max_dns_servers <= 64`
+3. **`NCONF3` (Resource & Timeout Bounds)**:
+   - `1024 <= max_payload_bytes <= 104,857,600` (1 KB to 100 MB)
+   - `1 <= scan_timeout_secs <= 300` (1 to 300 seconds)
+4. **`NCONF4` (Fallback DNS Validation)**:
+   - Every address in `fallback_dns_servers` must be a valid IPv4 or IPv6 address string parsing into `std::net::IpAddr`.
+   - Length of `fallback_dns_servers` must not exceed `max_dns_servers`.
+5. **`NCONF5` (Environment Variable Ingestion)**:
+   - Ingests `AIOS_NETWORK_CONFIG`, `AIOS_NETWORK_STORE_PATH`, `AIOS_NETWORK_SYSFS_PATH`, `AIOS_NETWORK_PROCFS_PATH`, `AIOS_NETWORK_RESOLV_PATH`, `AIOS_NETWORK_MAX_INTERFACES`, `AIOS_NETWORK_MAX_ROUTES`, `AIOS_NETWORK_MAX_DNS`, `AIOS_NETWORK_TIMEOUT`.
+   - Post-validation guard ensures that if any environment variable override causes an invalid state, `from_env()` safely reverts to `NetworkConfig::default()`.
+6. **`NCONF6` (Persistence & File Protection)**:
+   - Configuration files loaded via `load_from_path` or `from_file` are capped at `MAX_CONFIG_FILE_BYTES` (1 MB) to prevent memory exhaustion DoS.
+   - Saves via `save_to_path` use atomic sibling file writes (`.{name}.tmp.{pid}`) followed by atomic filesystem rename, with automatic temporary file cleanup on any error path.
+
+### Environment Variables
+
+| Variable | Description | Default | Bounds |
+|---|---|---|---|
+| `AIOS_NETWORK_CONFIG` | Path to JSON config file to load | *(None)* | $\le 1024$ chars, valid file |
+| `AIOS_NETWORK_STORE_PATH` | Snapshot destination path | `.aios/network_state.json` | $\le 1024$ chars, no `..` |
+| `AIOS_NETWORK_SYSFS_PATH` | Sysfs network directory | `/sys/class/net` | $\le 1024$ chars, no `..` |
+| `AIOS_NETWORK_PROCFS_PATH` | Procfs network directory | `/proc/net` | $\le 1024$ chars, no `..` |
+| `AIOS_NETWORK_RESOLV_PATH` | DNS resolv.conf path | `/etc/resolv.conf` | $\le 1024$ chars, no `..` |
+| `AIOS_NETWORK_MAX_INTERFACES` | Maximum interfaces | `1024` | `1..10000` |
+| `AIOS_NETWORK_MAX_ROUTES` | Maximum routes | `4096` | `1..50000` |
+| `AIOS_NETWORK_MAX_DNS` | Maximum DNS servers | `32` | `1..64` |
+| `AIOS_NETWORK_TIMEOUT` | Scan timeout in seconds | `30` | `1..300` |
+
+### Example Configuration (`network_config.json`)
+
+```json
+{
+  "default_store_path": ".aios/network_state.json",
+  "sysfs_net_path": "/sys/class/net",
+  "procfs_path": "/proc/net",
+  "resolv_conf_path": "/etc/resolv.conf",
+  "max_interfaces": 1024,
+  "max_routes": 4096,
+  "max_dns_servers": 32,
+  "max_payload_bytes": 10485760,
+  "scan_timeout_secs": 30,
+  "fallback_dns_servers": [
+    "1.1.1.1",
+    "8.8.8.8"
+  ]
+}
+```
+
+### Limitations
+- `NetworkConfig` does not manage active dynamic routing protocols (e.g., BGP, OSPF); it governs userspace discovery bounds and persistence parameters.
+- Overrides via environment variables apply at process initialization and do not hot-reload running services without a restart or re-instantiation of `NetworkService`.
+
+
