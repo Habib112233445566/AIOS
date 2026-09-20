@@ -140,3 +140,354 @@ A single 4096-byte multibyte line in a file (or a CJK/emoji arg over the cap) ab
 * No string-interpolated SQL with user input (the two `execute(f"…")` sites use compile-time constants).
 * `aiosh-cli/src/*.ts` uses `execFile` with an argv array — no command-string interpolation.
 * Rust `fs_layout` validation is genuinely strong (control-char/whitespace refusal on device/options, path hygiene, `deny_unknown_fields`, bounded reads, exclusive temp + fsync + rename + residue cap).
+
+---
+
+# SECOND PASS — 2026-09-20 (deeper sweep of the seams)
+
+This pass re-read the entry points (Rust CLI, Rust MCP, Python MCP, TS CLI), the previously only
+pattern-screened core modules, and proved/disproved the suspicions left open in pass 1.
+
+## New: CRITICAL
+
+### C-6 — `aios.backup.restore` has no gate at all (forged grant accepted)
+`code/aiosh-rust/aiosh-mcp/src/main.rs:4179-4194` — the handler calls
+`aiosh_core::release::restore_backup(&mut ReleaseCtx{…}, backup_path, target_dir, grant_id)`
+**directly**: no `dispatch::recorded_call`, no classifier gate, no `PepStore` look-up.
+The only check is `check_release_policy(grant, "aios.backup.restore")` (`release.rs:119-124`),
+which tests `grant.is_none()` → **any non-empty string authorizes** (their own unit test asserts
+`check_release_policy(Some("gr_xyz"), …).is_ok()`).
+Consequences: an unauthenticated MCP caller can extract an attacker-supplied ZIP into any *empty*
+directory (bounded only by H-3's broken zip-bomb bound), and the row the routine writes itself
+carries `c_flags` all-false and `constitution_rev: "v0.0"` — violating the C-4 "audit always"
+contract and carrying no classifier provenance (`policy_revision: None`).
+The read-only siblings `aios.release.validate` / `aios.backup.validate` *do* go through
+`recorded_call` (→ classifier refusal works there) but with `require_grant=false` and a
+caller-named path, giving an unauthenticated existence/size/ZIP-structure oracle.
+**CWE-862 + CWE-287.** *Fix:* route through `dispatch::recorded_call`; make
+`check_release_policy` delegate to `PepStore::check_with_paths`.
+
+### C-7 — The Rust CLI has no enforcement point; `emit()` accepts forged grant provenance
+`grep -n 'pep\.check|check_with_paths|is_irreversible|require_grant' code/aiosh-rust/aiosh-cli/src/main.rs`
+→ **zero matches.** Every subcommand (`run`, `mod`, `service`, `session`, `layout`, `package`,
+`handoff`, `triage`, `release`, `backup`, `doc`, `evidence`, `distro`, `image`, `toolchain`)
+reaches `classify_and_emit()` (`main.rs:122-141`), which classifies and writes a row but never
+authorizes anything; `emit()` (`main.rs:87-119`) copies the caller-supplied `grant_token` straight
+into the row's `grant_token` column with no validation. So:
+* `aiosh run <cmd>` = unauthenticated host command execution (with the C-1 dead sandbox);
+* every CLI mutation (`aiosh mod blacklist`, `aiosh service action`, `aiosh layout remove`, …)
+is unauthenticated;
+* the audit ring can be made to *look* as though a grant authorized an action that never had one
+— an audit-integrity defect, not just an authorization one (CWE-862 + CWE-345).
+*Fix:* one `pep.check_with_paths` call in `classify_and_emit` (refusing on `Err` before the side
+effect), and record `grant_token` only after it validates.
+
+## New: HIGH
+
+### H-10 — Python MCP exposes ungated release/backup writers (exfiltration + arbitrary file write)
+`code/aiosh-mcp/aiosh_mcp/release.py:184-215, 246-273` — both tools call
+`dispatch_mod.dispatch(tool=…, grant_id=grant_id)` **without `require_grant=True`**, and
+`audit_client.grant_check`'s irreversible set is only `pentest.*` / `fs.write` / reboot / shutdown,
+so both are unauthenticated despite the docstrings saying "Requires PEP grant"
+(and the Rust surface requires one). Impact:
+* `aios.backup.create` → `physical_create_zip` walks **any caller-named directory**
+(`os.walk(snapshot.target_path)`) and writes `aios_backup_<ts>.zip` into the process CWD
+— an arbitrary-directory exfiltration primitive (`target_path: "/home/user"`).
+* `aios.release.generate` → `artifact_path = f"{output_dir}/aios_{target_os}_{version}.iso"`
+is caller-controlled text with `..`/`/` support, then `open(path, "wb")` truncates/creates it
+→ arbitrary file creation/truncation (content `AIOS_ISO_MOCK`).
+**CWE-862 + CWE-22 + CWE-668.**
+
+### H-11 — Evidence verification trusts the manifest it is handed
+`code/aiosh-rust/aiosh-core/src/evidence_service.rs:85-129` — `verify_evidence_manifest` validates
+the manifest's *shape* and then compares each file against **the hash stored in that same
+caller-supplied manifest**, with no anchor in the audit ring or any signed record. Regenerating the
+manifest over tampered evidence makes `aios.evidence.verify` report PASS. Additionally
+`repo_root.join(&record.file_path)` takes `file_path` from caller JSON, so a `..`/absolute entry
+turns the verifier into an arbitrary-path existence + hash oracle. **CWE-345.**
+*Fix:* pin manifests to the audit chain (record the manifest's own sha256 in a row, or require
+`constitution_rev`-scoped signing) and reject paths that escape `repo_root`.
+
+### H-12 — Python classifier still has the nested-argument injection blind spot
+`code/aiosh-mcp/aiosh_mcp/classifier.py:282-305` `_scan_arg_text_for_pi` walks only *top-level*
+strings and list elements, whereas the Rust implementation
+(`classifier.rs:330-375 scan_value_for_pi`, documented as T-01537 S-2) recurses into nested objects.
+The S-2 fix never reached the Python MCP server, so a payload nested one level down
+(`{"layout": {"name": "ignore constitution"}}`) is refused by the Rust surface and **invisible to
+C-3 in Python** — the substrate most people actually run. **CWE-693.**
+
+## New: MEDIUM
+
+* **M-15 — "Validated" is a library property, not a service property.** 30+ `validate_*` functions
+have **zero production call sites** (only their own module + tests): `validate_handoff_record/report`,
+`validate_triage_record/report`, `validate_kernel_module_store`, `validate_service_status`,
+`validate_user_session_status`, `validate_package_transaction`, `validate_distro_profile`,
+`validate_base_image_manifest`, `validate_repo_health_report`, `validate_manifest`, `validate_config`,
+`validate_doc_links`, `validate_store_health`, `validate_hex_id`, `validate_path`, `validate_device_id`.
+The CLI/MCP handlers deserialize stores with serde and act on them without invoking the validator,
+so any invariant the model enforces is unenforced in production (this is the systemic root cause
+behind H-9 and much of C-3/C-4).
+* **M-16 — `deny_unknown_fields` on only 7 of 47 config/policy/store structs.** A misspelled policy
+key is silently ignored — the same failure mode the fs_layout store fix (T-01544) called out
+("a store spelled `active_layout` loaded successfully and silently kept the default") remains true
+for the other ~40 documents, including grant-adjacent policy documents.
+* **M-17 — The audit verifier panics on a tampered segment row instead of reporting tampering.**
+`retention.rs:947-970` — `hex_to_bytes` silently truncates/skips invalid nibbles, while `bloom_test`
+(`retention.rs:88-95`) indexes `bits[idx >> 3]` using `bloom_m_bits`/`bloom_k` **read from the same
+row**; a short `bloom_hex` or an inflated/negative `bloom_m_bits` (`as usize`) panics
+`aios.audit.seen` / `verify_full` — i.e. the tool used to detect DB tampering is crashed by DB
+tampering (CWE-248). `seen(exact=true)` also reads `archive_path` from the row and opens it, so a
+edited row makes the server touch arbitrary files.
+* **M-18 — Rust port regressions vs the Python reference (both security-relevant).**
+(i) `pentest.rs:80` spawns `argv[0]` through PATH although `host_has()` already resolved an absolute
+`bin_path` — the Python wrapper uses the resolved path (`pentest.py:118`), so the Rust port
+re-introduced the PATH-hijack that the reference avoids.
+(ii) Rust builds the audit `command` string **unquoted** (`format!("nmap {}", target)`,
+`pentest.rs:300`), while Python uses `shlex.quote` — a target containing `\n` or control characters
+injects lines into the audit row's `command` column and into any terminal/JSON rendering of it.
+(iii) Python `pentest_nmap(mode=…)` accepts `mode` (docstring advertises `"syn"`) and ignores it.
+* **M-19 — Argument injection into the pentest binaries.** `target`/`url`/`pcap_path`/`wordlist`/
+`interface` are appended as raw argv elements (`pentest.rs:290-430`), so a value beginning with `-`
+is parsed as a *flag* by nmap/nikto/sqlmap/tshark/gobuster/airmon-ng (e.g. an nmap target of
+`-oX/tmp/out` writes a file; `-iL` reads a target list from a file). The grant constrains only
+`scope.networks`, which is skipped entirely when empty (M-12), and the classifier never sees a
+leading-dash target. *Fix:* reject `-`-prefixed targets, and put `--` before the positional target
+where the tool supports it (CWE-88).
+* **M-20 — `--yes` is decorative.** `cli.ts:196` documents `--yes` as the C-3 acknowledgement and
+neither the TS nor the Rust `run` path reads it.
+
+## Verified clean this pass (suspicions disproved)
+
+* **`aios.audit.rotate` is properly gated in all three substrates** — Rust `main.rs:4296-4303`
+(`require_grant=true`, tool `audit.rotate`) and Python `server.py:297-300` (`require_grant=True`).
+Retention cannot be used to truncate the live ring without a grant.
+* **`aios.fs.read`'s safe-root check holds.** Rust canonicalizes *before* the prefix test
+(`main.rs:4122-4133`); the `unwrap_or_else(|_| path.to_string())` fallback on a canonicalize failure
+is not exploitable, because the subsequent `read_to_string` resolves the path the same way the
+canonicalizer tried to (a `..` chain that canonicalize cannot resolve cannot be opened either).
+Python's `Path.resolve()` + prefix test is likewise sound.
+* **Python `retention.rotate` is the strongest implementation of the three**: `tempfile.mkstemp` in
+the destination dir, `chmod 0600`, `os.replace`, `FileExistsError` before overwrite, and
+`rollback()` + archive unlink on DB failure.
+* **TS `canonicalJson` uses `JSON.stringify`**, which emits raw UTF-8 — so TypeScript and Rust
+*agree* and **Python (`ensure_ascii=True`) is the sole outlier** in C-5. That narrows the fix to one
+function (`audit_client.canonical`).
+
+## Coverage note for this pass
+
+Read closely: `aiosh-cli/src/main.rs` structure + `classify_and_emit`/`emit`/`cmd_run`/grant and
+district handlers, `aiosh-mcp/src/main.rs` (fs.read, release/backup, audit.*, process.list,
+handoff, fs_layout gate flags), `retention.rs` (+`seen`/hex/bloom), `handoff.rs`, `triage.rs`,
+`release.rs`, `evidence_service.rs`, `secrets_service.rs`/`secrets_config.rs`, `sandbox.rs`,
+`pep.rs`, `classifier.rs`, `dispatch.rs`, `audit.rs`, `canonical.rs`, `fs_layout*.rs`, `ledger.rs`,
+Python `audit_client.py`/`sandbox.py`/`retention.py`/`release.py`/`pentest.py`/`classifier.py`/
+`server.py`, `ai_agent.py`, TS `pep.ts`/`cli.ts`/`audit.ts`/`retention.ts` (plus pattern sweeps over
+the whole tree). Still only pattern-screened (next candidates for a third pass): the pure data
+models of `session*`, `distro*`, `base_image*`, `kernel_module*` (`_policy`, `_config`),
+`package_policy`, `repo_health*`, `service_policy/config/recovery`, `ci*`, `doc_index*`,
+`tools/*.py`, and `code/aiosh-cli/src/{agent,constitution,types}.ts`.
+
+---
+
+# THIRD PASS — 2026-09-20 (write paths, policy provenance, and the grant supply chain)
+
+Method this pass: follow every caller-supplied string into a filesystem sink or an authorization
+decision. Prior passes covered *reads* well; the **write** side and the *issuance* side of the grant
+system had gaps. Five new findings, one of them root-level.
+
+## New: HIGH
+
+### N-1 — `store_path` is a caller-chosen, unvalidated write target (arbitrary file overwrite)
+
+Fifty-seven call sites take `store_path` from the MCP arguments, and the store writers treat it as an
+absolute destination:
+
+* `aiosh-mcp/src/main.rs:1347-1349, 1416-1434, 3631, 3682, 3711, 3743, 3768` — default
+`./.aios/handoff_store.json` / `./.aios/triage_store.json`, but any string is accepted. The only
+validation that exists anywhere is a length/control-character check, and it is applied to
+**9 of ~20** write-capable sites (`main.rs:2312, 2367, 2404, 2671, 2734, 2765, 2883, 2951, 3007`).
+The handoff/triage/image/kernel-module tools have none at all.
+* Sinks: `handoff_service.rs:230-247` (`create_dir_all(parent)` → `File::create(path.with_extension("tmp"))`
+→ `fs::rename`), `triage_service.rs:134`, `base_image_service.rs:207-219`, `kernel_module_service.rs:144-181`,
+`package_service.rs:470-497`, `distro_service.rs:97-107`.
+* Every one of those tools passes `require_grant=false` (`aiosh-mcp/src/main.rs`, handoff/distro/image/
+package/service/triage `recorded_call` sites), so no grant is involved.
+
+**Impact.** Any MCP client can make the server create/overwrite a file at an arbitrary path with a
+JSON body whose string fields the caller controls — e.g. `~/.ssh/config`, `~/.gitconfig`, a repo's
+`.git/hooks/*`, another tool's config. `package_service.rs:485,496` and `base_image_service.rs:219`
+force mode `0644` on both the temp file and the destination, so overwriting a previously `0600`
+file **widens its permissions**. It is not code execution on its own (the content is JSON and the
+rename does not follow a symlink), but it is an unauthenticated integrity/DoS primitive against the
+operator's home directory, and it is the same primitive the store-tampering findings (H-9, M-15)
+need to seed a hostile store. Reading is affected too: the same field loads JSON from any path.
+
+**Fix.** One `resolve_store_path()` used by every tool: canonicalize, require the result to sit under
+the AIOS home/workspace root, reject symlinked parents, never `create_dir_all` outside that root, and
+write `0600` via the shared atomic-write helper (N-5).
+
+### N-2 — The caller chooses its own enforcement level (`policy_path` + `mode: "audit"`)
+
+Every policy type resolves as **file > env > default**, and the file comes straight from the request:
+
+* `package_policy.rs:404-410`, `service_policy.rs:477-483`, `kernel_module_policy.rs:516-522`,
+plus `session_config.rs:203`, `service_config.rs:245`, `package_config.rs:202`,
+`base_image_config.rs` — `resolve(custom_path)` returns `from_file(path)` unconditionally.
+* `from_file` only caps size (`MAX_POLICY_FILE_BYTES`) and calls `validate()`; **`validate()` never
+constrains the mode field** (PP1 checks lengths/bounds only).
+* Mode short-circuits the verdict: `package_policy.rs:284-288` `Audit => true`; same in
+`service_policy.rs:391-395`; `session_policy.rs:327-331` has `Permissive => true` **unconditionally**;
+`kernel_module_policy.rs:384-390, 433-437` keep only one or two rules alive in permissive mode.
+* MCP exposure: `aios.package.policy`, `aios.package.config`, `aios.service.policy`,
+`aios.session.policy`, `aios.kernel_module.config/policy` (`main.rs:1860, 2273, 2294, 2317, 2370, 2635`),
+all `require_grant=false`.
+* Env route: `from_source`/`from_env` accept `AIOS_PACKAGE_POLICY_MODE=audit`,
+`AIOS_PACKAGE_REQUIRE_CHECKSUM=0`, `AIOS_PACKAGE_REQUIRE_HTTPS=0` (`package_policy.rs:369-395`) from
+the server process environment.
+
+**Impact.** A file containing `{"mode":"audit", ...}` makes every subsequent verdict
+`allowed: true` while the report still shows a policy was evaluated (`mode` is echoed in the verdict).
+This is the same defect class as C-4, but worse: it does not require forging a grant string, only
+naming a path — and it silently converts a documented control into a logger. It also explains why the
+earlier `check_*_policy` helpers looked so weak: policy strictness was never treated as a trust anchor.
+
+**Fix.** A tool must never accept a policy weaker than its built-in floor. Either drop `custom_path`
+from agent-facing tools (operators use the env/file contract at startup) or require the file to be
+rooted under the AIOS config dir with an integrity hash, and force `mode >= Enforcing` at evaluation
+time regardless of what the file says. Restrict env overrides to stricter-than-default values.
+
+### N-3 — `kernel-module export` writes root-executed `modprobe.d` content with no policy check (root RCE)
+
+`modprobe.d` is a root-controlled execution surface: `install <mod> <command>` is run **as root** by
+`modprobe`. AIOS generates that syntax and writes it to an operator-chosen path, unaudited by policy:
+
+* `kernel_module.rs:291-329` `to_modprobe_conf()` emits `install {module} {command}` and
+`remove {module} {command}` **verbatim** — no escaping.
+* `kernel_module.rs:247-267` `validate_config` (the only validation the store enforces) requires just a
+non-empty command. There is no allowlist and **no check for control characters or newlines**, so a
+command string can inject additional directives. The allowlist that exists
+(`kernel_module_policy.rs:269-296`, `SP-KM4-UNAPPROVED-INSTALL-CMD` /
+`SP-KM4-INSTALL-COMMAND-INJECTION`) lives in the *policy*, and the export path never evaluates it:
+* `aiosh-cli/src/main.rs:9979-10083` loads the store, calls `export_modprobe_conf()`, and does
+`std::fs::write(path_str, &modprobe_conf)` for `--modprobe <path>` with no `pep.check`, no policy
+verdict, no `--yes` (see C-7). `std::fs::write` truncates and follows symlinks.
+* `import --modprobe <path>` (`main.rs:10085+`) parses an existing conf back into the store, so an
+already-present `install` line round-trips losslessly into any later export.
+* The store JSON itself is the injection vector: `load_from_path` bounds size but validation permits
+an arbitrary `Install.command`, and the MCP writes that store ungated (`aios.kernel_module.*` are all
+`require_grant=false`).
+
+**Impact.** `sudo aiosh kernel-module export --modprobe /etc/modprobe.d/aios.conf` — the command the
+feature exists for, and the one the human operator will type — plants an attacker-chosen root command
+that fires on the next `modprobe <module>` (including one triggered by hotplug). Any agent that can
+write the store JSON (ungated MCP tool, or just a file write) supplies the payload; the human supplies
+the root privilege. This is the most direct privilege-escalation chain in the codebase.
+
+**Fix.** Run `KernelModulePolicy` in Enforcing mode immediately before export and refuse the write on
+any violation; pin the destination to `config.modprobe_d_path` (or an explicit `--force-path` guarded
+by a grant); reject control characters in `Install/Remove.command` in `validate_config` so the
+data-model layer is safe on its own; require a PEP grant for the write.
+
+### N-4 — Grants are self-service: the requester mints its own authorization
+
+A grant is a bearer token in a shared SQLite table, and **minting it is an unauthenticated CLI verb**:
+
+* `aiosh-cli/src/main.rs:8707-8750` (`cmd_grant_create`): `--to` is a free-form string, `--tools` is a
+glob list, `--ttl` defaults to 3600 s, `--max-irreversible` may authorize irreversible tools, and the
+audit actor is hardcoded `"user"`. No confirmation, no TTY check, no identity verification.
+* `code/aiosh-cli/src/cli.ts:566-601` — the same verb in TypeScript, `issued_to: opts.to ?? "user"`.
+* Both write the table the PEP reads: `$HOME/.aios/audit.db` (`aiosh-core/src/audit.rs:71-89`,
+`code/aiosh-cli/src/audit.ts:224`). Same file, so a grant minted by either CLI is honoured by the MCP.
+* `pep.rs:701-779` (the real check behind Gate #2) verifies revocation, expiry (fail-closed on a
+malformed timestamp), `scope.tools` glob, `scope.networks`, and `scope.paths` — but **never compares
+`g.issued_to` against the calling actor**. Any holder of the grant id can use it.
+
+**Impact.** For the eight properly gated MCP tools and the `pentest.*` family, authorization reduces
+to an audited formality: whatever can call the tool (the MCP server, the agent bridge, a script) can
+equally run `aiosh grant create --tools 'pentest.*' --allow /` and satisfy it. The grant layer is a
+traceability mechanism, not an access control, and nothing in the design distinguishes a human-issued
+grant from an agent-issued one — the audit row simply says `user`.
+
+**Fix.** Bind grants to an authenticated principal and compare it at dispatch; mint only after an
+explicit out-of-band approval (TTY prompt, OS keychain signature, or a separate privileged daemon);
+sign the scope so a grant row cannot be hand-inserted into the DB; and make the *requester* identity
+part of the grant. Until then, treat every `require_grant=true` flag as advisory in the threat model.
+
+## New: MEDIUM
+
+### N-5 — Predictable, non-exclusive temp-file siblings in six store writers
+
+Atomic-write implementations split into two camps, and the security-relevant one is the majority:
+
+| Writer | Temp file | Exclusive? |
+| --- | --- | --- |
+| `handoff_service.rs:239` | `path.with_extension("tmp")` via `File::create` | no |
+| `triage_service.rs:134-140` | `<path>.tmp` via `File::create` | no |
+| `base_image_service.rs:207-219` | `<path>.tmp` via `File::create` | no |
+| `kernel_module_service.rs:161` | `.tmp.<pid>.<name>` via `File::create` | no |
+| `package_service.rs:477` | `<path>.tmp` via `std::fs::write` | no |
+| `distro_service.rs:101` | `<path>.tmp.<pid>` via `fs::write` | no |
+| `session.rs:416-424`, `ledger.rs:145`, `retention.rs:416` | `O_EXCL` + explicit `0600`/`0644` | **yes** |
+
+`File::create`/`fs::write` follow an existing symlink and truncate without `O_EXCL`, so a pre-placed
+symlink at the predictable temp name (`<store>.tmp` is guessable; the pid-scoped variants are only
+marginally better) is written **through** to the link target before the `rename` replaces it. Combined
+with N-1 the attacker controls both the temp name and the destination.
+
+**Fix.** One `atomic_write_private(path, bytes)` helper (`OpenOptions::new().write(true).create_new(true)
+.mode(0o600)`), used by all eleven writers. `ledger.rs`/`retention.rs` already show the correct pattern.
+
+## New: LOW
+
+### N-6 — `aiosh-sandbox` parses its header from anywhere in `argv`
+
+`aiosh-sandbox/src/main.rs` locates its own flags with
+`args.iter().position(|a| a == "--policy")`, scanning the *entire* argument vector — including the
+arguments of the command it is about to wrap. `aiosh-sandbox --policy '{}' -- echo --policy '{"paths_rw":["/"]}' -- /bin/sh`
+re-reads the second `--policy`, re-splits on the second `--`, and executes `/bin/sh` with a
+different policy than the caller passed. Today's callers (`code/aiosh-cli/src/cli.ts:277`, and the
+Rust equivalent) always emit `--policy` first, so this is not reachable from the shipped CLIs — but
+the parser is ambiguous, and any future caller that forwards user argv inherits the confusion.
+
+**Fix.** Require a strict positional header (`argv[0] == "--policy"`, then `--`); reject anything else.
+Note also that a *missing* `--policy` falls back to defaults with `inherit_defaults: true` and the
+17-syscall seccomp denylist still applied, which is acceptable fail-safe behaviour.
+
+## Verified clean this pass (and one narrowing result)
+
+* **No binaries are tracked in git.** `git ls-files` matches **zero** files for
+`*.zip|*.iso|*.gguf|*.tar.gz|*.img|*.qcow2|*.bin`. The 58 backup ZIPs, the ISOs and the GGUF model in
+the working tree are untracked ignored artifacts, not repository content — so they are a local
+hygiene issue, not a supply-chain disclosure.
+* **The shipped TS build matches its source.** `code/aiosh-cli/dist/*.js` is *newer* than `src/*.ts` and
+consistent in the sampled regions (`AIOSH_SANDBOX_BIN` appears once on each side, same value), so the
+`bin`/`main` targets in `package.json` are not stale with respect to the audited sources. (Fresh clones
+have no `dist/`, so `npm start` fails until `npm run build` — DX, not security.)
+* **`tools/*.py` (41 files) contain no shell execution.** No `shell=True`, `os.system`, `eval` or
+`exec`. The single `subprocess.Popen` (`tools/ci_run.py:129`) passes an argv vector, sets
+`start_new_session`, kills the process group on timeout, and is not exposed as an MCP/agent tool (only
+`triage_service.rs:256` mentions `ci_run` as a record label).
+* **`agent_bridge.py` is transport, not policy.** It allowlists 9 canonical tools, validates the op and
+argument shape, and forwards to `aiosh_mcp.server` over MCP stdio; it mints nothing, checks nothing, and
+correctly defers classifier/PEP/audit to the server. No grant logic to bypass there.
+* **Gate #2 itself is sound once a grant is present.** `pep.rs:701-779` checks revocation, expiry
+(fail-closed on malformed timestamps), anchored tool-glob matching, network scope, and *both*
+`target` and the hidden `path_subjects` (the register-`spec` hole really is closed).
+* **Module-name injection into `modprobe.d` is blocked** by `validate_module_name` (ASCII alphanumeric
++ `_`, ≤64 chars) for `blacklist`/`alias`/`softdep`/`options`/autoload — which narrows N-3 to exactly
+two unconstrained fields, `Install.command` and `Remove.command`, and makes that fix small.
+* **Store load paths are bounded** (`MAX_STORE_BYTES`/`MAX_MODULE_DOC_BYTES`, `metadata()` before read,
+`take(cap+1)`), and `KernelModuleStore::save_to_path` calls `validate()` before serializing.
+
+## Coverage note for this pass
+
+Read closely: `kernel_module*.rs` (policy/config/service/data-model), `package_policy.rs` (+ the
+`resolve`/`from_source` bodies), `package_service.rs`/`distro_service.rs`/`service_service.rs` save and
+temp-file paths, `handoff_service.rs` persistence, `pep.rs` check body, `tools/*.py` (all 41, swept),
+`tools/task_ledger.py` (state/lock/evidence-stub writes), `aiosh_mcp/agent_bridge.py`,
+`aiosh-sandbox/src/main.rs`, plus the CLI's export/import arms (`main.rs:9935-10114`) and grant arms
+(`main.rs:8707-8820`). Still not read line-by-line (next candidates): the verdict bodies of
+`session_policy`/`distro_policy`/`base_image_policy`, `repo_health*`, `ci*`, `doc_index*`,
+`code/aiosh-cli/src/{constitution,pentest,types}.ts`, and the Python `tools/ci_service.py` report layer.
+
+---

@@ -6,6 +6,23 @@
 use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
+/// Maximum number of devices permitted in a single HardwareInventory.
+pub const MAX_DEVICES: usize = 10_000;
+/// Maximum length of a device identifier string.
+pub const MAX_DEVICE_ID_LEN: usize = 128;
+/// Maximum length of a device human-readable name.
+pub const MAX_DEVICE_NAME_LEN: usize = 256;
+/// Maximum attributes allowed per device.
+pub const MAX_ATTRIBUTES_PER_DEVICE: usize = 128;
+/// Maximum length of an attribute key.
+pub const MAX_ATTRIBUTE_KEY_LEN: usize = 64;
+/// Maximum length of an attribute value.
+pub const MAX_ATTRIBUTE_VAL_LEN: usize = 1024;
+/// Maximum length of a filesystem path string.
+pub const MAX_PATH_LEN: usize = 512;
+/// Maximum length of a JSON inventory payload (10 MB).
+pub const MAX_JSON_PAYLOAD_SIZE: usize = 10 * 1024 * 1024;
+
 /// Functional classification of a hardware device.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -167,6 +184,13 @@ impl HardwareDevice {
         if self.name.trim().is_empty() {
             return Err("device name cannot be empty".into());
         }
+        if self.name.len() > MAX_DEVICE_NAME_LEN {
+            return Err(format!(
+                "device name exceeds maximum permitted length of {} characters (got {})",
+                MAX_DEVICE_NAME_LEN,
+                self.name.len()
+            ));
+        }
         if let Some(ref vid) = self.vendor_id {
             validate_hex_id(vid, "vendor_id")?;
         }
@@ -179,9 +203,28 @@ impl HardwareDevice {
         if let Some(ref p) = self.dev_path {
             validate_path(p, "dev_path")?;
         }
+        if self.attributes.len() > MAX_ATTRIBUTES_PER_DEVICE {
+            return Err(format!(
+                "device attributes count {} exceeds maximum permitted limit of {}",
+                self.attributes.len(),
+                MAX_ATTRIBUTES_PER_DEVICE
+            ));
+        }
         for (k, v) in &self.attributes {
             if k.trim().is_empty() {
                 return Err("attribute key cannot be empty".into());
+            }
+            if k.len() > MAX_ATTRIBUTE_KEY_LEN {
+                return Err(format!(
+                    "attribute key '{}' exceeds maximum permitted length of {} characters",
+                    k, MAX_ATTRIBUTE_KEY_LEN
+                ));
+            }
+            if v.len() > MAX_ATTRIBUTE_VAL_LEN {
+                return Err(format!(
+                    "attribute value for '{}' exceeds maximum permitted length of {} characters",
+                    k, MAX_ATTRIBUTE_VAL_LEN
+                ));
             }
             if k.chars().any(|c| c.is_control()) || v.chars().any(|c| c.is_control()) {
                 return Err(format!("attribute '{}' contains control characters", k));
@@ -216,6 +259,12 @@ impl HardwareInventory {
 
     pub fn add_device(&mut self, device: HardwareDevice) -> Result<(), String> {
         device.validate()?;
+        if self.devices.len() >= MAX_DEVICES {
+            return Err(format!(
+                "inventory device count reached maximum permitted limit of {}",
+                MAX_DEVICES
+            ));
+        }
         if self.devices.iter().any(|d| d.id == device.id) {
             return Err(format!("duplicate device id: {}", device.id));
         }
@@ -266,7 +315,15 @@ impl HardwareInventory {
             return Err("architecture cannot be empty".into());
         }
 
-        // HD1: Unique IDs
+        // HD1: Unique IDs and device count cap
+        if self.devices.len() > MAX_DEVICES {
+            return Err(format!(
+                "HD1 violated: device count {} exceeds maximum permitted limit of {}",
+                self.devices.len(),
+                MAX_DEVICES
+            ));
+        }
+
         let mut seen = std::collections::HashSet::new();
         for d in &self.devices {
             d.validate()?;
@@ -295,6 +352,13 @@ impl HardwareInventory {
     }
 
     pub fn from_json(json_str: &str) -> Result<Self, String> {
+        if json_str.len() > MAX_JSON_PAYLOAD_SIZE {
+            return Err(format!(
+                "JSON payload size {} exceeds maximum permitted limit of {} bytes",
+                json_str.len(),
+                MAX_JSON_PAYLOAD_SIZE
+            ));
+        }
         let inv: HardwareInventory = serde_json::from_str(json_str)
             .map_err(|e| format!("json deserialize failure: {}", e))?;
         inv.validate_invariants()?;
@@ -305,6 +369,13 @@ impl HardwareInventory {
 pub fn validate_device_id(id: &str) -> Result<(), String> {
     if id.trim().is_empty() {
         return Err("device id cannot be empty".into());
+    }
+    if id.len() > MAX_DEVICE_ID_LEN {
+        return Err(format!(
+            "device id exceeds maximum permitted length of {} characters (got {})",
+            MAX_DEVICE_ID_LEN,
+            id.len()
+        ));
     }
     if id.chars().any(|c| c.is_control() || c.is_whitespace()) {
         return Err(format!("device id '{}' contains whitespace or control characters", id));
@@ -326,6 +397,14 @@ pub fn validate_path(path: &str, field_name: &str) -> Result<(), String> {
     if path.trim().is_empty() {
         return Err(format!("{} cannot be empty", field_name));
     }
+    if path.len() > MAX_PATH_LEN {
+        return Err(format!(
+            "{} exceeds maximum permitted length of {} characters (got {})",
+            field_name,
+            MAX_PATH_LEN,
+            path.len()
+        ));
+    }
     if path.chars().any(|c| c.is_control()) {
         return Err(format!("{} contains control characters", field_name));
     }
@@ -334,3 +413,8 @@ pub fn validate_path(path: &str, field_name: &str) -> Result<(), String> {
     }
     Ok(())
 }
+
+pub fn validate_hardware_inventory(inv: &HardwareInventory) -> Result<(), String> {
+    inv.validate_invariants()
+}
+

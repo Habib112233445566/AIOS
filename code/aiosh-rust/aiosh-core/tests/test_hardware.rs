@@ -212,3 +212,48 @@ fn test_hd5_json_roundtrip_and_deterministic_order() {
     assert_eq!(restored.devices[0], inv.devices[0]);
     assert_eq!(restored.summary, inv.summary);
 }
+
+#[test]
+fn test_hardening_bounds_and_caps() {
+    use aiosh_core::hardware::{
+        MAX_ATTRIBUTES_PER_DEVICE, MAX_ATTRIBUTE_KEY_LEN, MAX_ATTRIBUTE_VAL_LEN, MAX_DEVICE_ID_LEN,
+        MAX_DEVICE_NAME_LEN, MAX_PATH_LEN,
+    };
+
+    // 1. Device ID length limit
+    let huge_id = "a".repeat(MAX_DEVICE_ID_LEN + 1);
+    assert!(validate_device_id(&huge_id).is_err());
+
+    // 2. Device Name length limit
+    let huge_name = "b".repeat(MAX_DEVICE_NAME_LEN + 1);
+    let dev_huge_name = HardwareDevice::new("pci:01", huge_name, DeviceClass::Pci, DeviceBus::Pci);
+    assert!(dev_huge_name.validate().is_err());
+
+    // 3. Path length limit
+    let huge_path = format!("/sys/{}", "c".repeat(MAX_PATH_LEN));
+    assert!(validate_path(&huge_path, "sysfs_path").is_err());
+
+    // 4. Attribute key length limit
+    let dev_bad_key = HardwareDevice::new("pci:02", "Device", DeviceClass::Pci, DeviceBus::Pci)
+        .with_attribute("k".repeat(MAX_ATTRIBUTE_KEY_LEN + 1), "val");
+    assert!(dev_bad_key.validate().is_err());
+
+    // 5. Attribute value length limit
+    let dev_bad_val = HardwareDevice::new("pci:03", "Device", DeviceClass::Pci, DeviceBus::Pci)
+        .with_attribute("key", "v".repeat(MAX_ATTRIBUTE_VAL_LEN + 1));
+    assert!(dev_bad_val.validate().is_err());
+
+    // 6. Attribute count limit
+    let mut dev_too_many_attrs = HardwareDevice::new("pci:04", "Device", DeviceClass::Pci, DeviceBus::Pci);
+    for i in 0..=MAX_ATTRIBUTES_PER_DEVICE {
+        dev_too_many_attrs = dev_too_many_attrs.with_attribute(format!("attr_{}", i), "val");
+    }
+    assert!(dev_too_many_attrs.validate().is_err());
+
+    // 7. Oversized JSON rejection
+    let huge_json = format!("{{ \"extra\": \"{}\" }}", "x".repeat(11 * 1024 * 1024));
+    let json_res = HardwareInventory::from_json(&huge_json);
+    assert!(json_res.is_err());
+    assert!(json_res.unwrap_err().contains("exceeds maximum permitted limit"));
+}
+
