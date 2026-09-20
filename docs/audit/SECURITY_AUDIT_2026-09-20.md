@@ -2551,5 +2551,38 @@ Still not read line-by-line (next pass starts here): `dist/*.js` bundles (transp
     - Input bounds checking (IDs $\le 128$ chars, zero control characters, effect restricted to "permit" | "deny").
     - Non-destructive recovery via `PepDecisionService::load_or_recover`.
     - All MCP operations dispatched through `dispatch::recorded_call`, ensuring full parameter logging, grant attribution, and audit row creation in SQLite audit ring.
-    - Fail-closed evaluation default (returns `effect: "deny"`, `allowed: false` when no rules match).
   - Verified with `code/aiosh-mcp/tests/test_pep_decision_smoke.py` covering tool discovery, rule evaluation, and persistent lifecycle operations. Zero warnings.
+
+---
+
+## 42. Post-Audit Addendum: Batch T-02136 through T-02145 Verification
+
+**Date:** 2026-09-21  
+**Scope:** Batch `T-02136` through `T-02145` (Phase 2 — Security Kernel & PEP Fabric: Sub-Epic 4 PEP Decision MCP/API Surface Formal Closure & Sub-Epic 5 PEP Decision Configuration Subsystem Launch).  
+**Auditor:** Antigravity Autonomous Security Subsystem  
+**Verdict:** **PASS (Zero vulnerabilities)**
+
+### 1. Hardened Surface & Key Controls
+- **PEP Decision MCP/API Surface Formal Closure (T-02136..T-02140)**:
+  - Formally closed Sub-Epic 4.
+  - Verified cross-substrate parity between CLI (`cmd_pep`) and MCP tools (`aios.pep.*`) sharing canonical JSON policy stores.
+  - Threat modeling documented in `docs/tasks/evidence/T-02137-mcp-api-surface-security-review.md` covering vectors `THREAT-PEPMCP-01..06`.
+  - Hardening verified:
+    - Path traversal protection on `store_path` via `validate_pep_service_path`.
+    - Input bounds: rule ID $\le 128$ chars, zero control chars, effect restricted to "permit" | "deny".
+    - Standard JSON-RPC error responses with honest audit row recording via `dispatch::recorded_call`.
+    - Fail-closed evaluation default.
+  - Complete documentation authored in Section 7 of `docs/pep_decision_engine.md`.
+  - Verified with `code/aiosh-mcp/tests/test_pep_decision_smoke.py` (3/3 test suites passing).
+
+- **PEP Decision Configuration Subsystem (T-02141..T-02145)**:
+  - Researched, specified, scaffolded, implemented, and unit-tested `PepConfig` in `code/aiosh-rust/aiosh-core/src/pep_config.rs` and re-exported in `lib.rs`.
+  - Enforced invariants `PEPCONF1..PEPCONF6`:
+    - **`PEPCONF1` (Path Hygiene)**: `store_path` must be $\le 1024$ chars, end in `.json`, contain zero control characters, and contain no `..` parent directory traversal components.
+    - **`PEPCONF2` (Resource & Registry Bounds)**: `max_rules` bounded within $[1, 50\,000]$ (default: 5,000); `max_store_bytes` bounded within $[1\,024, 104\,857\,600]$ (1 KiB to 100 MiB; default: 10 MiB).
+    - **`PEPCONF3` (Algorithm Governance)**: `default_algorithm` restricted strictly to known combining algorithms (`deny_overrides`, `permit_overrides`, `first_applicable`).
+    - **`PEPCONF4` (Audit & Quarantine Settings)**: `audit_all_evaluations` (default: true) and `auto_quarantine_corrupt` (default: true).
+    - **`PEPCONF5` (Atomic Persistence & Symlink Rejection)**: Atomic file persistence via `.tmp.<pid>` rename pattern; symlinks strictly rejected before loading.
+    - **`PEPCONF6` (Environment Precedence)**: Supports `AIOSH_PEP_CONFIG`, `AIOSH_PEP_STORE_PATH`, `AIOSH_PEP_MAX_RULES`, and `AIOSH_PEP_DEFAULT_ALGORITHM`.
+  - Verified with 8/8 Rust unit tests in `test_pep_config.rs`. Zero warnings.
+

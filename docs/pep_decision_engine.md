@@ -217,7 +217,91 @@ When `--json` is specified, outputs adhere to:
 
 ---
 
-## 7. Evidence & Traceability
+## 7. Model Context Protocol (MCP) & API Surface
+
+The PEP Decision Engine exposes 5 MCP tools under the `aios.pep.*` namespace:
+
+### 7.1 Available Tools
+
+#### 1. `aios.pep.status`
+Retrieves policy store status, total rule count, capacity, and active combining algorithm.
+- **Parameters**: `store_path` (string, optional).
+- **Response**:
+```json
+{
+  "ok": true,
+  "tool": "aios.pep.status",
+  "store_path": ".aios/pep_policies.json",
+  "store_exists": true,
+  "rules_count": 12,
+  "max_capacity": 5000,
+  "default_algorithm": "deny_overrides",
+  "unique_subjects": 4,
+  "unique_actions": 3
+}
+```
+
+#### 2. `aios.pep.rule_add`
+Registers a new policy rule with atomic store persistence.
+- **Parameters**:
+  - `id` (string, required): Unique identifier (1..128 chars, no control chars).
+  - `effect` (string, required): `"permit"` or `"deny"`.
+  - `subject` (string, optional): Target subject identity.
+  - `resource` (string, optional): Target resource URI.
+  - `action` (string, optional): Target action name.
+  - `description` (string, optional): Human-readable rule description.
+  - `store_path` (string, optional): Destination store path.
+- **Example Call**:
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "aios.pep.rule_add",
+    "arguments": {
+      "id": "rule_worker_read",
+      "subject": "agent:worker",
+      "resource": "fs:/tmp/*",
+      "action": "read",
+      "effect": "permit",
+      "description": "Allow worker reading tmp"
+    }
+  }
+}
+```
+
+#### 3. `aios.pep.rule_list`
+Lists registered policy rules with optional subject and action filtering.
+- **Parameters**:
+  - `subject` (string, optional): Filter by target subject.
+  - `action` (string, optional): Filter by target action.
+  - `store_path` (string, optional): Policy store path.
+
+#### 4. `aios.pep.rule_remove`
+Removes a policy rule by ID with atomic store update.
+- **Parameters**:
+  - `id` (string, required): Rule ID to remove.
+  - `store_path` (string, optional): Policy store path.
+
+#### 5. `aios.pep.evaluate`
+Evaluates an access request against the persistent policy store or inline rules.
+- **Parameters**:
+  - `subject` (string, required): Subject identifier.
+  - `resource` (string, required): Resource URI.
+  - `action` (string, required): Action name.
+  - `algorithm` (string, optional): Combining algorithm (`"deny_overrides"`, `"permit_overrides"`, `"first_applicable"`). Default: `"deny_overrides"`.
+  - `store_path` (string, optional): Policy store path.
+  - `rules` (array of objects, optional): Inline rules to evaluate against (if omitted, evaluates against persistent store).
+
+### 7.2 Constraints & Security Guarantees
+- **Audit Logging**: All invocations route through `dispatch::recorded_call`, writing an immutable row to SQLite.
+- **Path Hygiene**: `store_path` validated via `validate_pep_service_path` (rejecting `..`, length $\le 1024$, `.json` required).
+- **Fail-Closed Default**: Requests evaluated without matching permit rules return `deny` (`allowed: false`).
+
+---
+
+## 8. Evidence & Traceability
 
 - `T-02106`: [Data Model Integration](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02106-data-model-integration.md)
 - `T-02107`: [Data Model Security Review](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02107-data-model-security-review.md)
@@ -244,4 +328,15 @@ When `--json` is specified, outputs adhere to:
 - `T-02128`: [CLI Surface Hardening](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02128-cli-surface-hardening.md)
 - `T-02129`: [CLI Surface Documentation](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02129-cli-surface-documentation.md)
 - `T-02130`: [CLI Surface Verification & Evidence](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02130-cli-surface-verification-evidenc.md)
+- `T-02131`: [MCP/API Surface Research](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02131-mcp-api-surface-research.md)
+- `T-02132`: [MCP/API Surface Specification](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02132-mcp-api-surface-specification.md)
+- `T-02133`: [MCP/API Surface Scaffold](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02133-mcp-api-surface-scaffold.md)
+- `T-02134`: [MCP/API Surface Implementation](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02134-mcp-api-surface-implementation.md)
+- `T-02135`: [MCP/API Surface Unit Tests](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02135-mcp-api-surface-unit-test.md)
+- `T-02136`: [MCP/API Surface Integration](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02136-mcp-api-surface-integration.md)
+- `T-02137`: [MCP/API Surface Security Review](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02137-mcp-api-surface-security-review.md)
+- `T-02138`: [MCP/API Surface Hardening](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02138-mcp-api-surface-hardening.md)
+- `T-02139`: [MCP/API Surface Documentation](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02139-mcp-api-surface-documentation.md)
+- `T-02140`: [MCP/API Surface Verification & Evidence](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02140-mcp-api-surface-verification-evidenc.md)
+
 

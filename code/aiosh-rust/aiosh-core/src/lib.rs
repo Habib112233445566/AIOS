@@ -96,6 +96,7 @@ pub mod pentest;
 pub mod pep;
 pub mod pep_decision;
 pub mod pep_decision_service;
+pub mod pep_config;
 pub mod release;
 pub mod release_config;
 pub mod repo_health;
@@ -257,8 +258,11 @@ pub use capability_service::{
     CapabilityService, CSERV_IO_ERROR, CSERV_NOT_FOUND, CSERV_VALIDATION_ERROR,
     MAX_CAPABILITY_STORE_SIZE,
 };
-
-
-
-
-
+pub use pep_config::{
+    PepConfig, DEFAULT_PEP_STORE_PATH, MAX_CONFIG_BYTES as MAX_PEP_CONFIG_BYTES,
+    MAX_STORE_BYTES as MAX_PEP_STORE_BYTES, MIN_STORE_BYTES as MIN_PEP_STORE_BYTES,
+    DEFAULT_MAX_STORE_BYTES as DEFAULT_PEP_MAX_STORE_BYTES,
+    DEFAULT_MAX_RULES as DEFAULT_PEP_MAX_RULES, MAX_RULES_COUNT as MAX_PEP_RULES_COUNT,
+    MIN_RULES_COUNT as MIN_PEP_RULES_COUNT,
+    PEPCONF_ERR_BOUNDS, PEPCONF_ERR_IO, PEPCONF_ERR_PARSE, PEPCONF_ERR_VALIDATION,
+};
