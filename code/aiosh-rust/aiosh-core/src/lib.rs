@@ -112,6 +112,7 @@ pub mod session_recovery;
 pub mod session_service;
 pub mod system_update;
 pub mod system_update_config;
+pub mod system_update_policy;
 pub mod system_update_service;
 pub mod task_service;
 pub mod toolchain_config;
@@ -215,6 +216,11 @@ pub use system_update_service::{SystemUpdateService, SystemUpdateServiceConfig};
 pub use system_update_config::{
     SystemUpdateConfig, DEFAULT_UPDATE_CONFIG_PATH, DEFAULT_UPDATE_STAGING_DIR,
     DEFAULT_UPDATE_STATE_DIR, MAX_UPDATE_CONFIG_FILE_BYTES, UCONF_VALIDATION_ERROR,
+};
+pub use system_update_policy::{
+    SystemUpdateSecurityPolicy, UpdatePolicyMode, UpdatePolicyReport, UpdatePolicyViolation,
+    MAX_POLICY_FILE_BYTES, UPOL_IO_ERROR, UPOL_PARSE_ERROR, UPOL_PATH_ERROR, UPOL_VALIDATION_ERROR,
+    validate_policy_path,
 };
 
 

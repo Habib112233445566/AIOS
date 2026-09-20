@@ -1778,3 +1778,36 @@ Read line-by-line: `pentest.rs` (597), `train_slm.py` (210), `train_unsloth.py` 
   - `aiosh-mcp`: 3/3 check suites in `test_system_update_config_smoke.py` passing.
   - `aiosh-cli`: 5/5 integration smoke tests in `test_system_update_smoke.py` passing.
   - Full regression test suite: zero regressions across all epics.
+
+---
+
+## 25. Post-Audit Addendum: Batch T-01957 through T-01966 Verification
+
+**Date:** 2026-09-20  
+**Scope:** Batch `T-01957` through `T-01966` (System Update Automated Tests Sub-Epic 6 Closure & System Update Security Policy Sub-Epic 7).  
+**Auditor:** Antigravity Autonomous Security Subsystem  
+**Verdict:** **PASS (Zero vulnerabilities)**
+
+### 1. Hardened Surface & Key Controls
+- **System Update Automated Tests Closure & Hardening (T-01957..T-01960)**:
+  - Evaluated threat vectors `THREAT-UTEST-01..06` covering temporary directory leaks, panics during staging, host system mutation, and race conditions.
+  - Hardened `test_system_update_e2e.rs` with RAII `TestTempDir` ensuring zero residual test artifacts on panic, and path verification preventing traversal.
+  - Documented Section 9 in `docs/system_update.md` and formally closed Sub-Epic 6 with 9/9 Rust unit tests and 3/3 Python smoke suites.
+- **System Update Security Policy Subsystem (T-01961..T-01966)**:
+  - Researched prior art (TUF / RFC 8758, NIST SP 800-193, AVB 2.0).
+  - Specified, scaffolded, implemented, unit-tested, and integrated `SystemUpdateSecurityPolicy` in `code/aiosh-rust/aiosh-core/src/system_update_policy.rs`.
+  - Enforced policy invariants `UPOL1..UPOL6`:
+    - `UPOL1`: Channel Authorization (rejecting unauthorized channels in Enforcing mode).
+    - `UPOL2`: Cryptographic Signature Enforcement (rejecting missing or untrusted signatures).
+    - `UPOL3`: Anti-Rollback / Downgrade Prevention (semver comparison rejecting downgrade attempts).
+    - `UPOL4`: Partition Target Governance (allowlist enforcement and mandatory required targets).
+    - `UPOL5`: Resource & Quota Caps (max payload bytes and artifact count).
+    - `UPOL6`: Revocation Denylisting (revoking compromised versions and update IDs).
+  - Hardened file operations: 1 MB file read cap, path hygiene (`validate_policy_path`), and atomic persistence via `.tmp.<pid>` pattern with unlinking on error.
+- **Test Verification**:
+  - `aiosh-core`: 9/9 unit tests in `test_system_update_policy.rs` passing in 0.02s.
+  - `aiosh-core`: 9/9 unit and end-to-end tests in `test_system_update_e2e.rs` passing in 0.04s.
+  - `aiosh-core`: 5/5 unit tests in `test_system_update_config.rs` passing in 0.03s.
+  - `aiosh-mcp`: 7/7 checks in `test_system_update_policy_smoke.py` passing.
+  - `aiosh-mcp`: 3/3 checks in `test_system_update_e2e_smoke.py` passing.
+  - Full regression test suite: zero regressions across all epics.

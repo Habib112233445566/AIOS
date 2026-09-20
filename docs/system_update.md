@@ -452,6 +452,45 @@ The engine evaluates environment overrides upon startup via `SystemUpdateConfig:
 - Security Review: [`docs/tasks/evidence/T-01947-configuration-security-review.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01947-configuration-security-review.md)
 - Hardening: [`docs/tasks/evidence/T-01948-configuration-hardening.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01948-configuration-hardening.md)
 
+---
 
+## 9. Automated Testing & End-to-End Verification Subsystem
 
+### 9.1 Overview & Architecture
+The AIOS System Update Mechanism includes a comprehensive, automated end-to-end test harness designed to validate all operational pathways without requiring root privileges or physical disk partitioning:
+- **Rust Native Integration Test Harness**: Located at [`code/aiosh-rust/aiosh-core/tests/test_system_update_e2e.rs`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/code/aiosh-rust/aiosh-core/tests/test_system_update_e2e.rs). Executes via `cargo test` and provides sub-millisecond validation of lifecycle state machines, cryptographic digest calculations, quota boundaries, and RAII temporary directory cleanup.
+- **Python / MCP Integration Smoke Suite**: Located at [`code/aiosh-mcp/tests/test_system_update_e2e_smoke.py`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/code/aiosh-mcp/tests/test_system_update_e2e_smoke.py). Validates cross-substrate JSON serialization, tool discovery, and client-level orchestration.
 
+### 9.2 Invariants Enforced (UTEST1 - UTEST6)
+1. **`UTEST1` (Clean A/B Update Lifecycle)**: Validates complete progression from `SlotA` -> `Checking` -> `Downloading` -> `Verifying` -> `Applying` -> `ReadyToReboot` -> `confirm_boot("2.0.0")` -> `Verified` -> `Idle`, with target slot switching to `SlotB`.
+2. **`UTEST2` (Cryptographic Fault Injection)**: Validates bit-flip detection (100% digest verification failure returning `UPD_DIGEST_ERROR`) and payload size truncation (immediate rejection before disk write returning `UPD_VALIDATION_ERROR`). Asserts service transitions to `Failed` state without slot mutation.
+3. **`UTEST3` (Boot Failure & Rollback Simulation)**: Validates that if a staged slot fails boot health checks, calling `rollback()` safely restores the active partition pointer to `SlotA` and resets status to `Idle`.
+4. **`UTEST4` (Quota & Symlink Traversal Defense)**: Asserts that payloads exceeding `max_payload_bytes` or attempting symlink redirection are rejected before writing to storage.
+5. **`UTEST5` (Out-of-Order State Transitions)**: Asserts that illegal state leaps (e.g. calling `apply_update()` from `Idle` or `Downloading`) are rejected with `UPD_STATE_ERROR` with zero state mutation.
+6. **`UTEST6` (Cross-Substrate Parity)**: Validates that JSON representations of slot states, update states, and manifests match across Rust core and Python MCP environments.
+
+### 9.3 Invocation Examples
+
+#### Run Rust E2E Test Suite
+```bash
+cargo test --manifest-path code/aiosh-rust/Cargo.toml -p aiosh-core --test test_system_update_e2e -- --nocapture
+```
+
+#### Run Python End-to-End Smoke Test
+```bash
+python code/aiosh-mcp/tests/test_system_update_e2e_smoke.py
+```
+
+### 9.4 Constraints & Known Limitations
+- **User-Space Emulation**: Tests operate entirely in user space utilizing mock filesystem directories. Real physical partition flips on EFI block devices (`/dev/sda1`, `/dev/sda2`) are orchestrated by the kernel/bootloader integration layer (`bootloader_env.rs`) rather than the user-space test harness.
+- **Mock Signatures**: In environments without a configured hardware secure element or Ed25519 keyring, signature verification uses mock keys.
+
+### 9.5 Evidence Artifacts
+- Research: [`docs/tasks/evidence/T-01951-automated-tests-research.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01951-automated-tests-research.md)
+- Specification: [`docs/tasks/evidence/T-01952-automated-tests-specification.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01952-automated-tests-specification.md)
+- Scaffold: [`docs/tasks/evidence/T-01953-automated-tests-scaffold.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01953-automated-tests-scaffold.md)
+- Implementation: [`docs/tasks/evidence/T-01954-automated-tests-implementation.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01954-automated-tests-implementation.md)
+- Unit Testing: [`docs/tasks/evidence/T-01955-automated-tests-unit-test.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01955-automated-tests-unit-test.md)
+- Integration: [`docs/tasks/evidence/T-01956-automated-tests-integration.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01956-automated-tests-integration.md)
+- Security Review: [`docs/tasks/evidence/T-01957-automated-tests-security-review.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01957-automated-tests-security-review.md)
+- Hardening: [`docs/tasks/evidence/T-01958-automated-tests-hardening.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01958-automated-tests-hardening.md)

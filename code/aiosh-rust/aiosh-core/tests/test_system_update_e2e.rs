@@ -9,6 +9,7 @@
 //! - UTEST6: Cross-substrate JSON serialization parity
 
 use std::fs;
+use std::path::{Path, PathBuf};
 use sha2::{Digest, Sha256};
 
 use aiosh_core::system_update::{
@@ -17,6 +18,38 @@ use aiosh_core::system_update::{
     UPD_DIGEST_ERROR, UPD_STATE_ERROR, UPD_VALIDATION_ERROR,
 };
 use aiosh_core::system_update_service::{SystemUpdateService, SystemUpdateServiceConfig};
+
+/// RAII Temporary Directory Guard ensuring zero residual artifacts even upon test panic.
+struct TestTempDir {
+    path: PathBuf,
+}
+
+impl TestTempDir {
+    fn new(prefix: &str) -> Self {
+        let base = std::env::temp_dir();
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let path = base.join(format!("{}_{}_{}", prefix, std::process::id(), nanos));
+        let _ = fs::remove_dir_all(&path);
+        fs::create_dir_all(&path).expect("failed to create test temp dir");
+        Self { path }
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for TestTempDir {
+    fn drop(&mut self) {
+        let temp = std::env::temp_dir();
+        if self.path.starts_with(&temp) && self.path != temp {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+}
 
 fn compute_sha256(data: &[u8]) -> String {
     let mut hasher = Sha256::new();
@@ -27,9 +60,8 @@ fn compute_sha256(data: &[u8]) -> String {
 
 #[test]
 fn test_utest1_clean_lifecycle_e2e() {
-    let temp_dir = std::env::temp_dir().join(format!("aiosh_update_utest1_{}", std::process::id()));
-    let _ = fs::remove_dir_all(&temp_dir);
-    fs::create_dir_all(&temp_dir).unwrap();
+    let temp = TestTempDir::new("aiosh_update_utest1");
+    let temp_dir = temp.path();
 
     let staging_dir = temp_dir.join("staging");
     let state_dir = temp_dir.join("state");
@@ -115,15 +147,12 @@ fn test_utest1_clean_lifecycle_e2e() {
     assert_eq!(service.slot_status.slot_b_version, "2.0.0");
     assert!(service.slot_status.slot_b_successful);
     assert_eq!(service.update_status.current_version, "2.0.0");
-
-    let _ = fs::remove_dir_all(&temp_dir);
 }
 
 #[test]
 fn test_utest2_payload_fault_injection_e2e() {
-    let temp_dir = std::env::temp_dir().join(format!("aiosh_update_utest2_{}", std::process::id()));
-    let _ = fs::remove_dir_all(&temp_dir);
-    fs::create_dir_all(&temp_dir).unwrap();
+    let temp = TestTempDir::new("aiosh_update_utest2");
+    let temp_dir = temp.path();
 
     let config = SystemUpdateServiceConfig {
         state_dir: temp_dir.join("state"),
@@ -177,15 +206,12 @@ fn test_utest2_payload_fault_injection_e2e() {
     // Assert service entered Failed state and did NOT change slot
     assert_eq!(service.update_status.state, UpdateState::Failed);
     assert_eq!(service.slot_status.current_slot, UpdateSlot::SlotA);
-
-    let _ = fs::remove_dir_all(&temp_dir);
 }
 
 #[test]
 fn test_utest3_boot_failure_and_rollback_e2e() {
-    let temp_dir = std::env::temp_dir().join(format!("aiosh_update_utest3_{}", std::process::id()));
-    let _ = fs::remove_dir_all(&temp_dir);
-    fs::create_dir_all(&temp_dir).unwrap();
+    let temp = TestTempDir::new("aiosh_update_utest3");
+    let temp_dir = temp.path();
 
     let config = SystemUpdateServiceConfig {
         state_dir: temp_dir.join("state"),
@@ -237,15 +263,12 @@ fn test_utest3_boot_failure_and_rollback_e2e() {
     assert_eq!(service.slot_status.current_slot, UpdateSlot::SlotA);
     assert_eq!(service.update_status.active_slot, UpdateSlot::SlotA);
     assert_eq!(service.update_status.state, UpdateState::Idle);
-
-    let _ = fs::remove_dir_all(&temp_dir);
 }
 
 #[test]
 fn test_utest4_quota_and_symlink_defense_e2e() {
-    let temp_dir = std::env::temp_dir().join(format!("aiosh_update_utest4_{}", std::process::id()));
-    let _ = fs::remove_dir_all(&temp_dir);
-    fs::create_dir_all(&temp_dir).unwrap();
+    let temp = TestTempDir::new("aiosh_update_utest4");
+    let temp_dir = temp.path();
 
     let staging_dir = temp_dir.join("staging");
     fs::create_dir_all(&staging_dir).unwrap();
@@ -292,15 +315,12 @@ fn test_utest4_quota_and_symlink_defense_e2e() {
     let err = service.stage_artifact(PartitionTarget::Rootfs, &large_data).unwrap_err();
     assert!(err.contains(UPD_VALIDATION_ERROR));
     assert!(err.contains("exceeds limit"));
-
-    let _ = fs::remove_dir_all(&temp_dir);
 }
 
 #[test]
 fn test_utest5_out_of_order_state_transitions_e2e() {
-    let temp_dir = std::env::temp_dir().join(format!("aiosh_update_utest5_{}", std::process::id()));
-    let _ = fs::remove_dir_all(&temp_dir);
-    fs::create_dir_all(&temp_dir).unwrap();
+    let temp = TestTempDir::new("aiosh_update_utest5");
+    let temp_dir = temp.path();
 
     let config = SystemUpdateServiceConfig {
         state_dir: temp_dir.join("state"),
@@ -330,15 +350,12 @@ fn test_utest5_out_of_order_state_transitions_e2e() {
 
     // Verify service remains cleanly in Idle
     assert_eq!(service.update_status.state, UpdateState::Idle);
-
-    let _ = fs::remove_dir_all(&temp_dir);
 }
 
 #[test]
 fn test_utest6_cross_substrate_parity_e2e() {
-    let temp_dir = std::env::temp_dir().join(format!("aiosh_update_utest6_{}", std::process::id()));
-    let _ = fs::remove_dir_all(&temp_dir);
-    fs::create_dir_all(&temp_dir).unwrap();
+    let temp = TestTempDir::new("aiosh_update_utest6");
+    let temp_dir = temp.path();
 
     let config = SystemUpdateServiceConfig {
         state_dir: temp_dir.join("state"),
@@ -363,15 +380,12 @@ fn test_utest6_cross_substrate_parity_e2e() {
     assert!(json_slots.contains("\"current_slot\":\"slot_a\""));
     assert!(json_slots.contains("\"target_slot\":\"slot_b\""));
     assert!(json_slots.contains("\"slot_a_successful\":true"));
-
-    let _ = fs::remove_dir_all(&temp_dir);
 }
 
 #[test]
 fn test_staging_incomplete_artifacts_rejected() {
-    let temp_dir = std::env::temp_dir().join(format!("aiosh_update_incomplete_{}", std::process::id()));
-    let _ = fs::remove_dir_all(&temp_dir);
-    fs::create_dir_all(&temp_dir).unwrap();
+    let temp = TestTempDir::new("aiosh_update_incomplete");
+    let temp_dir = temp.path();
 
     let config = SystemUpdateServiceConfig {
         state_dir: temp_dir.join("state"),
@@ -414,15 +428,12 @@ fn test_staging_incomplete_artifacts_rejected() {
     let err = service.verify_staged().unwrap_err();
     assert!(err.contains(UPD_VALIDATION_ERROR));
     assert!(err.contains("missing staged artifact"));
-
-    let _ = fs::remove_dir_all(&temp_dir);
 }
 
 #[test]
 fn test_staging_undeclared_target_rejected() {
-    let temp_dir = std::env::temp_dir().join(format!("aiosh_update_undeclared_{}", std::process::id()));
-    let _ = fs::remove_dir_all(&temp_dir);
-    fs::create_dir_all(&temp_dir).unwrap();
+    let temp = TestTempDir::new("aiosh_update_undeclared");
+    let temp_dir = temp.path();
 
     let config = SystemUpdateServiceConfig {
         state_dir: temp_dir.join("state"),
@@ -458,15 +469,12 @@ fn test_staging_undeclared_target_rejected() {
     let err = service.stage_artifact(PartitionTarget::Kernel, b"KERNEL DATA").unwrap_err();
     assert!(err.contains(UPD_VALIDATION_ERROR));
     assert!(err.contains("not found in manifest"));
-
-    let _ = fs::remove_dir_all(&temp_dir);
 }
 
 #[test]
 fn test_quota_boundary_exact_vs_overflow() {
-    let temp_dir = std::env::temp_dir().join(format!("aiosh_update_exact_quota_{}", std::process::id()));
-    let _ = fs::remove_dir_all(&temp_dir);
-    fs::create_dir_all(&temp_dir).unwrap();
+    let temp = TestTempDir::new("aiosh_update_exact_quota");
+    let temp_dir = temp.path();
 
     let quota_limit: u64 = 64;
     let config = SystemUpdateServiceConfig {
@@ -501,7 +509,4 @@ fn test_quota_boundary_exact_vs_overflow() {
     // Exactly at quota limit should succeed
     let staged_path = service.stage_artifact(PartitionTarget::Rootfs, &exact_data);
     assert!(staged_path.is_ok());
-
-    let _ = fs::remove_dir_all(&temp_dir);
 }
-
