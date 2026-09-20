@@ -30,7 +30,11 @@ impl HardwareDocCategory {
     }
 
     pub fn from_str_loose(s: &str) -> Option<Self> {
-        match s.trim().to_ascii_lowercase().as_str() {
+        let trimmed = s.trim();
+        if trimmed.len() > 32 {
+            return None;
+        }
+        match trimmed.to_ascii_lowercase().as_str() {
             "architecture" | "arch" => Some(HardwareDocCategory::Architecture),
             "discovery" | "probe" | "scan" => Some(HardwareDocCategory::Discovery),
             "security" | "sec" | "policy" => Some(HardwareDocCategory::Security),
@@ -101,7 +105,10 @@ impl HardwareDocIndex {
     /// Looks up a topic by ID (case-insensitive) with defensive bounds (HDOC2).
     pub fn get_topic(&self, id: &str) -> Option<&HardwareDocTopic> {
         let id_clean = id.trim();
-        if id_clean.is_empty() || id_clean.len() > MAX_TOPIC_ID_LEN || id_clean.chars().any(|c| c.is_control()) {
+        if id_clean.is_empty()
+            || id_clean.len() > MAX_TOPIC_ID_LEN
+            || !id_clean.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
+        {
             return None;
         }
         self.topics.iter().find(|t| t.id.eq_ignore_ascii_case(id_clean))
@@ -174,8 +181,14 @@ impl HardwareDocIndex {
                 if let Some(idx) = sec.content.to_ascii_lowercase().find(&query_clean) {
                     score += 10;
                     if snippet.is_empty() {
-                        let start = idx.saturating_sub(40);
-                        let end = (idx + query_clean.len() + 60).min(sec.content.len());
+                        let mut start = idx.saturating_sub(40);
+                        while start > 0 && !sec.content.is_char_boundary(start) {
+                            start -= 1;
+                        }
+                        let mut end = (idx + query_clean.len() + 60).min(sec.content.len());
+                        while end < sec.content.len() && !sec.content.is_char_boundary(end) {
+                            end += 1;
+                        }
                         snippet = format!("...{}...", &sec.content[start..end]);
                     }
                 }

@@ -61,6 +61,7 @@ pub mod hardware_config;
 pub mod hardware_doc;
 pub mod hardware_observability;
 pub mod hardware_policy;
+pub mod hardware_recovery;
 pub mod hardware_service;
 pub mod kernel_module;
 pub mod kernel_module_config;
@@ -168,6 +169,10 @@ pub use hardware::{
 pub use hardware_config::HardwareConfig;
 pub use hardware_policy::{
     HardwarePolicyMode, HardwarePolicyReport, HardwarePolicyViolation, HardwareSecurityPolicy,
+};
+pub use hardware_recovery::{
+    check_inventory_file, recover_inventory_file, recover_inventory_in_memory, validate_inventory,
+    HardwareRecoveryAction, HardwareRecoveryReport, HardwareValidationReport,
 };
 pub use hardware_service::{HardwareScanOptions, HardwareService};
 pub use types::GENESIS_HASH;

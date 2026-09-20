@@ -132,3 +132,41 @@ fn test_hdoc6_memory_footprint_and_bounds() {
     // Index JSON size must be well under 500 KB (actual is ~10-20 KB)
     assert!(serialized.len() < 500_000);
 }
+
+#[test]
+fn test_hdoc_hardening() {
+    let mut index = HardwareDocIndex::new();
+
+    // 1. Invalid topic ID characters (e.g., path traversal, script tags, whitespace)
+    assert!(index.get_topic("../hw-sysfs-topology").is_none());
+    assert!(index.get_topic("hw<script>").is_none());
+    assert!(index.get_topic("hw topic").is_none());
+    assert!(index.get_topic("hw;rm -rf").is_none());
+
+    // 2. Overlong category string rejected
+    let long_cat = "a".repeat(40);
+    assert!(HardwareDocCategory::from_str_loose(&long_cat).is_none());
+
+    // 3. Multi-byte UTF-8 string slicing safety in search snippet
+    index.topics.push(aiosh_core::hardware_doc::HardwareDocTopic {
+        id: "hw-unicode-test".into(),
+        title: "Unicode Test".into(),
+        category: HardwareDocCategory::Troubleshooting,
+        summary: "Testing multi-byte emojis and UTF-8 characters 🚀🦀⚡️".into(),
+        sections: vec![
+            aiosh_core::hardware_doc::HardwareDocSection {
+                title: "Section with 🦀".into(),
+                content: "Prefix characters 🚀🦀⚡️ and then target search keyword here followed by 🌟✨🎉 suffix.".into(),
+            },
+        ],
+        tags: vec!["unicode".into()],
+        references: vec![],
+        examples: vec![],
+    });
+
+    let results = index.search("target search keyword", None);
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].topic_id, "hw-unicode-test");
+    assert!(results[0].snippet.contains("target search keyword"));
+}
+

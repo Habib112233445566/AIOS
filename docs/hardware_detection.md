@@ -588,6 +588,69 @@ println!("Policy Compliant Devices: {}", report.policy_compliant_count);
 - Documentation: `docs/tasks/evidence/T-01779-observability-documentation.md`.
 - Verification & Evidence: `docs/tasks/evidence/T-01780-observability-verification-evidenc.md`.
 
+---
+
+## 15. Hardware Detection Documentation Subsystem (Sub-Epic 9)
+
+### 15.1 Overview & Architecture
+The Hardware Detection Documentation Subsystem (`aiosh-core::hardware_doc`) provides an embedded, self-contained, offline documentation index and knowledge repository for Linux hardware discovery, sysfs topologies, security gatekeeping policies, and fleet telemetry.
+
+This subsystem provides zero-dependency offline help for operators, developers, and AI agents interacting via MCP tools or the CLI.
+
+### 15.2 Documentation Invariants (HDOC1..HDOC6)
+- **HDOC1 (Canonical Topic Set)**: Pre-registers 6 core topics covering the entire hardware detection domain:
+  - `hw-sysfs-topology`: Linux Sysfs Hardware Topology and Probing (`discovery`).
+  - `hw-security-policy`: Hardware Detection Security Policy and Gatekeeping (`security`).
+  - `hw-observability-telemetry`: Hardware Observability and Fleet Telemetry (`observability`).
+  - `hw-config-options`: Hardware Detection Configuration and Environment Overrides (`configuration`).
+  - `hw-mcp-tools`: Hardware Detection MCP Tool Catalog (`architecture`).
+  - `hw-troubleshooting`: Hardware Detection Troubleshooting and Diagnostics (`troubleshooting`).
+- **HDOC2 (Defensive Lookup Bounds)**: Topic retrieval by ID enforces case-insensitivity, length limit (`MAX_TOPIC_ID_LEN = 64`), and strict ASCII alphanumeric/hyphen/underscore/dot character validation.
+- **HDOC3 (Scored Relevance Search)**: Weighted query matching ranks results:
+  - Exact Topic ID Match: +100 points.
+  - Substring Topic ID Match: +40 points.
+  - Tag Match: +50 points (exact) / +20 points (substring).
+  - Title Match: +35 points.
+  - Summary Match: +15 points.
+  - Section Content Match: +10 points.
+  - Snippets are dynamically extracted with UTF-8 character boundary safety.
+  - Queries are capped at `MAX_DOC_QUERY_LEN = 256`, and search results are truncated to `MAX_DOC_SEARCH_RESULTS = 50`.
+- **HDOC4 (Category Filtering)**: Supports filtering by `HardwareDocCategory` (`architecture`, `discovery`, `security`, `observability`, `configuration`, `troubleshooting`).
+- **HDOC5 (Deterministic Markdown Rendering)**: `HardwareDocIndex::format_topic_markdown` formats topic metadata, structured sections, example commands, and authoritative references into standardized GitHub-flavored Markdown.
+- **HDOC6 (Memory Footprint & Security)**: Completely in-memory, deterministic, zero-allocation search paths, with total footprint under 50 KB.
+
+### 15.3 API Usage Example
+
+```rust
+use aiosh_core::hardware_doc::{HardwareDocCategory, HardwareDocIndex};
+
+let index = HardwareDocIndex::new();
+
+// Lookup topic by ID
+if let Some(topic) = index.get_topic("hw-security-policy") {
+    println!("{}", HardwareDocIndex::format_topic_markdown(topic));
+}
+
+// Search topics by query keyword
+let results = index.search("sysfs", Some(HardwareDocCategory::Discovery));
+for res in results {
+    println!("Found {} (score: {}): {}", res.title, res.score, res.snippet);
+}
+```
+
+### 15.4 Sub-Epic 9 Verification Evidence
+- Research: `docs/tasks/evidence/T-01781-documentation-research.md`.
+- Specification: `docs/tasks/evidence/T-01782-documentation-specification.md`.
+- Scaffold: `docs/tasks/evidence/T-01783-documentation-scaffold.md`.
+- Implementation: `docs/tasks/evidence/T-01784-documentation-implementation.md`.
+- Unit Test: `docs/tasks/evidence/T-01785-documentation-unit-test.md`.
+- Integration: `docs/tasks/evidence/T-01786-documentation-integration.md`.
+- Security Review: `docs/tasks/evidence/T-01787-documentation-security-review.md`.
+- Hardening: `docs/tasks/evidence/T-01788-documentation-hardening.md`.
+- Documentation: `docs/tasks/evidence/T-01789-documentation-documentation.md`.
+- Verification & Evidence: `docs/tasks/evidence/T-01790-documentation-verification-evidenc.md`.
+
+
 
 
 

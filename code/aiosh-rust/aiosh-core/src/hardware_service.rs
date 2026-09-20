@@ -175,6 +175,23 @@ impl HardwareService {
         index.search(query, category)
     }
 
+    /// Validates a hardware store file against structure and optional sysfs drift (HVAL1..HVAL3).
+    pub fn validate_store(
+        &self,
+        store_path: &Path,
+        check_paths: bool,
+    ) -> Result<crate::hardware_recovery::HardwareValidationReport, String> {
+        crate::hardware_recovery::check_inventory_file(store_path, check_paths)
+    }
+
+    /// Recovers a damaged or corrupted hardware store file with non-destructive quarantine (HVAL4).
+    pub fn recover_store(
+        &self,
+        store_path: &Path,
+    ) -> Result<crate::hardware_recovery::HardwareRecoveryReport, String> {
+        crate::hardware_recovery::recover_inventory_file(store_path, Some(&self.sysfs_root))
+    }
+
     /// Retrieves the cached hardware inventory if present.
     pub fn get_cached_inventory(&self) -> Option<HardwareInventory> {
         self.cached_inventory.read().ok().and_then(|guard| guard.clone())
