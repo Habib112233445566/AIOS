@@ -111,11 +111,7 @@ impl NetworkObservabilityService {
 
     /// Creates a service with custom paths for hermetic testing.
     pub fn with_paths(procfs_net_dev: PathBuf, sysfs_net_dir: PathBuf, history_capacity: usize) -> Self {
-        let cap = if history_capacity == 0 || history_capacity > 1000 {
-            DEFAULT_HISTORY_CAPACITY
-        } else {
-            history_capacity
-        };
+        let cap = history_capacity.clamp(1, 1000);
         Self {
             procfs_net_dev,
             sysfs_net_dir,
@@ -133,7 +129,7 @@ impl NetworkObservabilityService {
             if let Ok(meta) = fs::metadata(&self.procfs_net_dev) {
                 if meta.len() <= 65536 {
                     if let Ok(content) = fs::read_to_string(&self.procfs_net_dev) {
-                        for line in content.lines() {
+                        for line in content.lines().take(1024) {
                             let line = line.trim();
                             if line.starts_with("Inter-") || line.starts_with("face") || !line.contains(':') {
                                 continue;
@@ -275,7 +271,7 @@ impl NetworkObservabilityService {
 
         // Check packet drop or error rate (> 5% drops when rx_packets > 100)
         for stat in stats {
-            if stat.rx_packets > 100 && (stat.rx_dropped * 20 > stat.rx_packets || stat.rx_errors * 20 > stat.rx_packets) {
+            if stat.rx_packets > 100 && (stat.rx_dropped.saturating_mul(20) > stat.rx_packets || stat.rx_errors.saturating_mul(20) > stat.rx_packets) {
                 issues.push(format!(
                     "Elevated error/drop rate on '{}' (rx_packets={}, rx_dropped={}, rx_errors={})",
                     stat.interface_name, stat.rx_packets, stat.rx_dropped, stat.rx_errors

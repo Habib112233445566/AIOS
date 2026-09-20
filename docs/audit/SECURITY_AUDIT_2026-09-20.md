@@ -1494,3 +1494,36 @@ Read line-by-line: `pentest.rs` (597), `train_slm.py` (210), `train_unsloth.py` 
   - `aiosh-cli`: 6/6 integration smoke tests in `test_network_observability_smoke.py` passed in 0.14s.
   - Regression suite: 0 regressions across all 7 previously closed sub-epics.
 
+---
+
+## 17. Post-Audit Addendum: Batch T-01877 through T-01886 Verification
+
+**Date:** 2026-09-20  
+**Scope:** Batch `T-01877` through `T-01886` (Network Bootstrap Observability Sub-Epic 8 Closure & Network Bootstrap Documentation Sub-Epic 9).  
+**Auditor:** Antigravity Autonomous Security Subsystem  
+**Verdict:** **PASS (Zero vulnerabilities)**
+
+### 1. Hardened Surface & Key Controls
+- **Network Bootstrap Observability Closure (T-01877..T-01880)**:
+  - Security review evaluated threat vectors `THREAT-NOBS-01..05` (snapshot path traversal, procfs parsing CPU spin, history buffer memory leaks, node tampering, integer overflow).
+  - Hardened `network_observability.rs`:
+    - Bound `/proc/net/dev` processing to `take(1024)` lines.
+    - Used `saturating_mul(20)` for packet drop/error rate checks to prevent integer overflow.
+    - Clamped history ring buffer capacity strictly within `[1, 1000]`.
+    - Integrated RAII `TempFileGuard` inside `save_snapshot_to_path()`, preventing temporary sibling file leaks.
+  - Authored Section 11 in `docs/network_bootstrap.md`.
+  - Formally closed Sub-Epic 8 with 12/12 Rust unit tests and 6/6 Python smoke tests.
+- **Network Bootstrap Documentation Subsystem (T-01881..T-01886)**:
+  - Researched, specified, scaffolded, implemented, and tested `network_doc.rs` in `aiosh-core`.
+  - Enforced invariants `NDOC1..NDOC6`:
+    - `NDOC1`: Canonical offline topic repository covering architecture, discovery, security policy, observability, configuration, and troubleshooting.
+    - `NDOC2`: Loose category alias matching (`arch`, `probe`, `sec`, `obs`, `cfg`, `triage`) with case-insensitivity.
+    - `NDOC3`: Multi-field ranked relevance search scoring engine prioritizing ID (+100), Title (+50), Tag (+25), Summary (+20), and Section (+5) with query bounds and result limits.
+    - `NDOC4`: Markdown reference topic rendering with RFC citations, code snippets, and metadata headers.
+    - `NDOC5`: Dynamic state Markdown generation and ASCII topology rendering.
+    - `NDOC6`: Path hygiene ($\le 1024$ chars, no `..`, no control characters), bounded 1 MB document file cap, and atomic persistence with RAII `TempFileGuard`.
+- **Test Verification**:
+  - `aiosh-core`: 10/10 unit tests in `test_network_doc.rs` passed in 0.02s.
+  - `aiosh-cli`: 6/6 integration smoke tests in `test_network_doc_smoke.py` passed in 0.12s.
+  - Regression suite: 0 regressions across all 8 previously closed sub-epics.
+

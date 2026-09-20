@@ -498,3 +498,109 @@ policy.save_to_path(Path::new("/etc/aios/network_policy.json"))?;
 - Research & Specification: `docs/tasks/evidence/T-01861-security-policy-research.md`, `docs/tasks/evidence/T-01862-security-policy-specification.md`
 - Implementation & Testing: `docs/tasks/evidence/T-01864-security-policy-implementation.md`, `docs/tasks/evidence/T-01865-security-policy-unit-test.md`, `docs/tasks/evidence/T-01866-security-policy-integration.md`
 - Security Review & Hardening: `docs/tasks/evidence/T-01867-security-policy-security-review.md`, `docs/tasks/evidence/T-01868-security-policy-hardening.md`
+
+---
+
+## 11. Network Observability Subsystem
+
+The Network Bootstrap subsystem provides real-time telemetry extraction, link health diagnostics, and historical time-series buffering via `NetworkObservabilityService`, defined in `code/aiosh-rust/aiosh-core/src/network_observability.rs`.
+
+### Architecture & Data Flow
+
+```
++-------------------------------------------------------------+
+|                      Kernel Interfaces                      |
+|       /proc/net/dev                    /sys/class/net/      |
+|  (cumulative counters)                (carrier, statistics) |
++------------------------------+------------------------------+
+                               |
+                               v
++-------------------------------------------------------------+
+|                NetworkObservabilityService                  |
+|  - collect_statistics() [rx/tx bytes, pkts, errs, drops]    |
+|  - evaluate_health()    [healthy, degraded, critical]       |
+|  - capture_snapshot()   [ring buffer bounded history <= 60] |
++------------------------------+------------------------------+
+                               |
+                               v
++-------------------------------------------------------------+
+|                    Output & Storage                         |
+|    - CLI/MCP JSON telemetry: aios.network.metrics           |
+|    - Atomic persistent snapshots: save_snapshot_to_path()   |
++-------------------------------------------------------------+
+```
+
+### Invariants (`NOBS1..NOBS6`)
+
+| Invariant | Name | Rules & Enforcement |
+|:---|:---|:---|
+| **`NOBS1`** | Non-Blocking Bounded Sampling | Procfs `/proc/net/dev` reading is capped at 64 KB and maximum 1,024 lines. Reads never block or spin indefinitely. |
+| **`NOBS2`** | Resilient Node Fallback | Missing or inaccessible procfs/sysfs nodes return zeroed counters or safe defaults without throwing exceptions or panicking. |
+| **`NOBS3`** | Diagnostic Health Verdict | Evaluates interface operational status, link carrier, default gateway presence, DNS resolver configuration, and packet drop/error rates (> 5%). Verdicts: `Healthy`, `Degraded`, `Critical`. |
+| **`NOBS4`** | Bounded History Ring Buffer | In-memory historical snapshots are held in a fixed-size `VecDeque` ring buffer ($1 \le N \le 1,000$, default 60), evicting the oldest entries to prevent memory leaks over long uptime. |
+| **`NOBS5`** | Cross-Surface JSON Parity | Telemetry structures serialize to canonical JSON compatible across Rust core, CLI commands, and MCP tools. |
+| **`NOBS6`** | Atomic Persistence & Hygiene | Snapshot file paths are checked for hygiene ($\le 1024$ chars, UTF-8, no `..`, no control chars), bounded by 1 MB (`MAX_OBSERVABILITY_FILE_BYTES`), and saved atomically via sibling temporary file `.{name}.tmp.{pid}` with permissions `0600` on Unix and safe unlinking on error. |
+
+### Snapshot Format (`obs_snapshot.json`)
+
+```json
+{
+  "timestamp": "2026-09-20T12:00:00Z",
+  "hostname": "aios-node-01",
+  "statistics": [
+    {
+      "interface_name": "eth0",
+      "rx_bytes": 1048576,
+      "rx_packets": 8192,
+      "rx_errors": 0,
+      "rx_dropped": 0,
+      "tx_bytes": 524288,
+      "tx_packets": 4096,
+      "tx_errors": 0,
+      "tx_dropped": 0,
+      "carrier": true,
+      "collisions": 0
+    }
+  ],
+  "health": {
+    "verdict": "healthy",
+    "total_interfaces": 2,
+    "active_interfaces": 1,
+    "default_route_present": true,
+    "dns_configured": true,
+    "issues": []
+  }
+}
+```
+
+### Programmatic Usage Example (Rust)
+
+```rust
+use aiosh_core::network::NetworkState;
+use aiosh_core::network_observability::NetworkObservabilityService;
+
+// 1. Initialize service with default paths
+let mut obs_service = NetworkObservabilityService::new();
+
+// 2. Capture snapshot and evaluate health
+let state = NetworkState::new("node-01");
+let snapshot = obs_service.capture_snapshot(&state);
+
+println!("Network health verdict: {:?}", snapshot.health.verdict);
+for iface_stat in &snapshot.statistics {
+    println!("{}: rx_bytes={}, tx_bytes={}", iface_stat.interface_name, iface_stat.rx_bytes, iface_stat.tx_bytes);
+}
+
+// 3. Query historical metrics buffer
+let history = obs_service.get_history();
+println!("Snapshots in ring buffer: {}", history.len());
+```
+
+### Stated Limitations
+- Counters are cumulative monotonic kernel metrics since interface/system boot; rates per second require computing differences between successive timestamped snapshots.
+- On non-Linux hosts (e.g. Windows dev environments), `/proc/net/dev` and `/sys/class/net/` are absent; the service gracefully returns empty statistics or relies on test fixture paths.
+
+### Evidence & Task References
+- Research & Specification: `docs/tasks/evidence/T-01871-observability-research.md`, `docs/tasks/evidence/T-01872-observability-specification.md`
+- Implementation & Testing: `docs/tasks/evidence/T-01874-observability-implementation.md`, `docs/tasks/evidence/T-01875-observability-unit-test.md`, `docs/tasks/evidence/T-01876-observability-integration.md`
+- Security Review & Hardening: `docs/tasks/evidence/T-01877-observability-security-review.md`, `docs/tasks/evidence/T-01878-observability-hardening.md`
