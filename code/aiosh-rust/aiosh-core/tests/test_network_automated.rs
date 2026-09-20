@@ -2,6 +2,7 @@
 
 use std::fs;
 use std::path::PathBuf;
+use aiosh_core::network::validate_interface_name;
 use aiosh_core::network_config::NetworkConfig;
 use aiosh_core::network_service::NetworkService;
 use tempfile::{tempdir, TempDir};
@@ -178,4 +179,31 @@ fn test_automated_link_state_transitions() {
 
     // Bring down eth0
     assert!(service.bring_down("eth0").is_ok());
+}
+
+#[test]
+fn test_automated_invalid_interface_names_rejected() {
+    let invalid_names = [
+        "",
+        "   ",
+        "eth0/bad",
+        "../eth0",
+        "eth0\0null",
+        "name_that_is_far_too_long_and_exceeds_fifteen_chars",
+    ];
+    for name in invalid_names {
+        assert!(validate_interface_name(name).is_err(), "Expected failure for '{}'", name);
+    }
+}
+
+#[test]
+fn test_automated_tempdir_cleanup_on_drop() {
+    let path_copy;
+    {
+        let mock = MockNetworkEnv::new();
+        path_copy = mock.dir.path().to_path_buf();
+        assert!(path_copy.exists());
+    }
+    // After dropping mock, directory must not exist (RAII cleanup)
+    assert!(!path_copy.exists(), "TempDir must be cleaned up on drop");
 }

@@ -74,6 +74,7 @@ pub mod ledger;
 pub mod ledger_config;
 pub mod network;
 pub mod network_config;
+pub mod network_policy;
 pub mod network_service;
 pub mod package;
 pub mod package_config;
@@ -186,6 +187,10 @@ pub use network::{
 };
 pub use network_service::NetworkService;
 pub use network_config::NetworkConfig;
+pub use network_policy::{
+    validate_policy_path as validate_network_policy_path, NetworkPolicyMode, NetworkPolicyReport,
+    NetworkPolicyViolation, NetworkSecurityPolicy, MAX_POLICY_FILE_BYTES as MAX_NETWORK_POLICY_FILE_BYTES,
+};
 pub use types::GENESIS_HASH;
 
 
