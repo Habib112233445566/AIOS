@@ -156,3 +156,40 @@ python code/aiosh-mcp/tests/test_capability_smoke.py
 - Integration: [`docs/tasks/evidence/T-02006-capability-data-model-integration.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02006-capability-data-model-integration.md)
 - Security Review: [`docs/tasks/evidence/T-02007-capability-data-model-security-review.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02007-capability-data-model-security-review.md)
 - Hardening: [`docs/tasks/evidence/T-02008-capability-data-model-hardening.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02008-capability-data-model-hardening.md)
+- Service Research: [`docs/tasks/evidence/T-02011-capability-service-research.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02011-capability-service-research.md)
+- Service Specification: [`docs/tasks/evidence/T-02012-capability-service-specification.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02012-capability-service-specification.md)
+- Service Scaffold: [`docs/tasks/evidence/T-02013-capability-service-scaffold.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02013-capability-service-scaffold.md)
+- Service Implementation: [`docs/tasks/evidence/T-02014-capability-service-implementation.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02014-capability-service-implementation.md)
+- Service Unit Test: [`docs/tasks/evidence/T-02015-capability-service-unit-test.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02015-capability-service-unit-test.md)
+- Service Integration: [`docs/tasks/evidence/T-02016-capability-service-integration.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02016-capability-service-integration.md)
+- Service Security Review: [`docs/tasks/evidence/T-02017-capability-service-security-review.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02017-capability-service-security-review.md)
+- Service Hardening: [`docs/tasks/evidence/T-02018-capability-service-hardening.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02018-capability-service-hardening.md)
+- Service Documentation: [`docs/tasks/evidence/T-02019-capability-service-documentation.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02019-capability-service-documentation.md)
+- Service Formal Closure: [`docs/tasks/evidence/T-02020-capability-service-verification-evidenc.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02020-capability-service-verification-evidenc.md)
+
+---
+
+## 7. Capability Service & Registry Custody (CSERV1 - CSERV6)
+
+The `CapabilityService` is the central in-memory authority and persistence manager for capabilities in the AIOS Security Kernel.
+
+### 7.1 Core Invariants & Operations
+
+| Invariant | Operation | Description |
+|---|---|---|
+| **`CSERV1`** | **Registry Indexing** | In-memory indexing by capability ID (`HashMap<String, Capability>`), by subject (`HashMap<String, HashSet<String>>`), and by parent (`HashMap<String, HashSet<String>>`). |
+| **`CSERV2`** | **Root Issuance Control** | `issue_root_capability` restricted strictly to `issuer == "kernel"` or `issuer.starts_with("admin:")`. Ambient or untrusted root issuance is rejected. |
+| **`CSERV3`** | **Monotonic Attenuation** | `attenuate_capability` verifies parent delegation right, derives a strictly narrowed child capability, and updates lineage indexes. |
+| **`CSERV4`** | **Cascade Revocation** | `revoke_capability` performs a breadth-first traversal over child capabilities with cycle detection (`visited: HashSet<String>`), revoking the target and all its transitive descendants. |
+| **`CSERV5`** | **Safe Atomic Persistence** | `save_to_path` and `load_from_path` enforce path validation (`validate_service_path`), symlink checks, size bounds (max 10MB), capacity bounds (max 10,000 entries), and atomic file renaming via temporary files. |
+| **`CSERV6`** | **Automated Pruning** | `prune_expired` cleanses expired leaf capabilities with no active child references, preventing memory leaks while retaining lineage integrity. |
+
+### 7.2 Service Verification Commands
+```bash
+# Run Rust CapabilityService unit test suite
+cargo test --manifest-path code/aiosh-rust/Cargo.toml -p aiosh-core --test test_capability_service -- --nocapture
+
+# Run Python CapabilityService smoke test
+python code/aiosh-mcp/tests/test_capability_service_smoke.py
+```
+

@@ -1,0 +1,7 @@
+# T-02018 — Phase 2 — Security Kernel & PEP Fabric / Capability Model / core service: Hardening
+
+Completed: 2026-09-20T10:15:10Z
+
+Acceptance criteria:
+- [x] Failure modes produce explicit, auditable errors.
+- [x] No temp/connection leaks on the error path.

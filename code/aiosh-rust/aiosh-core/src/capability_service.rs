@@ -16,9 +16,32 @@ use crate::capability::{
 /// Maximum permissible file size for capability registry persistence (10 MB).
 pub const MAX_CAPABILITY_STORE_SIZE: u64 = 10_485_760;
 
+/// Maximum number of capabilities allowed in the in-memory registry.
+pub const MAX_CAPABILITIES_IN_REGISTRY: usize = 10_000;
+
 pub const CSERV_IO_ERROR: &str = "CSERV_IO_ERROR";
 pub const CSERV_VALIDATION_ERROR: &str = "CSERV_VALIDATION_ERROR";
 pub const CSERV_NOT_FOUND: &str = "CSERV_NOT_FOUND";
+
+/// Validates that a storage path is safe and compliant with registry storage policies.
+pub fn validate_service_path(path: &Path) -> Result<(), String> {
+    let path_str = path.to_string_lossy();
+    if path_str.len() > 1024 {
+        return Err(format!("{}: path length exceeds 1024 characters", CSERV_VALIDATION_ERROR));
+    }
+    if path_str.chars().any(|c| c.is_control()) {
+        return Err(format!("{}: path contains control characters", CSERV_VALIDATION_ERROR));
+    }
+    for component in path.components() {
+        if let std::path::Component::ParentDir = component {
+            return Err(format!("{}: path traversal ('..') is not allowed", CSERV_VALIDATION_ERROR));
+        }
+    }
+    match path.extension().and_then(|ext| ext.to_str()) {
+        Some("json") => Ok(()),
+        _ => Err(format!("{}: file must have a .json extension", CSERV_VALIDATION_ERROR)),
+    }
+}
 
 /// Authoritative in-memory registry and lifecycle manager for capabilities (CSERV1..CSERV6).
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -61,6 +84,20 @@ impl CapabilityService {
         rights: Vec<CapabilityRight>,
         constraints: CapabilityConstraints,
     ) -> Result<Capability, CapabilityError> {
+        if self.capabilities.len() >= MAX_CAPABILITIES_IN_REGISTRY {
+            return Err(CapabilityError::ValidationError(format!(
+                "{}: registry capacity limit reached ({})",
+                CSERV_VALIDATION_ERROR, MAX_CAPABILITIES_IN_REGISTRY
+            )));
+        }
+
+        if issuer != "kernel" && !issuer.starts_with("admin:") {
+            return Err(CapabilityError::ValidationError(format!(
+                "{}: root capabilities can only be issued by 'kernel' or 'admin:*', got '{}'",
+                CSERV_VALIDATION_ERROR, issuer
+            )));
+        }
+
         let cap = Capability::new(issuer, subject, scope, rights, constraints)?;
         self.register_capability(cap.clone());
         Ok(cap)
@@ -98,6 +135,13 @@ impl CapabilityService {
         subset_rights: Vec<CapabilityRight>,
         narrowed_constraints: Option<CapabilityConstraints>,
     ) -> Result<Capability, CapabilityError> {
+        if self.capabilities.len() >= MAX_CAPABILITIES_IN_REGISTRY {
+            return Err(CapabilityError::ValidationError(format!(
+                "{}: registry capacity limit reached ({})",
+                CSERV_VALIDATION_ERROR, MAX_CAPABILITIES_IN_REGISTRY
+            )));
+        }
+
         let parent = self
             .capabilities
             .get(parent_id)
@@ -115,9 +159,13 @@ impl CapabilityService {
         }
 
         let mut revoked_ids = Vec::new();
+        let mut visited = HashSet::new();
         let mut queue = vec![id.to_string()];
 
         while let Some(current_id) = queue.pop() {
+            if !visited.insert(current_id.clone()) {
+                continue;
+            }
             if let Some(cap) = self.capabilities.get_mut(&current_id) {
                 if !cap.revoked {
                     cap.revoke();
@@ -126,7 +174,9 @@ impl CapabilityService {
             }
             if let Some(children) = self.by_parent.get(&current_id) {
                 for child_id in children {
-                    queue.push(child_id.clone());
+                    if !visited.contains(child_id) {
+                        queue.push(child_id.clone());
+                    }
                 }
             }
         }
@@ -252,6 +302,8 @@ impl CapabilityService {
 
     /// Persists registry atomically to disk (CSERV5).
     pub fn save_to_path(&self, path: &Path) -> Result<(), String> {
+        validate_service_path(path)?;
+
         if let Ok(meta) = fs::symlink_metadata(path) {
             if meta.file_type().is_symlink() {
                 return Err(format!("{}: target path {:?} is a symlink", CSERV_IO_ERROR, path));
@@ -291,6 +343,8 @@ impl CapabilityService {
 
     /// Loads and rebuilds registry from disk (CSERV5).
     pub fn load_from_path(path: &Path) -> Result<Self, String> {
+        validate_service_path(path)?;
+
         if let Ok(meta) = fs::symlink_metadata(path) {
             if meta.file_type().is_symlink() {
                 return Err(format!("{}: path {:?} is a symlink", CSERV_IO_ERROR, path));
@@ -308,6 +362,13 @@ impl CapabilityService {
 
         let mut service: CapabilityService = serde_json::from_str(&content)
             .map_err(|e| format!("{}: failed to deserialize {:?}: {}", CSERV_VALIDATION_ERROR, path, e))?;
+
+        if service.capabilities.len() > MAX_CAPABILITIES_IN_REGISTRY {
+            return Err(format!(
+                "{}: capability file contains {} entries, exceeding maximum limit {}",
+                CSERV_VALIDATION_ERROR, service.capabilities.len(), MAX_CAPABILITIES_IN_REGISTRY
+            ));
+        }
 
         // Rebuild indexes
         service.by_subject.clear();

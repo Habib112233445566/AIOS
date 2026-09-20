@@ -1977,6 +1977,45 @@ Read line-by-line: `pentest.rs` (597), `train_slm.py` (210), `train_unsloth.py` 
   - `aiosh-mcp`: 4/4 checks in `test_capability_service_smoke.py` passing.
   - Full regression test suite: zero regressions across all epics.
 
+---
+
+## 31. Post-Audit Addendum: Batch T-02017 through T-02026 Verification
+
+**Date:** 2026-09-20  
+**Scope:** Batch `T-02017` through `T-02026` (Capability Model Sub-Epic 2 Formal Closure & Sub-Epic 3 CLI Surface).  
+**Auditor:** Antigravity Autonomous Security Subsystem  
+**Verdict:** **PASS (Zero vulnerabilities)**
+
+### 1. Hardened Surface & Key Controls
+- **Capability Model Core Service Closure & Hardening (T-02017..T-02020)**:
+  - Evaluated threat vectors `THREAT-CSERV-01..06` covering unauthorized root capability issuance, cyclic revocation loops, memory exhaustion (OOM), path traversal, symlink hijacking, and tempfile leakage.
+  - Hardened `capability_service.rs`:
+    - Enforced `MAX_CAPABILITIES_IN_REGISTRY = 10_000` to bound in-memory registry growth.
+    - Restricted `issue_root_capability` strictly to `kernel` and `admin:*` identities.
+    - Added `visited: HashSet<String>` cycle detection to `revoke_capability` BFS traversal to eliminate infinite loops.
+    - Added `validate_service_path` enforcing path length $\le 1024$, `.json` extension requirement, control character rejection, and `..` path traversal defense.
+    - Ensured atomic persistence via `.tmp.<pid>` with immediate unlinking on error and symlink metadata checking.
+  - Appended Section 7 to `docs/capability_model.md` and formally closed Sub-Epic 2.
+- **Capability Model CLI Surface (T-02021..T-02026)**:
+  - Researched, specified, scaffolded, implemented, unit-tested, and integrated `aiosh capability` (`aiosh cap`) CLI subcommands in `code/aiosh-rust/aiosh-cli/src/main.rs`.
+  - Subcommands implemented:
+    - `list`: Lists capabilities in the registry with `--subject` and `--active-only` filtering.
+    - `show <id>`: Displays detailed attributes, scope, rights, and quota consumption.
+    - `issue`: Issues root capabilities with verified `kernel`/`admin:*` issuer authorization.
+    - `attenuate`: Derives attenuated child capabilities with monotonic narrowing of rights, scope, and constraints.
+    - `revoke <id>`: Revokes a capability and cascades revocation to all transitive descendant capabilities.
+    - `check`: Verifies subject capability grants for requested scope and right (returns 0 if granted, 1 if denied).
+    - `prune`: Prunes expired leaf capabilities with no active child dependencies.
+  - Enforced structured `--json` envelopes `{ "code": 0/1/2, "data": ..., "error": ... }`.
+  - Enforced mandatory audit logging for every CLI invocation via `classify_and_emit` into `AuditRing`.
+- **Test Verification**:
+  - `aiosh-core`: 9/9 unit tests in `test_capability_service.rs` passing in 0.35s.
+  - `aiosh-cli`: 3/3 unit tests in `capability_cli_tests` passing in 3.79s.
+  - `aiosh-mcp`: 4/4 checks in `test_capability_service_smoke.py` passing.
+  - `aiosh-cli`: 4/4 checks in `test_capability_cli_smoke.py` passing.
+  - Full regression test suite: zero regressions across all epics.
+
+
 
 
 

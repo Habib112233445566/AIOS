@@ -241,3 +241,82 @@ fn test_cserv6_prune_expired() {
     assert!(service.get_capabilities_for_subject("agent:temp").is_empty());
     assert_eq!(service.get_capabilities_for_subject("agent:perm").len(), 1);
 }
+
+#[test]
+fn test_cserv7_hardening_issuer_authorization() {
+    let mut service = CapabilityService::new();
+
+    // Invalid issuer should fail
+    let err = service.issue_root_capability(
+        "unauthorized_agent",
+        "agent:test",
+        CapabilityScope::System { subsystem: "test".to_string() },
+        vec![CapabilityRight::Read],
+        CapabilityConstraints::default(),
+    );
+    assert!(err.is_err());
+
+    // Valid issuers should succeed
+    let root1 = service.issue_root_capability(
+        "kernel",
+        "agent:test1",
+        CapabilityScope::System { subsystem: "test".to_string() },
+        vec![CapabilityRight::Read],
+        CapabilityConstraints::default(),
+    );
+    assert!(root1.is_ok());
+
+    let root2 = service.issue_root_capability(
+        "admin:secops",
+        "agent:test2",
+        CapabilityScope::System { subsystem: "test".to_string() },
+        vec![CapabilityRight::Read],
+        CapabilityConstraints::default(),
+    );
+    assert!(root2.is_ok());
+}
+
+#[test]
+fn test_cserv8_hardening_path_validation() {
+    use std::path::Path;
+    use aiosh_core::capability_service::validate_service_path;
+
+    // Valid path
+    assert!(validate_service_path(Path::new("valid/path/capabilities.json")).is_ok());
+
+    // Invalid extension
+    assert!(validate_service_path(Path::new("valid/path/capabilities.txt")).is_err());
+
+    // Path traversal
+    assert!(validate_service_path(Path::new("valid/../secret/capabilities.json")).is_err());
+
+    // Control character
+    assert!(validate_service_path(Path::new("valid/\0/capabilities.json")).is_err());
+}
+
+#[test]
+fn test_cserv9_hardening_cycle_detection_in_revoke() {
+    let mut service = CapabilityService::new();
+
+    let root = service.issue_root_capability(
+        "kernel",
+        "agent:cycle_test",
+        CapabilityScope::System { subsystem: "cycle".to_string() },
+        vec![CapabilityRight::Read, CapabilityRight::Delegate],
+        CapabilityConstraints::default(),
+    ).unwrap();
+
+    let child = service.attenuate_capability(
+        &root.id,
+        "agent:cycle_child",
+        None,
+        vec![CapabilityRight::Read],
+        None,
+    ).unwrap();
+
+    // Verify normal revocation works without infinite loop
+    let revoked = service.revoke_capability(&root.id).unwrap();
+    assert_eq!(revoked.len(), 2);
+    assert!(revoked.contains(&root.id));
+    assert!(revoked.contains(&child.id));
+}

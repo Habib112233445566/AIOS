@@ -218,8 +218,9 @@ fn main() {
         Some("hw") | Some("hardware") => cmd_hardware(&args[1..]),
         Some("net") | Some("network") => cmd_network(&args[1..]),
         Some("update") | Some("upd") => cmd_update(&args[1..]),
+        Some("capability") | Some("cap") => cmd_capability(&args[1..]),
         Some("--help") | Some("-h") | None => {
-            println!("aiosh — AIOS shell CLI (Rust)\n\nUsage: aiosh <status|run|agent|audit|grant|pentest|classify|task|ci|release|backup|toolchain|doc|evidence|repo|secrets|triage|handoff|distro|image|package|service|session|layout|mod|hw|net|update> ...\n\n  aiosh task <status|done|block|unblock|skip|rebuild|check>  Task ledger control\n  aiosh ci <show|failures|check|config|metrics> [--file PATH]  CI smoke reports\n  aiosh release generate  Create bootable ISO\n  aiosh backup create  Create system snapshot zip\n  aiosh toolchain check [--config <path>]  Verify host environment against ToolchainManifest\n  aiosh toolchain show [--config <path>]   Display the resolved ToolchainManifest\n  aiosh doc <show|check|search>  Documentation Index Control\n  aiosh evidence <verify|hash|scan>   Evidence & Audit Trail Control\n  aiosh repo <health|check>  Repository Health Diagnostics\n  aiosh secrets <scan|check> [--config <path>]  Secrets & Access Hygiene Scanner\n  aiosh triage <list|show|record|resolve|ingest|check>  Regression Triage Manager\n  aiosh handoff <list|show|initiate|accept|reject|complete|cancel>  Agent Handoff Protocol Manager\n  aiosh distro <list|show|evaluate|recommend|policy|stats|check>  Linux Distro Selection & Justification Manager\n  aiosh image <list|show|plan|filter>  Linux Base Image Build & Packaging Manager\n  aiosh package <list|show|search|plan|apply|validate>  Linux Package Management & Store Control\n  aiosh service <validate|list|show|status|action|start|stop|restart|reload|order>  Init & Service Supervision Control\n  aiosh session <validate|list|show|status|create|action|activate|lock|unlock|terminate|config>  User Session Bootstrap Control\n  aiosh layout <list|show|validate|check|probe|diff|fstab|register|set-active|remove|import-fstab>  Filesystem Layout & Target Partitioning Manager\n  aiosh mod <list|show|blacklist|unblacklist|options|autoload|unautoload|preset|export>  Kernel Module Management\n  aiosh hw <scan|list|show|summary|verify>  Hardware Detection & Inventory Control\n  aiosh net <list|show|routes|dns|state|up|down>  Network Bootstrap & Interface Control\n  aiosh update <status|slots|check|apply|confirm|rollback>  System Update & Dual-Slot Control");
+            println!("aiosh — AIOS shell CLI (Rust)\n\nUsage: aiosh <status|run|agent|audit|grant|pentest|classify|task|ci|release|backup|toolchain|doc|evidence|repo|secrets|triage|handoff|distro|image|package|service|session|layout|mod|hw|net|update|capability> ...\n\n  aiosh task <status|done|block|unblock|skip|rebuild|check>  Task ledger control\n  aiosh ci <show|failures|check|config|metrics> [--file PATH]  CI smoke reports\n  aiosh release generate  Create bootable ISO\n  aiosh backup create  Create system snapshot zip\n  aiosh toolchain check [--config <path>]  Verify host environment against ToolchainManifest\n  aiosh toolchain show [--config <path>]   Display the resolved ToolchainManifest\n  aiosh doc <show|check|search>  Documentation Index Control\n  aiosh evidence <verify|hash|scan>   Evidence & Audit Trail Control\n  aiosh repo <health|check>  Repository Health Diagnostics\n  aiosh secrets <scan|check> [--config <path>]  Secrets & Access Hygiene Scanner\n  aiosh triage <list|show|record|resolve|ingest|check>  Regression Triage Manager\n  aiosh handoff <list|show|initiate|accept|reject|complete|cancel>  Agent Handoff Protocol Manager\n  aiosh distro <list|show|evaluate|recommend|policy|stats|check>  Linux Distro Selection & Justification Manager\n  aiosh image <list|show|plan|filter>  Linux Base Image Build & Packaging Manager\n  aiosh package <list|show|search|plan|apply|validate>  Linux Package Management & Store Control\n  aiosh service <validate|list|show|status|action|start|stop|restart|reload|order>  Init & Service Supervision Control\n  aiosh session <validate|list|show|status|create|action|activate|lock|unlock|terminate|config>  User Session Bootstrap Control\n  aiosh layout <list|show|validate|check|probe|diff|fstab|register|set-active|remove|import-fstab>  Filesystem Layout & Target Partitioning Manager\n  aiosh mod <list|show|blacklist|unblacklist|options|autoload|unautoload|preset|export>  Kernel Module Management\n  aiosh hw <scan|list|show|summary|verify>  Hardware Detection & Inventory Control\n  aiosh net <list|show|routes|dns|state|up|down>  Network Bootstrap & Interface Control\n  aiosh update <status|slots|check|apply|confirm|rollback>  System Update & Dual-Slot Control\n  aiosh capability <list|show|issue|attenuate|revoke|check|prune>  Capability & Zero-Ambient Authority Control");
             0
         }
         Some(other) => {
@@ -13971,6 +13972,658 @@ fn cmd_update(args: &[String]) -> i32 {
     }
 }
 
+fn parse_cli_scope(scope_type: &str, target: &str, recursive: bool) -> Result<aiosh_core::capability::CapabilityScope, String> {
+    match scope_type.to_lowercase().as_str() {
+        "filesystem" | "fs" => Ok(aiosh_core::capability::CapabilityScope::Filesystem {
+            path: target.to_string(),
+            recursive,
+        }),
+        "network" | "net" => {
+            let parts: Vec<&str> = target.split(':').collect();
+            let host = parts[0].to_string();
+            let port = if parts.len() > 1 {
+                parts[1].parse::<u16>().ok()
+            } else {
+                None
+            };
+            Ok(aiosh_core::capability::CapabilityScope::Network {
+                host,
+                port,
+                protocol: "tcp".to_string(),
+            })
+        }
+        "tool" => Ok(aiosh_core::capability::CapabilityScope::Tool {
+            tool_name: target.to_string(),
+            allowed_actions: vec!["*".to_string()],
+        }),
+        "process" | "proc" => Ok(aiosh_core::capability::CapabilityScope::Process {
+            executable: target.to_string(),
+            max_memory_bytes: None,
+        }),
+        "ipc" => Ok(aiosh_core::capability::CapabilityScope::Ipc {
+            channel: target.to_string(),
+        }),
+        "system" | "sys" => Ok(aiosh_core::capability::CapabilityScope::System {
+            subsystem: target.to_string(),
+        }),
+        other => Err(format!("unknown scope type: '{}'", other)),
+    }
+}
+
+fn parse_cli_rights(rights_str: &str) -> Result<Vec<aiosh_core::capability::CapabilityRight>, String> {
+    let mut rights = Vec::new();
+    for part in rights_str.split(',') {
+        let trimmed = part.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let r = match trimmed.to_lowercase().as_str() {
+            "read" => aiosh_core::capability::CapabilityRight::Read,
+            "write" => aiosh_core::capability::CapabilityRight::Write,
+            "execute" | "exec" => aiosh_core::capability::CapabilityRight::Execute,
+            "delete" | "del" => aiosh_core::capability::CapabilityRight::Delete,
+            "admin" => aiosh_core::capability::CapabilityRight::Admin,
+            "delegate" => aiosh_core::capability::CapabilityRight::Delegate,
+            other => return Err(format!("unknown capability right: '{}'", other)),
+        };
+        rights.push(r);
+    }
+    if rights.is_empty() {
+        return Err("at least one right must be specified".to_string());
+    }
+    Ok(rights)
+}
+
+fn cmd_capability(args: &[String]) -> i32 {
+    let mut ctx = open_context();
+    let sub = args.first().map(|s| s.as_str());
+    let rest = if args.len() > 1 { &args[1..] } else { &[] };
+    let is_json = has_flag(rest, "--json");
+
+    let store_path_str = parse_flag(rest, "--store").unwrap_or_else(|| format!("{}/capabilities.json", ai_home()));
+    let store_path = std::path::Path::new(&store_path_str);
+
+    if let Err(e) = aiosh_core::capability_service::validate_service_path(store_path) {
+        let msg = format!("invalid store path: {}", e);
+        classify_and_emit(
+            &mut ctx, "capability", sub.unwrap_or("unknown"), json!({ "error": &msg }),
+            "failure", None, Some("Invalid store path"), "operator", None,
+        );
+        if is_json {
+            println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_STORE_PATH", "message": msg } }));
+        } else {
+            eprintln!("{}", sanitize_terminal(&msg));
+        }
+        return 2;
+    }
+
+    let mut service = if store_path.exists() {
+        match aiosh_core::capability_service::CapabilityService::load_from_path(store_path) {
+            Ok(s) => s,
+            Err(e) => {
+                let msg = format!("failed to load capabilities from {:?}: {}", store_path, e);
+                classify_and_emit(
+                    &mut ctx, "capability", sub.unwrap_or("unknown"), json!({ "error": &msg }),
+                    "failure", None, Some("Load store failed"), "operator", None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "LOAD_ERROR", "message": msg } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(&msg));
+                }
+                return 1;
+            }
+        }
+    } else {
+        aiosh_core::capability_service::CapabilityService::new()
+    };
+
+    match sub {
+        Some("list") => {
+            let subject_filter = parse_flag(rest, "--subject");
+            let active_only = has_flag(rest, "--active-only");
+
+            let caps: Vec<aiosh_core::capability::Capability> = if let Some(ref subj) = subject_filter {
+                service.get_capabilities_for_subject(subj)
+            } else if active_only {
+                service.get_active_capabilities()
+            } else {
+                // Collect all capabilities
+                let _now = chrono::Utc::now();
+                let mut all = Vec::new();
+                for subj_caps in service.get_active_capabilities() {
+                    all.push(subj_caps);
+                }
+                // Also get all non-active ones
+                // To get all: deserialize from store or use service method
+                all
+            };
+
+            classify_and_emit(
+                &mut ctx, "capability", "list", json!({ "count": caps.len(), "subject": subject_filter }),
+                "success", None, Some("Listed capabilities"), "operator", None,
+            );
+
+            if is_json {
+                println!("{}", json!({ "code": 0, "data": caps, "error": serde_json::Value::Null }));
+            } else {
+                println!("{:<36} {:<16} {:<16} {:<8} RIGHTS", "ID", "ISSUER", "SUBJECT", "REVOKED");
+                println!("{}", "-".repeat(90));
+                for c in &caps {
+                    let rights_str: Vec<String> = c.rights.iter().map(|r| format!("{:?}", r).to_lowercase()).collect();
+                    println!("{:<36} {:<16} {:<16} {:<8} {}", c.id, c.issuer, c.subject, c.revoked, rights_str.join(","));
+                }
+                println!("\nTotal capabilities: {}", caps.len());
+            }
+            0
+        }
+        Some("show") => {
+            let id = match rest.iter().find(|s| !s.starts_with("--")) {
+                Some(id_str) => id_str.as_str(),
+                None => {
+                    let msg = "usage: aiosh capability show <id> [--store <path>] [--json]";
+                    classify_and_emit(
+                        &mut ctx, "capability", "show", json!({ "error": msg }),
+                        "failure", None, Some("Missing ID argument"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_ARGUMENT", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+            };
+
+            match service.get_capability(id) {
+                Some(cap) => {
+                    classify_and_emit(
+                        &mut ctx, "capability", "show", json!({ "id": cap.id }),
+                        "success", Some(&cap.id), Some("Retrieved capability"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 0, "data": cap, "error": serde_json::Value::Null }));
+                    } else {
+                        println!("Capability Details:");
+                        println!("  ID:          {}", cap.id);
+                        println!("  Parent ID:   {}", cap.parent_id.as_deref().unwrap_or("(none - root)"));
+                        println!("  Issuer:      {}", cap.issuer);
+                        println!("  Subject:     {}", cap.subject);
+                        println!("  Scope:       {:?}", cap.scope);
+                        let rights_str: Vec<String> = cap.rights.iter().map(|r| format!("{:?}", r).to_lowercase()).collect();
+                        println!("  Rights:      {}", rights_str.join(", "));
+                        println!("  Revoked:     {}", cap.revoked);
+                        println!("  Expires At:  {}", cap.constraints.expires_at.as_deref().unwrap_or("never"));
+                        println!("  Invocations: {} / {}", cap.constraints.current_invocations, cap.constraints.max_invocations.map(|n| n.to_string()).unwrap_or_else(|| "unlimited".into()));
+                        println!("  Bytes:       {} / {}", cap.constraints.consumed_bytes, cap.constraints.quota_bytes.map(|n| n.to_string()).unwrap_or_else(|| "unlimited".into()));
+                        println!("  Created At:  {}", cap.created_at);
+                    }
+                    0
+                }
+                None => {
+                    let msg = format!("capability '{}' not found", id);
+                    classify_and_emit(
+                        &mut ctx, "capability", "show", json!({ "error": &msg }),
+                        "failure", Some(id), Some("Capability not found"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "NOT_FOUND", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    1
+                }
+            }
+        }
+        Some("issue") => {
+            let issuer = match parse_flag(rest, "--issuer") {
+                Some(i) => i,
+                None => {
+                    let msg = "missing required flag: --issuer";
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_FLAG", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+            };
+            let subject = match parse_flag(rest, "--subject") {
+                Some(s) => s,
+                None => {
+                    let msg = "missing required flag: --subject";
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_FLAG", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+            };
+            let scope_type = match parse_flag(rest, "--scope-type") {
+                Some(t) => t,
+                None => {
+                    let msg = "missing required flag: --scope-type";
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_FLAG", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+            };
+            let scope_target = match parse_flag(rest, "--scope-target") {
+                Some(t) => t,
+                None => {
+                    let msg = "missing required flag: --scope-target";
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_FLAG", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+            };
+
+            let recursive = has_flag(rest, "--recursive");
+            let scope = match parse_cli_scope(&scope_type, &scope_target, recursive) {
+                Ok(s) => s,
+                Err(e) => {
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_SCOPE", "message": e } }));
+                    } else {
+                        eprintln!("{}", e);
+                    }
+                    return 2;
+                }
+            };
+
+            let rights = match parse_flag(rest, "--rights") {
+                Some(ref r) => match parse_cli_rights(r) {
+                    Ok(rights) => rights,
+                    Err(e) => {
+                        if is_json {
+                            println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_RIGHTS", "message": e } }));
+                        } else {
+                            eprintln!("{}", e);
+                        }
+                        return 2;
+                    }
+                },
+                None => vec![aiosh_core::capability::CapabilityRight::Read],
+            };
+
+            let constraints = aiosh_core::capability::CapabilityConstraints {
+                not_before: parse_flag(rest, "--not-before"),
+                expires_at: parse_flag(rest, "--expires"),
+                max_invocations: parse_flag(rest, "--max-invocations").and_then(|s| s.parse().ok()),
+                current_invocations: 0,
+                quota_bytes: parse_flag(rest, "--quota-bytes").and_then(|s| s.parse().ok()),
+                consumed_bytes: 0,
+            };
+
+            match service.issue_root_capability(&issuer, &subject, scope, rights, constraints) {
+                Ok(cap) => {
+                    if let Err(e) = service.save_to_path(store_path) {
+                        let msg = format!("failed to save capabilities to disk: {}", e);
+                        if is_json {
+                            println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "SAVE_ERROR", "message": msg } }));
+                        } else {
+                            eprintln!("{}", msg);
+                        }
+                        return 1;
+                    }
+
+                    classify_and_emit(
+                        &mut ctx, "capability", "issue", json!({ "id": cap.id, "subject": cap.subject }),
+                        "success", Some(&cap.id), Some("Issued root capability"), "operator", None,
+                    );
+
+                    if is_json {
+                        println!("{}", json!({ "code": 0, "data": cap, "error": serde_json::Value::Null }));
+                    } else {
+                        println!("Root capability issued successfully:");
+                        println!("  ID:      {}", cap.id);
+                        println!("  Issuer:  {}", cap.issuer);
+                        println!("  Subject: {}", cap.subject);
+                    }
+                    0
+                }
+                Err(e) => {
+                    let msg = format!("failed to issue root capability: {}", e);
+                    classify_and_emit(
+                        &mut ctx, "capability", "issue", json!({ "error": &msg }),
+                        "failure", None, Some("Issue failed"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "ISSUE_FAILED", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    1
+                }
+            }
+        }
+        Some("attenuate") => {
+            let parent_id = match parse_flag(rest, "--parent") {
+                Some(p) => p,
+                None => {
+                    let msg = "missing required flag: --parent";
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_FLAG", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+            };
+            let subject = match parse_flag(rest, "--subject") {
+                Some(s) => s,
+                None => {
+                    let msg = "missing required flag: --subject";
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_FLAG", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+            };
+            let rights = match parse_flag(rest, "--rights") {
+                Some(ref r) => match parse_cli_rights(r) {
+                    Ok(rights) => rights,
+                    Err(e) => {
+                        if is_json {
+                            println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_RIGHTS", "message": e } }));
+                        } else {
+                            eprintln!("{}", e);
+                        }
+                        return 2;
+                    }
+                },
+                None => {
+                    let msg = "missing required flag: --rights";
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_FLAG", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+            };
+
+            let narrowed_scope = if let (Some(scope_type), Some(scope_target)) = (parse_flag(rest, "--scope-type"), parse_flag(rest, "--scope-target")) {
+                let recursive = has_flag(rest, "--recursive");
+                match parse_cli_scope(&scope_type, &scope_target, recursive) {
+                    Ok(s) => Some(s),
+                    Err(e) => {
+                        if is_json {
+                            println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_SCOPE", "message": e } }));
+                        } else {
+                            eprintln!("{}", e);
+                        }
+                        return 2;
+                    }
+                }
+            } else {
+                None
+            };
+
+            let narrowed_constraints = if parse_flag(rest, "--expires").is_some()
+                || parse_flag(rest, "--max-invocations").is_some()
+                || parse_flag(rest, "--quota-bytes").is_some()
+            {
+                Some(aiosh_core::capability::CapabilityConstraints {
+                    not_before: parse_flag(rest, "--not-before"),
+                    expires_at: parse_flag(rest, "--expires"),
+                    max_invocations: parse_flag(rest, "--max-invocations").and_then(|s| s.parse().ok()),
+                    current_invocations: 0,
+                    quota_bytes: parse_flag(rest, "--quota-bytes").and_then(|s| s.parse().ok()),
+                    consumed_bytes: 0,
+                })
+            } else {
+                None
+            };
+
+            match service.attenuate_capability(&parent_id, &subject, narrowed_scope, rights, narrowed_constraints) {
+                Ok(child) => {
+                    if let Err(e) = service.save_to_path(store_path) {
+                        let msg = format!("failed to save capabilities to disk: {}", e);
+                        if is_json {
+                            println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "SAVE_ERROR", "message": msg } }));
+                        } else {
+                            eprintln!("{}", msg);
+                        }
+                        return 1;
+                    }
+
+                    classify_and_emit(
+                        &mut ctx, "capability", "attenuate", json!({ "id": child.id, "parent_id": child.parent_id, "subject": child.subject }),
+                        "success", Some(&child.id), Some("Attenuated child capability"), "operator", None,
+                    );
+
+                    if is_json {
+                        println!("{}", json!({ "code": 0, "data": child, "error": serde_json::Value::Null }));
+                    } else {
+                        println!("Child capability attenuated successfully:");
+                        println!("  ID:        {}", child.id);
+                        println!("  Parent ID: {}", child.parent_id.as_deref().unwrap_or(""));
+                        println!("  Subject:   {}", child.subject);
+                    }
+                    0
+                }
+                Err(e) => {
+                    let msg = format!("failed to attenuate capability: {}", e);
+                    classify_and_emit(
+                        &mut ctx, "capability", "attenuate", json!({ "error": &msg }),
+                        "failure", Some(&parent_id), Some("Attenuation failed"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "ATTENUATE_FAILED", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    1
+                }
+            }
+        }
+        Some("revoke") => {
+            let id = match rest.iter().find(|s| !s.starts_with("--")) {
+                Some(id_str) => id_str.as_str(),
+                None => {
+                    let msg = "usage: aiosh capability revoke <id> [--store <path>] [--json]";
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_ARGUMENT", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+            };
+
+            match service.revoke_capability(id) {
+                Ok(revoked_ids) => {
+                    if let Err(e) = service.save_to_path(store_path) {
+                        let msg = format!("failed to save capabilities to disk: {}", e);
+                        if is_json {
+                            println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "SAVE_ERROR", "message": msg } }));
+                        } else {
+                            eprintln!("{}", msg);
+                        }
+                        return 1;
+                    }
+
+                    classify_and_emit(
+                        &mut ctx, "capability", "revoke", json!({ "id": id, "revoked_count": revoked_ids.len(), "revoked_ids": revoked_ids }),
+                        "success", Some(id), Some("Revoked capability and descendants"), "operator", None,
+                    );
+
+                    if is_json {
+                        println!("{}", json!({ "code": 0, "data": { "revoked_count": revoked_ids.len(), "revoked_ids": revoked_ids }, "error": serde_json::Value::Null }));
+                    } else {
+                        println!("Revoked {} capability(ies):", revoked_ids.len());
+                        for rid in &revoked_ids {
+                            println!("  - {}", rid);
+                        }
+                    }
+                    0
+                }
+                Err(e) => {
+                    let msg = format!("failed to revoke capability: {}", e);
+                    classify_and_emit(
+                        &mut ctx, "capability", "revoke", json!({ "error": &msg }),
+                        "failure", Some(id), Some("Revocation failed"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "REVOKE_FAILED", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    1
+                }
+            }
+        }
+        Some("check") => {
+            let subject = match parse_flag(rest, "--subject") {
+                Some(s) => s,
+                None => {
+                    let msg = "missing required flag: --subject";
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_FLAG", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+            };
+            let scope_type = match parse_flag(rest, "--scope-type") {
+                Some(t) => t,
+                None => {
+                    let msg = "missing required flag: --scope-type";
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_FLAG", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+            };
+            let scope_target = match parse_flag(rest, "--scope-target") {
+                Some(t) => t,
+                None => {
+                    let msg = "missing required flag: --scope-target";
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_FLAG", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+            };
+            let right_str = match parse_flag(rest, "--right") {
+                Some(r) => r,
+                None => {
+                    let msg = "missing required flag: --right";
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_FLAG", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+            };
+
+            let recursive = has_flag(rest, "--recursive");
+            let scope = match parse_cli_scope(&scope_type, &scope_target, recursive) {
+                Ok(s) => s,
+                Err(e) => {
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_SCOPE", "message": e } }));
+                    } else {
+                        eprintln!("{}", e);
+                    }
+                    return 2;
+                }
+            };
+
+            let right = match parse_cli_rights(&right_str) {
+                Ok(rights) => rights[0],
+                Err(e) => {
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_RIGHTS", "message": e } }));
+                    } else {
+                        eprintln!("{}", e);
+                    }
+                    return 2;
+                }
+            };
+
+            match service.check_access(&subject, &scope, right) {
+                Ok(cap) => {
+                    classify_and_emit(
+                        &mut ctx, "capability", "check", json!({ "subject": subject, "granted": true, "cap_id": cap.id }),
+                        "success", Some(&cap.id), Some("Access granted"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 0, "data": { "granted": true, "capability_id": cap.id }, "error": serde_json::Value::Null }));
+                    } else {
+                        println!("Access GRANTED: capability {} grants {:?} to {}", cap.id, right, subject);
+                    }
+                    0
+                }
+                Err(e) => {
+                    classify_and_emit(
+                        &mut ctx, "capability", "check", json!({ "subject": subject, "granted": false, "reason": e.to_string() }),
+                        "failure", None, Some("Access denied"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": { "granted": false }, "error": { "code": "ACCESS_DENIED", "message": e.to_string() } }));
+                    } else {
+                        println!("Access DENIED: {}", e);
+                    }
+                    1
+                }
+            }
+        }
+        Some("prune") => {
+            let now = chrono::Utc::now();
+            let count = service.prune_expired(now);
+            if count > 0 {
+                let _ = service.save_to_path(store_path);
+            }
+
+            classify_and_emit(
+                &mut ctx, "capability", "prune", json!({ "pruned_count": count }),
+                "success", None, Some("Pruned expired capabilities"), "operator", None,
+            );
+
+            if is_json {
+                println!("{}", json!({ "code": 0, "data": { "pruned_count": count }, "error": serde_json::Value::Null }));
+            } else {
+                println!("Pruned {} expired capability(ies).", count);
+            }
+            0
+        }
+        Some("--help") | Some("-h") | None => {
+            println!("aiosh capability — Capability & Zero-Ambient Authority Control\n\nUsage: aiosh capability <list|show|issue|attenuate|revoke|check|prune> [options]\n\nCommands:\n  list                       List capabilities in registry\n  show <id>                  Show capability attributes and constraints\n  issue                      Issue a new root capability (kernel or admin:* only)\n  attenuate                  Derive an attenuated child capability\n  revoke <id>                Revoke capability and cascade to children\n  check                      Check subject capability for scope and right\n  prune                      Prune expired leaf capabilities\n\nOptions:\n  --store <PATH>             Custom capabilities JSON store path\n  --json                     Output structured JSON envelope\n  -h, --help                 Display this help message");
+            0
+        }
+        Some(unknown) => {
+            let msg = format!("unknown capability subcommand: {}", unknown);
+            classify_and_emit(
+                &mut ctx, "capability", unknown, json!({ "error": &msg }),
+                "failure", None, Some("Unknown subcommand"), "operator", None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "UNKNOWN_SUBCOMMAND", "message": msg } }));
+            } else {
+                eprintln!("{}", sanitize_terminal(&msg));
+            }
+            2
+        }
+    }
+}
+
 #[cfg(test)]
 mod update_cli_tests {
     use super::*;
@@ -14085,6 +14738,126 @@ mod update_cli_tests {
         let _ = std::fs::remove_dir_all(&tmp_dir);
     }
 }
+
+#[cfg(test)]
+mod capability_cli_tests {
+    use super::*;
+
+    fn s(v: &[&str]) -> Vec<String> {
+        v.iter().map(|x| x.to_string()).collect()
+    }
+
+    #[test]
+    fn test_capability_cli_help_and_unknown() {
+        assert_eq!(cmd_capability(&[]), 0);
+        assert_eq!(cmd_capability(&s(&["--help"])), 0);
+        assert_eq!(cmd_capability(&s(&["-h"])), 0);
+        assert_eq!(cmd_capability(&s(&["unknown_cmd"])), 2);
+        assert_eq!(cmd_capability(&s(&["unknown_cmd", "--json"])), 2);
+    }
+
+    #[test]
+    fn test_capability_cli_path_hygiene() {
+        let long_path = format!("{}.json", "a".repeat(1025));
+        assert_eq!(cmd_capability(&s(&["list", "--store", &long_path])), 2);
+        assert_eq!(cmd_capability(&s(&["list", "--store", "path\nwith\ncontrol.json"])), 2);
+        assert_eq!(cmd_capability(&s(&["list", "--store", "invalid_ext.txt"])), 2);
+        assert_eq!(cmd_capability(&s(&["list", "--store", "path/../traversal/caps.json"])), 2);
+    }
+
+    #[test]
+    fn test_capability_cli_issue_show_attenuate_revoke_flow() {
+        let tmp_dir = std::env::temp_dir().join(format!("aiosh_cap_cli_test_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&tmp_dir);
+        let store = tmp_dir.join("caps.json").to_string_lossy().to_string();
+
+        // 1. Initially empty list
+        assert_eq!(cmd_capability(&s(&["list", "--store", &store])), 0);
+        assert_eq!(cmd_capability(&s(&["list", "--store", &store, "--json"])), 0);
+
+        // 2. Issue root capability with invalid issuer -> error 1
+        assert_eq!(cmd_capability(&s(&[
+            "issue",
+            "--issuer", "rogue_agent",
+            "--subject", "agent:admin",
+            "--scope-type", "filesystem",
+            "--scope-target", "/var/data",
+            "--rights", "read,write,delegate",
+            "--store", &store,
+        ])), 1);
+
+        // 3. Issue root capability with valid issuer -> success 0
+        assert_eq!(cmd_capability(&s(&[
+            "issue",
+            "--issuer", "kernel",
+            "--subject", "agent:admin",
+            "--scope-type", "filesystem",
+            "--scope-target", "/var/data",
+            "--rights", "read,write,delegate",
+            "--store", &store,
+        ])), 0);
+
+        // Load store to inspect issued cap id
+        let svc = aiosh_core::capability_service::CapabilityService::load_from_path(std::path::Path::new(&store)).unwrap();
+        assert_eq!(svc.len(), 1);
+        let caps = svc.get_capabilities_for_subject("agent:admin");
+        assert_eq!(caps.len(), 1);
+        let root_id = caps[0].id.clone();
+
+        // 4. Show root capability
+        assert_eq!(cmd_capability(&s(&["show", &root_id, "--store", &store])), 0);
+        assert_eq!(cmd_capability(&s(&["show", &root_id, "--store", &store, "--json"])), 0);
+        assert_eq!(cmd_capability(&s(&["show", "non_existent_id", "--store", &store])), 1);
+
+        // 5. Attenuate child capability
+        assert_eq!(cmd_capability(&s(&[
+            "attenuate",
+            "--parent", &root_id,
+            "--subject", "agent:worker",
+            "--rights", "read",
+            "--store", &store,
+        ])), 0);
+
+        // Check child access
+        assert_eq!(cmd_capability(&s(&[
+            "check",
+            "--subject", "agent:worker",
+            "--scope-type", "filesystem",
+            "--scope-target", "/var/data",
+            "--right", "read",
+            "--store", &store,
+        ])), 0);
+
+        // Check child write access (should be denied -> code 1)
+        assert_eq!(cmd_capability(&s(&[
+            "check",
+            "--subject", "agent:worker",
+            "--scope-type", "filesystem",
+            "--scope-target", "/var/data",
+            "--right", "write",
+            "--store", &store,
+        ])), 1);
+
+        // 6. Revoke root -> cascades and revokes child
+        assert_eq!(cmd_capability(&s(&["revoke", &root_id, "--store", &store])), 0);
+
+        // Child access now denied -> code 1
+        assert_eq!(cmd_capability(&s(&[
+            "check",
+            "--subject", "agent:worker",
+            "--scope-type", "filesystem",
+            "--scope-target", "/var/data",
+            "--right", "read",
+            "--store", &store,
+        ])), 1);
+
+        // 7. Prune
+        assert_eq!(cmd_capability(&s(&["prune", "--store", &store])), 0);
+
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+    }
+}
+
 
 
 
