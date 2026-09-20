@@ -98,7 +98,14 @@ def test_tool_registration():
     print("TEST: tool registration via tools/list ...", end=" ")
     tools = list_mcp_tools()
     tool_names = {t["name"] for t in tools}
-    assert "aios.pep.evaluate" in tool_names, "aios.pep.evaluate missing from tools/list"
+    for expected in [
+        "aios.pep.evaluate",
+        "aios.pep.status",
+        "aios.pep.rule_add",
+        "aios.pep.rule_list",
+        "aios.pep.rule_remove",
+    ]:
+        assert expected in tool_names, f"{expected} missing from tools/list"
     print("OK")
 
 
@@ -169,10 +176,108 @@ def test_pep_evaluation():
     print("OK")
 
 
+def test_pep_persistent_lifecycle():
+    print("TEST: PEP MCP persistent lifecycle (status, rule_add, list, eval, remove) ...", end=" ")
+    import tempfile
+    import os
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        store_path = os.path.join(tmpdir, "pep_store.json")
+
+        # 1. Status on empty store
+        st = call_mcp_tool("aios.pep.status", {"store_path": store_path})
+        assert st.get("ok") is True, f"status failed: {st}"
+        assert st.get("rules_count") == 0, f"expected 0 rules, got {st}"
+
+        # 2. Add rule
+        add_res = call_mcp_tool("aios.pep.rule_add", {
+            "id": "rule_worker_read",
+            "subject": "agent:worker",
+            "resource": "fs:/tmp/*",
+            "action": "read",
+            "effect": "permit",
+            "description": "Allow worker reading tmp",
+            "store_path": store_path,
+        })
+        assert add_res.get("ok") is True, f"rule_add failed: {add_res}"
+        assert add_res.get("rule", {}).get("id") == "rule_worker_read"
+
+        # 3. Add second rule (deny)
+        add_deny = call_mcp_tool("aios.pep.rule_add", {
+            "id": "rule_worker_deny_secret",
+            "subject": "agent:worker",
+            "resource": "fs:/tmp/secret.key",
+            "action": "read",
+            "effect": "deny",
+            "description": "Deny reading secret",
+            "store_path": store_path,
+        })
+        assert add_deny.get("ok") is True, f"rule_add deny failed: {add_deny}"
+
+        # 4. List rules
+        listed = call_mcp_tool("aios.pep.rule_list", {"store_path": store_path})
+        assert listed.get("ok") is True, f"rule_list failed: {listed}"
+        assert listed.get("count") == 2, f"expected 2 rules, got {listed}"
+
+        # 5. List with filter
+        filtered = call_mcp_tool("aios.pep.rule_list", {"subject": "agent:worker", "store_path": store_path})
+        assert filtered.get("ok") is True
+        assert filtered.get("count") == 2
+
+        no_match = call_mcp_tool("aios.pep.rule_list", {"subject": "agent:admin", "store_path": store_path})
+        assert no_match.get("ok") is True
+        assert no_match.get("count") == 0
+
+        # 6. Evaluate against persistent store
+        ev_allow = call_mcp_tool("aios.pep.evaluate", {
+            "subject": "agent:worker",
+            "resource": "fs:/tmp/data.csv",
+            "action": "read",
+            "store_path": store_path,
+        })
+        assert ev_allow.get("ok") is True, f"evaluate allowed failed: {ev_allow}"
+        assert ev_allow.get("decision", {}).get("allowed") is True
+
+        ev_deny = call_mcp_tool("aios.pep.evaluate", {
+            "subject": "agent:worker",
+            "resource": "fs:/tmp/secret.key",
+            "action": "read",
+            "store_path": store_path,
+        })
+        assert ev_deny.get("ok") is True, f"evaluate deny failed: {ev_deny}"
+        assert ev_deny.get("decision", {}).get("allowed") is False
+
+        # 7. Remove rule
+        rm_res = call_mcp_tool("aios.pep.rule_remove", {
+            "id": "rule_worker_deny_secret",
+            "store_path": store_path,
+        })
+        assert rm_res.get("ok") is True, f"rule_remove failed: {rm_res}"
+        assert rm_res.get("removed") is True
+
+        # Verify removal
+        st_after = call_mcp_tool("aios.pep.status", {"store_path": store_path})
+        assert st_after.get("rules_count") == 1
+
+        # 8. Remove non-existent rule should return error
+        rm_nonexist = call_mcp_tool("aios.pep.rule_remove", {
+            "id": "nonexistent_rule",
+            "store_path": store_path,
+        })
+        assert rm_nonexist.get("ok") is False, f"expected error on nonexistent rule: {rm_nonexist}"
+
+        # 9. Path traversal protection
+        bad_path = call_mcp_tool("aios.pep.status", {"store_path": "../../../etc/shadow.json"})
+        assert bad_path.get("ok") is False, f"expected rejection on path traversal: {bad_path}"
+
+    print("OK")
+
+
 def main():
     print("=== PEP Decision Engine MCP Smoke Test ===")
     test_tool_registration()
     test_pep_evaluation()
+    test_pep_persistent_lifecycle()
     print("=== All PEP Decision Engine smoke tests passed ===")
 
 

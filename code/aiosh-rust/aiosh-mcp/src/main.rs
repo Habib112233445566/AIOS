@@ -1806,6 +1806,65 @@ impl Server {
                 "additionalProperties": false
             }
         }));
+        tools.push(json!({
+            "name": "aios.pep.rule_add",
+            "description": "Add a policy rule to the persistent PEP Decision Engine store",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string", "description": "Unique rule identifier" },
+                    "subject": { "type": "string", "description": "Target subject or wildcard" },
+                    "resource": { "type": "string", "description": "Target resource URI or wildcard" },
+                    "action": { "type": "string", "description": "Target action or wildcard" },
+                    "effect": { "type": "string", "enum": ["permit", "deny"], "description": "Rule effect" },
+                    "description": { "type": "string", "description": "Optional human-readable description" },
+                    "store_path": { "type": "string", "description": "Optional custom policy store path" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "required": ["id", "effect"],
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.pep.rule_list",
+            "description": "List policy rules registered in the PEP Decision Engine",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "subject": { "type": "string", "description": "Optional subject filter" },
+                    "action": { "type": "string", "description": "Optional action filter" },
+                    "store_path": { "type": "string", "description": "Optional custom policy store path" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.pep.rule_remove",
+            "description": "Remove a policy rule from the PEP Decision Engine by ID",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string", "description": "Identifier of the rule to remove" },
+                    "store_path": { "type": "string", "description": "Optional custom policy store path" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "required": ["id"],
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.pep.status",
+            "description": "Get PEP Decision Engine status, rule count, and capacity metrics",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "store_path": { "type": "string", "description": "Optional custom policy store path" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
         tools
     }
 
@@ -6323,6 +6382,7 @@ impl Server {
                 let action = arguments.get("action").and_then(|v| v.as_str()).unwrap_or("").to_string();
                 let algo_str = arguments.get("algorithm").and_then(|v| v.as_str()).unwrap_or("deny_overrides").to_string();
                 let rules_val = arguments.get("rules").cloned();
+                let store_path_str = arguments.get("store_path").and_then(|v| v.as_str()).unwrap_or(".aios/pep_policies.json").to_string();
 
                 let f = move || -> Result<Value, String> {
                     let req = aiosh_core::pep_decision::PepRequest::new(&subject, &resource, &action, None)
@@ -6334,13 +6394,19 @@ impl Server {
                         _ => aiosh_core::pep_decision::PepCombiningAlgorithm::DenyOverrides,
                     };
 
-                    let rules: Vec<aiosh_core::pep_decision::PepPolicyRule> = if let Some(ref val) = rules_val {
-                        serde_json::from_value(val.clone()).map_err(|e| format!("invalid rules array: {}", e))?
+                    let decision = if let Some(ref val) = rules_val {
+                        let rules: Vec<aiosh_core::pep_decision::PepPolicyRule> = serde_json::from_value(val.clone())
+                            .map_err(|e| format!("invalid rules array: {}", e))?;
+                        aiosh_core::pep_decision::evaluate_rules(&rules, &req, algo)
                     } else {
-                        Vec::new()
+                        let path = std::path::Path::new(&store_path_str);
+                        let (service, _rec, _quar) = if path.exists() {
+                            aiosh_core::pep_decision_service::PepDecisionService::load_or_recover(path)
+                        } else {
+                            (aiosh_core::pep_decision_service::PepDecisionService::new(), false, None)
+                        };
+                        service.evaluate_with_algorithm(&req, algo)
                     };
-
-                    let decision = aiosh_core::pep_decision::evaluate_rules(&rules, &req, algo);
                     decision.validate_invariants().map_err(|e| format!("decision invariant error: {}", e))?;
 
                     Ok(json!({
@@ -6352,6 +6418,182 @@ impl Server {
                 dispatch::recorded_call(
                     &mut self.ring, &self.pep,
                     "aios.pep.evaluate", "Evaluate authorization request", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.pep.rule_add" => {
+                let id = arguments.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let subject = arguments.get("subject").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let resource = arguments.get("resource").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let action = arguments.get("action").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let effect_str = arguments.get("effect").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let desc = arguments.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let store_path_str = arguments.get("store_path").and_then(|v| v.as_str()).unwrap_or(".aios/pep_policies.json").to_string();
+
+                let f = move || -> Result<Value, String> {
+                    if id.is_empty() || id.len() > 128 || id.chars().any(|c| c.is_control()) {
+                        return Err("invalid rule id: must be non-empty, <= 128 chars, and contain no control characters".into());
+                    }
+                    let effect = match effect_str.to_ascii_lowercase().as_str() {
+                        "permit" => aiosh_core::pep_decision::PepDecisionEffect::Permit,
+                        "deny" => aiosh_core::pep_decision::PepDecisionEffect::Deny,
+                        _ => return Err("invalid effect: must be 'permit' or 'deny'".into()),
+                    };
+
+                    let path = std::path::Path::new(&store_path_str);
+                    aiosh_core::pep_decision_service::validate_pep_service_path(path)?;
+
+                    let (mut service, _rec, _quar) = if path.exists() {
+                        aiosh_core::pep_decision_service::PepDecisionService::load_or_recover(path)
+                    } else {
+                        (aiosh_core::pep_decision_service::PepDecisionService::new(), false, None)
+                    };
+
+                    let rule = aiosh_core::pep_decision::PepPolicyRule {
+                        id: id.clone(),
+                        target_subject: subject.clone(),
+                        target_resource: resource.clone(),
+                        target_action: action.clone(),
+                        effect,
+                        obligations: Vec::new(),
+                        description: desc.clone(),
+                    };
+
+                    service.add_rule(rule.clone())?;
+                    service.save_to_path(path)?;
+
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.pep.rule_add",
+                        "rule": rule,
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.pep.rule_add", "Add policy rule", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.pep.rule_list" => {
+                let subject_opt = arguments.get("subject").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let action_opt = arguments.get("action").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let store_path_str = arguments.get("store_path").and_then(|v| v.as_str()).unwrap_or(".aios/pep_policies.json").to_string();
+
+                let f = move || -> Result<Value, String> {
+                    let path = std::path::Path::new(&store_path_str);
+                    aiosh_core::pep_decision_service::validate_pep_service_path(path)?;
+
+                    let (service, _rec, _quar) = if path.exists() {
+                        aiosh_core::pep_decision_service::PepDecisionService::load_or_recover(path)
+                    } else {
+                        (aiosh_core::pep_decision_service::PepDecisionService::new(), false, None)
+                    };
+
+                    let all_rules = service.list_rules();
+                    let filtered: Vec<aiosh_core::pep_decision::PepPolicyRule> = all_rules.into_iter().filter(|r| {
+                        if let Some(ref s) = subject_opt {
+                            if r.target_subject.as_ref() != Some(s) {
+                                return false;
+                            }
+                        }
+                        if let Some(ref a) = action_opt {
+                            if r.target_action.as_ref() != Some(a) {
+                                return false;
+                            }
+                        }
+                        true
+                    }).collect();
+
+                    let count = filtered.len();
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.pep.rule_list",
+                        "rules": filtered,
+                        "count": count,
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.pep.rule_list", "List policy rules", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.pep.rule_remove" => {
+                let id = arguments.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let store_path_str = arguments.get("store_path").and_then(|v| v.as_str()).unwrap_or(".aios/pep_policies.json").to_string();
+
+                let f = move || -> Result<Value, String> {
+                    if id.is_empty() || id.len() > 128 || id.chars().any(|c| c.is_control()) {
+                        return Err("invalid rule id: must be non-empty, <= 128 chars, and contain no control characters".into());
+                    }
+
+                    let path = std::path::Path::new(&store_path_str);
+                    aiosh_core::pep_decision_service::validate_pep_service_path(path)?;
+
+                    let (mut service, _rec, _quar) = if path.exists() {
+                        aiosh_core::pep_decision_service::PepDecisionService::load_or_recover(path)
+                    } else {
+                        (aiosh_core::pep_decision_service::PepDecisionService::new(), false, None)
+                    };
+
+                    if service.remove_rule(&id) {
+                        service.save_to_path(path)?;
+                        Ok(json!({
+                            "ok": true,
+                            "tool": "aios.pep.rule_remove",
+                            "removed": true,
+                            "id": id,
+                        }))
+                    } else {
+                        Err(format!("rule '{}' not found", id))
+                    }
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.pep.rule_remove", "Remove policy rule", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.pep.status" => {
+                let store_path_str = arguments.get("store_path").and_then(|v| v.as_str()).unwrap_or(".aios/pep_policies.json").to_string();
+
+                let f = move || -> Result<Value, String> {
+                    let path = std::path::Path::new(&store_path_str);
+                    aiosh_core::pep_decision_service::validate_pep_service_path(path)?;
+
+                    let (service, _rec, _quar) = if path.exists() {
+                        aiosh_core::pep_decision_service::PepDecisionService::load_or_recover(path)
+                    } else {
+                        (aiosh_core::pep_decision_service::PepDecisionService::new(), false, None)
+                    };
+
+                    let all_rules = service.list_rules();
+                    let mut subjects = std::collections::HashSet::new();
+                    let mut actions = std::collections::HashSet::new();
+                    for r in &all_rules {
+                        if let Some(ref s) = r.target_subject {
+                            subjects.insert(s.clone());
+                        }
+                        if let Some(ref a) = r.target_action {
+                            actions.insert(a.clone());
+                        }
+                    }
+
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.pep.status",
+                        "rules_count": all_rules.len(),
+                        "max_capacity": aiosh_core::pep_decision_service::MAX_RULES_IN_SERVICE,
+                        "unique_subjects": subjects.len(),
+                        "unique_actions": actions.len(),
+                        "default_algorithm": "deny_overrides",
+                        "store_path": path.to_string_lossy(),
+                        "store_exists": path.exists(),
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.pep.status", "Get PEP status", arguments,
                     None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
                 )
             }

@@ -171,22 +171,49 @@ The decision engine is exposed to agents and tools via `aios.pep.evaluate`.
 
 ---
 
-## 6. CLI Surface Preview (`aiosh pep`)
+---
 
-The engine provides operator CLI tooling:
+## 6. CLI Surface Reference (`aiosh pep`)
+
+The engine provides comprehensive operator CLI tooling via `aiosh pep`:
+
+### 6.1 Commands & Syntax
 ```bash
-# Evaluate authorization request
-aiosh pep evaluate --subject agent:analyst --action read --resource fs:/data/stats.json --json
+# Evaluate authorization request (exit code 0 = Permit, 1 = Deny, 2 = Error)
+aiosh pep evaluate --subject <SUBJECT> --action <ACTION> --resource <RESOURCE> [--algorithm <ALG>] [--store <PATH>] [--json]
 
 # Add a policy rule
-aiosh pep rule-add --id rule-1 --subject agent:analyst --action read --resource fs:/data/* --effect permit
+aiosh pep rule-add --id <ID> --subject <SUBJECT> --action <ACTION> --resource <RESOURCE> --effect <permit|deny> [--priority <INT>] [--desc <TEXT>] [--store <PATH>] [--json]
 
 # List active policy rules
-aiosh pep rule-list --subject agent:analyst
+aiosh pep rule-list [--subject <SUBJECT>] [--action <ACTION>] [--store <PATH>] [--json]
+
+# Remove a policy rule
+aiosh pep rule-remove <ID> [--store <PATH>] [--json]
 
 # Show engine status and capacity
-aiosh pep status
+aiosh pep status [--store <PATH>] [--json]
 ```
+
+### 6.2 Exit Code Semantics
+- `0`: Success (for `evaluate`: Access `PERMIT`).
+- `1`: Failure / Denied (for `evaluate`: Access `DENY`; or rule not found).
+- `2`: Validation / Syntax / Hygiene error (missing flags, invalid effect, path traversal).
+
+### 6.3 Structured JSON Envelope
+When `--json` is specified, outputs adhere to:
+```json
+{
+  "code": 0,
+  "data": { ... },
+  "error": null
+}
+```
+
+### 6.4 Constraints & Known Limitations
+- Resource paths must not contain `..` path traversal segments.
+- Policy store files must have a `.json` extension.
+- Maximum rule capacity is 5000 rules.
 
 ---
 
@@ -207,3 +234,14 @@ aiosh pep status
 - `T-02118`: [Core Service Hardening](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02118-core-service-hardening.md)
 - `T-02119`: [Core Service Documentation](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02119-core-service-documentation.md)
 - `T-02120`: [Core Service Verification & Evidence](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02120-core-service-verification-evidenc.md)
+- `T-02121`: [CLI Surface Research](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02121-cli-surface-research.md)
+- `T-02122`: [CLI Surface Specification](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02122-cli-surface-specification.md)
+- `T-02123`: [CLI Surface Scaffold](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02123-cli-surface-scaffold.md)
+- `T-02124`: [CLI Surface Implementation](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02124-cli-surface-implementation.md)
+- `T-02125`: [CLI Surface Unit Tests](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02125-cli-surface-unit-test.md)
+- `T-02126`: [CLI Surface Integration](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02126-cli-surface-integration.md)
+- `T-02127`: [CLI Surface Security Review](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02127-cli-surface-security-review.md)
+- `T-02128`: [CLI Surface Hardening](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02128-cli-surface-hardening.md)
+- `T-02129`: [CLI Surface Documentation](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02129-cli-surface-documentation.md)
+- `T-02130`: [CLI Surface Verification & Evidence](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02130-cli-surface-verification-evidenc.md)
+
