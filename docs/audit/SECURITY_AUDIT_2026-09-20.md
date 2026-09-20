@@ -2588,6 +2588,39 @@ Still not read line-by-line (next pass starts here): `dist/*.js` bundles (transp
 
 ---
 
+## TWELFTH PASS — fuzzing + verification pass: M-17 settled by live probe, H-12/N-23 demonstrated, fuzz corpus clean
+
+Method: structured fuzzing of the `aiosh-mcp.exe` JSON-RPC surface (malformed frames, 100 KB strings, control chars, deep traversal, 6 000-byte Windows paths, 6 000-char multibyte emoji, CRLF runs, negative-huge numerics × 7 tools), `aios.update.confirm` version-field fuzz, an end-to-end `aios.audit.seen` bloom-poisoning probe (create → rotate → poison `bloom_m_bits` → query), a segment-tamper `verify full` probe, and a direct Python-classifier differential probe for H-12. All against the real binaries, no grants where the finding claims ungated access, isolated temp `AIOSH_HOME`, no source edits.
+
+### M-17 — SETTLED, SPLIT VERDICT: `aios.audit.seen` PANIC CONFIRMED (Medium, DoS); the `verify full` half is DISPROVEN
+- **Confirmed half (the precise claim of the original finding):** with a segment row's `bloom_m_bits` poisoned in `audit.db` (self-service grant → `aios.audit.rotate` → SQLite `UPDATE audit_segments SET bloom_m_bits=999999999999`), the very next `aios.audit.seen` call panics the server: `thread 'main' panicked at aiosh-core\src\retention.rs:91:13: index out of bounds: the len is 128 but the index is 18973140212`, process exit code **101**. The tool used to detect DB tampering is crashed by DB tampering, exactly as the finding claimed (`bits[idx>>3]` at `retention.rs:84-92` indexed with the row-controlled `m as usize`, over `hex_to_bytes(row-controlled bloom_hex)`).
+- **Refuted half (noted at pass-2 as part of the same entry):** the `verify full` segment-tamper path does **not** panic — after corrupting `segment-000001.jsonl`, `aios.audit.verify {"full":true}` returned a clean structured report (`ok:false, broken_segment:1, error:"archive sha256 mismatch: …"`), and a tampered *live* row also reports cleanly (`broken_at:1`). The current `retention.rs` full-verify path (read at lines 650-729) returns a structured `VerifyFullResult` on every failure mode: missing file, read error, sha256 mismatch, genesis-link break, line-count mismatch. No panic path was found there.
+- Fix (two lines, unchanged from the original recommendation): mask `idx` with `m-1` (i.e. `(big % m) as usize` already guarantees `idx < m`, but the bounds bug is `bits.len() != m/8` — so validate `bloom_hex.len() == bloom_m_bits/8` before use, or clamp the index against `bits.len()`).
+- Status: DEMONSTRATED (seen path) / DISPROVEN (verify-full path); severity stands at Medium (remote DoS of the audit subsystem from a tampered DB, consistent with the threat model where the DB is attacker-writable per N-4/M-9).
+
+### H-12 — Python half now DEMONSTRATED
+- Probe: `aiosh_mcp.classifier.classify("task.create", None, args)` with the identical injection string placed (a) at top level → `overall_verdict: refused`, (b) three levels deep (`{"options":{"deep":{"payload": …}}}`) → `overall_verdict: ok`. The classifier's string scan sees only top-level values plus one array level, so the same payload is refused when flat and waved through when nested.
+- TS half remains STATIC (TS `constitution.ts` scanner read in pass 7 shows the same shallow-walk pattern, not yet exercised live).
+- Status: DEMONSTRATED (Python half). Severity stands at High (the classifier feeds the audit chain's classification evidence; the verdict `ok` is recorded as provenance).
+
+### N-23 — now DEMONSTRATED (file-read JSON oracle)
+- Probe: `aios.update.check {"manifest_path":"<tmp>/secrets.json","state_dir":…}` (ungated) with a valid-JSON file → accepted (transitioned to downloading); the same call with a non-JSON file → rejected with a parse error. The oracle distinguishes "path exists && is valid JSON" from everything else, from any readable absolute path (≤1 MB, no root confinement; `..`-blocks are bypassed by absolute paths).
+- Status: DEMONSTRATED. Severity stands at Medium.
+
+### Fuzz results (negative results recorded honestly)
+- JSON-RPC malformed frames (empty, garbage, truncated, missing params, null tool name, 1e30 id, 100-deep nested `rules` array): all handled — parse errors answered with `-32700`, unknown tools with structured `unknown tool` errors; **no crashes, no panics**.
+- 7-value × 5-tool argument fuzz (100 KB strings, control chars, deep traversal, 5 000-char Win paths, 6 000-char multibyte, CRLF runs, huge negatives): **zero panics, zero hangs**. Length/control-char validation at the MCP boundary (`validate_mcp_string` etc.) holds.
+- `aios.update.confirm` version fuzz (200-char, traversal, SQL-quote payloads): all REFUSED by the 64-char/control-char check. **No injection.**
+- Path-leak scan across all error responses: no absolute user-path leakage detected in error text beyond the already-recorded temp-path echo in some error strings (minor; not elevated).
+- The H-6 byte-slice panic class was **not** reachable through any probed tool surface — the doc-search slicing (`kernel_module_doc.rs:167`, `hardware_doc.rs:192`) remains latent behind compile-time-constant content, as recorded.
+- Disproven this pass: M-17's verify-full half (see above). No other finding changed status.
+
+### Coverage
+This pass: fuzzing + targeted probes only — no new files read line-by-line (source tree unchanged since pass 11; `main.rs` mtime Sep 21 00:47 checked).
+Next pass starts here: any newly-added modules (parallel threads are landing `pep_*`/`capability_*` code continuously — every pass 7-11 found its significant findings in fresh code), plus the still-open STATIC claims most amenable to probing: N-6 (sandbox `--policy` argv scan), N-8's Python `session.check` twin, M-5 (Windows ledger lock), M-9/M-10 (audit-ring DB tampering classes).
+
+---
+
 ## 43. Post-Audit Addendum: Batch T-02146 through T-02155 Verification
 
 **Date:** 2026-09-21  
