@@ -86,8 +86,16 @@ impl SystemUpdateObservabilityReport {
         let staged_payload_bytes: u64 = service
             .staged_artifacts
             .values()
-            .filter_map(|p| std::fs::metadata(p).ok().map(|meta| meta.len()))
-            .sum();
+            .filter_map(|p| {
+                std::fs::symlink_metadata(p).ok().and_then(|meta| {
+                    if meta.file_type().is_file() {
+                        Some(meta.len())
+                    } else {
+                        None
+                    }
+                })
+            })
+            .fold(0u64, |acc, b| acc.saturating_add(b));
 
         let (policy_verdict, policy_violations_count, policy_mode) = if let Some(policy) = policy_opt {
             if let Some(ref m) = service.active_manifest {
@@ -136,5 +144,39 @@ impl SystemUpdateObservabilityReport {
     pub fn to_json(&self) -> Result<String, String> {
         serde_json::to_string_pretty(self)
             .map_err(|e| format!("failed to serialize observability report: {}", e))
+    }
+
+    /// Persists observability report atomically to disk with symlink and size limit protections.
+    pub fn save_to_file(&self, path: &std::path::Path) -> Result<(), String> {
+        let json_str = self.to_json()?;
+        if json_str.len() > 1024 * 1024 {
+            return Err("observability report exceeds maximum serialized size (1 MB)".to_string());
+        }
+
+        if let Ok(meta) = std::fs::symlink_metadata(path) {
+            if meta.file_type().is_symlink() {
+                return Err(format!("destination path {:?} is a symlink (symlink attack rejected)", path));
+            }
+        }
+
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("failed to create parent directories for {:?}: {}", path, e))?;
+        }
+
+        let tmp_path = format!("{}.tmp.{}", path.to_string_lossy(), std::process::id());
+        let tmp_path = std::path::PathBuf::from(tmp_path);
+
+        if let Err(e) = std::fs::write(&tmp_path, json_str.as_bytes()) {
+            let _ = std::fs::remove_file(&tmp_path);
+            return Err(format!("failed to write temporary observability file {:?}: {}", tmp_path, e));
+        }
+
+        if let Err(e) = std::fs::rename(&tmp_path, path) {
+            let _ = std::fs::remove_file(&tmp_path);
+            return Err(format!("failed to rename temporary file to {:?}: {}", path, e));
+        }
+
+        Ok(())
     }
 }

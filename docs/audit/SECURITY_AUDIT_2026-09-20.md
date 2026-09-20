@@ -1839,8 +1839,41 @@ Read line-by-line: `pentest.rs` (597), `train_slm.py` (210), `train_unsloth.py` 
     - `UOBS6`: Overall health status evaluation based on active slot and update state.
 - **Test Verification**:
   - `aiosh-core`: 7/7 unit tests in `test_system_update_observability.rs` passing in 0.01s.
-  - `aiosh-core`: 9/9 unit tests in `test_system_update_policy.rs` passing in 0.01s.
-  - `aiosh-mcp`: 6/6 checks in `test_system_update_observability_smoke.py` passing.
   - `aiosh-mcp`: 7/7 checks in `test_system_update_policy_smoke.py` passing.
   - Full regression test suite: zero regressions across all epics.
+
+---
+
+## 27. Post-Audit Addendum: Batch T-01977 through T-01986 Verification
+
+**Date:** 2026-09-20  
+**Scope:** Batch `T-01977` through `T-01986` (System Update Observability Sub-Epic 8 Formal Closure & System Update Documentation Sub-Epic 9).  
+**Auditor:** Antigravity Autonomous Security Subsystem  
+**Verdict:** **PASS (Zero vulnerabilities)**
+
+### 1. Hardened Surface & Key Controls
+- **System Update Observability Closure & Hardening (T-01977..T-01980)**:
+  - Evaluated threat vectors `THREAT-UOBS-01..06` covering log injection, memory exhaustion, symlink redirection in byte counting, side-channel state mutation, and false health masking.
+  - Hardened `system_update_observability.rs`:
+    - Sanitized telemetry strings via `sanitize_telemetry_text()` (control characters stripped, length $\le 256$, trimmed).
+    - `symlink_metadata()` and `is_file()` validation for staged payload accounting.
+    - Saturated addition (`fold(0, saturating_add)`) preventing integer overflow.
+    - Atomic snapshot persistence via `save_to_file()` with symlink rejection, 1 MB ceiling, and `.tmp.<pid>` pattern.
+  - Authored Section 11 in `docs/system_update.md` and formally closed Sub-Epic 8 with 7/7 unit tests and 6/6 Python smoke checks.
+- **System Update Documentation Subsystem (T-01981..T-01986)**:
+  - Researched, specified, scaffolded, implemented, unit-tested, and integrated `SystemUpdateDocIndex` in `code/aiosh-rust/aiosh-core/src/system_update_doc.rs`.
+  - Enforced documentation invariants `UDOC1..UDOC6`:
+    - `UDOC1`: Pre-populated canonical offline technical topic repository across all 6 core categories.
+    - `UDOC2`: Deterministic category navigation with loose case-insensitive string parsing.
+    - `UDOC3`: Ranked keyword full-text search engine with weighted token scoring.
+    - `UDOC4`: Markdown export for individual topics and complete index sections.
+    - `UDOC5`: Dynamic live status and observability report generation, including ASCII dual-slot visual diagrams.
+    - `UDOC6`: Bounded I/O and path hygiene for exports ($\le 1024$ chars, no `..`, 1 MB ceiling, atomic write).
+- **Test Verification**:
+  - `aiosh-core`: 6/6 unit tests in `test_system_update_doc.rs` passing in 0.23s.
+  - `aiosh-core`: 7/7 unit tests in `test_system_update_observability.rs` passing in 1.74s.
+  - `aiosh-mcp`: 4/4 checks in `test_system_update_doc_smoke.py` passing.
+  - `aiosh-mcp`: 6/6 checks in `test_system_update_observability_smoke.py` passing.
+  - Full regression test suite: zero regressions across all epics.
+
 

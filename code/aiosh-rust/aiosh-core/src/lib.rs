@@ -112,6 +112,7 @@ pub mod session_recovery;
 pub mod session_service;
 pub mod system_update;
 pub mod system_update_config;
+pub mod system_update_doc;
 pub mod system_update_observability;
 pub mod system_update_policy;
 pub mod system_update_service;
@@ -225,6 +226,10 @@ pub use system_update_policy::{
 };
 pub use system_update_observability::{
     SystemUpdateObservabilityReport, sanitize_telemetry_text,
+};
+pub use system_update_doc::{
+    SystemUpdateDocCategory, SystemUpdateDocIndex, SystemUpdateDocSearchResult,
+    SystemUpdateDocTopic,
 };
 
 

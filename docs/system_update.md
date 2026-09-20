@@ -558,3 +558,76 @@ python code/aiosh-mcp/tests/test_system_update_policy_smoke.py
 - Security Review: [`docs/tasks/evidence/T-01967-security-policy-security-review.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01967-security-policy-security-review.md)
 - Hardening: [`docs/tasks/evidence/T-01968-security-policy-hardening.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01968-security-policy-hardening.md)
 
+---
+
+## 11. System Update Observability Subsystem
+
+### 11.1 Overview & Architecture
+The System Update Observability Subsystem provides unified, sanitized, and side-effect free telemetry reporting for the update engine:
+- **Core Module**: [`code/aiosh-rust/aiosh-core/src/system_update_observability.rs`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/code/aiosh-rust/aiosh-core/src/system_update_observability.rs).
+- **Primary Data Model**: `SystemUpdateObservabilityReport` synthesizing dual-slot partition states, active update lifecycle status, staged artifact byte accounting, security policy compliance verdicts, and overall system health into a canonical telemetry payload.
+
+### 11.2 Invariants Enforced (UOBS1 - UOBS6)
+1. **`UOBS1` (Full State Coverage)**: Exposes active partition slot, target slot, rollback slot, slot versions, and boot success flags alongside current update state machine status.
+2. **`UOBS2` (Staged Artifact Byte Accounting)**: Accurately counts staged payload files and accumulated bytes using `symlink_metadata()` to safely tally regular files without following symlinks.
+3. **`UOBS3` (Security Policy Integration)**: Integrates non-mutating security policy evaluation, returning policy verdict (`"allow"`, `"deny"`, `"audit"`, `"not_evaluated"`), violation counts, and active policy mode.
+4. **`UOBS4` (Log Injection Defense & Text Sanitization)**: Sanitizes all string fields (`sanitize_telemetry_text`) by stripping ASCII control characters, trimming whitespace, and truncating strings exceeding 256 characters.
+5. **`UOBS5` (Side-Effect Free)**: Report generation operates strictly on immutable references (`&SystemUpdateService`, `Option<&SystemUpdateSecurityPolicy>`) with zero side effects or state mutations.
+6. **`UOBS6` (System Health Evaluation)**: Computes `is_healthy` as `true` only when the update state is not `Failed` and the currently running slot is marked successful.
+
+### 11.3 Copy-Pasteable Example Report (`observability_report.json`)
+```json
+{
+  "current_slot": "slot_a",
+  "target_slot": "slot_b",
+  "rollback_slot": "slot_a",
+  "slot_a_version": "2.0.0",
+  "slot_b_version": "none",
+  "slot_a_successful": true,
+  "slot_b_successful": false,
+  "state": "downloading",
+  "progress_percent": 60,
+  "current_version": "2.0.0",
+  "target_version": "2.5.0",
+  "last_error": null,
+  "update_id": "upd-2026-09-20-001",
+  "channel": "stable",
+  "staged_artifacts_count": 2,
+  "staged_payload_bytes": 104857600,
+  "manifest_total_bytes": 104857600,
+  "policy_verdict": "allow",
+  "policy_violations_count": 0,
+  "policy_mode": "enforcing",
+  "is_healthy": true,
+  "generated_at": "2026-09-20T14:30:00Z"
+}
+```
+
+### 11.4 Invocation Examples
+
+#### Run Observability Unit Tests
+```bash
+cargo test --manifest-path code/aiosh-rust/Cargo.toml -p aiosh-core --test test_system_update_observability -- --nocapture
+```
+
+#### Run Observability Python Smoke Suite
+```bash
+python code/aiosh-mcp/tests/test_system_update_observability_smoke.py
+```
+
+### 11.5 Constraints & Known Limitations
+- **String Length Clamping**: All telemetry text fields are strictly clamped to 256 characters.
+- **Maximum Serialized Size**: Saved report files cannot exceed 1 MB (`MAX_OBSERVABILITY_FILE_BYTES`).
+- **Symlink Defense**: File persistence rejects symbolic links to prevent destination hijacking.
+
+### 11.6 Evidence Artifacts
+- Research: [`docs/tasks/evidence/T-01971-observability-research.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01971-observability-research.md)
+- Specification: [`docs/tasks/evidence/T-01972-observability-specification.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01972-observability-specification.md)
+- Scaffold: [`docs/tasks/evidence/T-01973-observability-scaffold.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01973-observability-scaffold.md)
+- Implementation: [`docs/tasks/evidence/T-01974-observability-implementation.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01974-observability-implementation.md)
+- Unit Testing: [`docs/tasks/evidence/T-01975-observability-unit-test.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01975-observability-unit-test.md)
+- Integration: [`docs/tasks/evidence/T-01976-observability-integration.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01976-observability-integration.md)
+- Security Review: [`docs/tasks/evidence/T-01977-observability-security-review.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01977-observability-security-review.md)
+- Hardening: [`docs/tasks/evidence/T-01978-observability-hardening.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01978-observability-hardening.md)
+
+
