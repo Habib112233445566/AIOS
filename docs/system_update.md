@@ -381,5 +381,77 @@ The Model Context Protocol (MCP) tool surface (`code/aiosh-rust/aiosh-mcp/src/ma
 - Security Review: [`docs/tasks/evidence/T-01937-mcp-api-surface-security-review.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01937-mcp-api-surface-security-review.md)
 - Hardening: [`docs/tasks/evidence/T-01938-mcp-api-surface-hardening.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01938-mcp-api-surface-hardening.md)
 
+---
+
+## 8. System Update Configuration & Policy Subsystem
+
+The configuration subsystem (`code/aiosh-rust/aiosh-core/src/system_update_config.rs`) defines persistent, bounded, and auditable configuration models for the system update engine, supporting file-based persistence, environment variable overrides, and defensive input validation.
+
+### 8.1 Configuration Data Model (`SystemUpdateConfig`)
+
+| Field Name | Type | Default Value | Description |
+|---|---|---|---|
+| `state_dir` | `PathBuf` | `/var/lib/aiosh/updates` | Directory where partition and engine state JSON files are persisted. |
+| `staging_dir` | `PathBuf` | `/var/lib/aiosh/updates/staging` | Dedicated directory where update payload artifacts are staged. |
+| `default_channel` | `UpdateChannel` | `stable` | Default update release channel (`stable`, `beta`, `nightly`). |
+| `check_interval_secs` | `u64` | `86400` (24h) | Automatic update check polling interval (between 60 and 2,592,000s). |
+| `allow_auto_apply` | `bool` | `false` | Whether staged updates can be automatically applied without operator sign-off. |
+| `auto_rollback_on_failure` | `bool` | `true` | Whether failed boots immediately trigger fallback partition activation. |
+| `max_payload_bytes` | `u64` | `10737418240` (10 GB) | Cumulative payload byte limit for staged update artifacts. |
+| `min_free_space_bytes` | `u64` | `1073741824` (1 GB) | Minimum required disk space reserve before staging payloads. |
+| `max_download_rate_bps` | `Option<u64>` | `None` | Optional bandwidth throttle in bytes per second. |
+| `trusted_keys` | `Vec<String>` | `[]` | List of trusted public key digests for release signature validation (max 32). |
+
+### 8.2 Copy-Pasteable Example Configuration (`system_update.json`)
+```json
+{
+  "state_dir": "/var/lib/aiosh/updates",
+  "staging_dir": "/var/lib/aiosh/updates/staging",
+  "default_channel": "stable",
+  "check_interval_secs": 86400,
+  "allow_auto_apply": false,
+  "auto_rollback_on_failure": true,
+  "max_payload_bytes": 10737418240,
+  "min_free_space_bytes": 1073741824,
+  "trusted_keys": [
+    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  ]
+}
+```
+
+### 8.3 Environment Variable Overrides
+The engine evaluates environment overrides upon startup via `SystemUpdateConfig::from_env()`:
+- `AIOSH_UPDATE_STATE_DIR`: Overrides `state_dir`.
+- `AIOSH_UPDATE_STAGING_DIR`: Overrides `staging_dir`.
+- `AIOSH_UPDATE_CHANNEL`: Overrides `default_channel` (`stable`, `beta`, `nightly`).
+- `AIOSH_UPDATE_CHECK_INTERVAL_SECS`: Overrides `check_interval_secs`.
+- `AIOSH_UPDATE_AUTO_APPLY`: Overrides `allow_auto_apply` (`true`/`false`).
+- `AIOSH_UPDATE_AUTO_ROLLBACK`: Overrides `auto_rollback_on_failure` (`true`/`false`).
+- `AIOSH_UPDATE_MAX_PAYLOAD_BYTES`: Overrides `max_payload_bytes`.
+
+### 8.4 Operational Invariants (UCONF1..UCONF6)
+- **`UCONF1` (Path Hygiene)**: `state_dir` and `staging_dir` must be non-empty UTF-8, length $\le 1024$ bytes, zero control characters, and zero `..` parent directory traversal components.
+- **`UCONF2` (Resource & Interval Bounds)**: `check_interval_secs` is bounded between 60s and 30 days. `max_payload_bytes` is bounded between 1MB and 10GB. `min_free_space_bytes` is bounded between 1MB and 100GB.
+- **`UCONF3` (Key Bounds)**: `trusted_keys` is capped at 32 entries, each $\le 256$ characters and free of control characters.
+- **`UCONF4` (Environment Ingestion)**: Environment variables are sanitized and bounded prior to ingestion.
+- **`UCONF5` (Atomic & Bounded Persistence)**: Configuration files are capped at 1MB (`MAX_UPDATE_CONFIG_FILE_BYTES = 1_048_576`). Saving writes to `.tmp.<pid>` and atomically renames.
+- **`UCONF6` (Fail-Safe Defaults)**: Missing or corrupt files fall back to safe default configuration without system panic.
+
+### 8.5 Constraints & Known Limitations
+1. **File Size Cap**: Configuration files exceeding 1MB are rejected to prevent memory exhaustion.
+2. **Minimum Interval Floor**: Polling interval cannot be set below 60 seconds to prevent denial of service against update mirrors.
+3. **Symlink Rejection**: Configuration files that are symlinks are rejected to prevent file redirection attacks.
+
+### 8.6 Task Evidence Links
+- Research: [`docs/tasks/evidence/T-01941-configuration-research.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01941-configuration-research.md)
+- Specification: [`docs/tasks/evidence/T-01942-configuration-specification.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01942-configuration-specification.md)
+- Scaffold: [`docs/tasks/evidence/T-01943-configuration-scaffold.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01943-configuration-scaffold.md)
+- Implementation: [`docs/tasks/evidence/T-01944-configuration-implementation.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01944-configuration-implementation.md)
+- Unit Testing: [`docs/tasks/evidence/T-01945-configuration-unit-test.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01945-configuration-unit-test.md)
+- Integration: [`docs/tasks/evidence/T-01946-configuration-integration.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01946-configuration-integration.md)
+- Security Review: [`docs/tasks/evidence/T-01947-configuration-security-review.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01947-configuration-security-review.md)
+- Hardening: [`docs/tasks/evidence/T-01948-configuration-hardening.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01948-configuration-hardening.md)
+
+
 
 

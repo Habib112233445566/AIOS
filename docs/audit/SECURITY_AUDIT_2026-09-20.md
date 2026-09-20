@@ -1742,6 +1742,39 @@ Read line-by-line: `pentest.rs` (597), `train_slm.py` (210), `train_unsloth.py` 
   - Pytest suite: 100% passing (`1 passed in 0.25s`).
   - Regression test suites: zero regressions across CLI and MCP update tools.
 
+---
 
+## 24. Post-Audit Addendum: Batch T-01947 through T-01956 Verification
 
+**Date:** 2026-09-20  
+**Scope:** Batch `T-01947` through `T-01956` (System Update Configuration Sub-Epic 5 Closure & System Update Automated Tests Sub-Epic 6).  
+**Auditor:** Antigravity Autonomous Security Subsystem  
+**Verdict:** **PASS (Zero vulnerabilities)**
 
+### 1. Hardened Surface & Key Controls
+- **System Update Configuration Closure & Hardening (T-01947..T-01950)**:
+  - Evaluated threat vectors `THREAT-UCONF-01..06` covering path traversal/symlink redirection, malicious environment variables, persistence file tampering, DoS via extreme poll intervals, storage exhaustion via extreme payload limits, and public key poisoning.
+  - Hardened `code/aiosh-rust/aiosh-core/src/system_update_config.rs`:
+    - Strict path sanitization rejecting `..`, control characters, and non-UTF-8.
+    - Clamped environment variables `AIOSH_UPDATE_*` to safe ranges.
+    - Atomic file persistence using `.tmp.<pid>` pattern with immediate unlinking on error.
+    - Bound configuration file loading to 1 MB maximum.
+  - Master documentation authored in `docs/system_update.md` (Section 8).
+  - Formally closed Sub-Epic 5 with 100% test pass rate across unit and smoke tests.
+- **System Update Automated Tests Sub-Epic 6 (T-01951..T-01956)**:
+  - Researched, specified, scaffolded, implemented, tested, and integrated the end-to-end automated test harness for the System Update Mechanism.
+  - Grounded in NIST SP 800-193, ChromeOS update_engine, and systemd automatic boot assessment.
+  - Enforced testing invariants `UTEST1..UTEST6`:
+    - `UTEST1`: Clean end-to-end A/B update lifecycle with real payload filesystem staging, SHA-256 validation, target slot switching, and post-boot confirmation.
+    - `UTEST2`: Cryptographic fault injection asserting bit-flip detection, payload truncation rejection, transition to `Failed`, and zero slot mutation.
+    - `UTEST3`: Boot failure simulation and automatic/manual rollback restoration of prior functional slot.
+    - `UTEST4`: Quota boundary enforcement and symlink traversal defense.
+    - `UTEST5`: Out-of-order state transitions and re-entrancy defense returning `UPD_STATE_ERROR`.
+    - `UTEST6`: Cross-substrate JSON serialization parity between Rust core and Python/MCP environments.
+- **Test Verification**:
+  - `aiosh-core`: 9/9 unit and end-to-end tests in `test_system_update_e2e.rs` passing in 0.02s.
+  - `aiosh-core`: 5/5 unit tests in `test_system_update_config.rs` passing in 0.03s.
+  - `aiosh-mcp`: 3/3 check suites in `test_system_update_e2e_smoke.py` passing.
+  - `aiosh-mcp`: 3/3 check suites in `test_system_update_config_smoke.py` passing.
+  - `aiosh-cli`: 5/5 integration smoke tests in `test_system_update_smoke.py` passing.
+  - Full regression test suite: zero regressions across all epics.

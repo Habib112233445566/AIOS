@@ -115,11 +115,19 @@ impl SystemUpdateConfig {
                 UCONF_VALIDATION_ERROR
             ));
         }
-        if self.min_free_space_bytes > 107_374_182_400 {
+        if self.min_free_space_bytes < 1_048_576 || self.min_free_space_bytes > 107_374_182_400 {
             return Err(format!(
-                "{}: min_free_space_bytes exceeds 100GB maximum threshold",
+                "{}: min_free_space_bytes must be between 1MB and 100GB",
                 UCONF_VALIDATION_ERROR
             ));
+        }
+        if let Some(rate) = self.max_download_rate_bps {
+            if rate == 0 || rate > 10_000_000_000 {
+                return Err(format!(
+                    "{}: max_download_rate_bps must be between 1 bps and 10 Gbps",
+                    UCONF_VALIDATION_ERROR
+                ));
+            }
         }
 
         // UCONF3: Trusted keys bounds
@@ -145,12 +153,12 @@ impl SystemUpdateConfig {
     pub fn from_env() -> Self {
         let mut cfg = Self::default();
         if let Ok(val) = std::env::var("AIOSH_UPDATE_STATE_DIR") {
-            if !val.trim().is_empty() {
+            if !val.trim().is_empty() && val.len() <= 1024 && !val.chars().any(|c| c.is_control()) && !val.contains("..") {
                 cfg.state_dir = PathBuf::from(val);
             }
         }
         if let Ok(val) = std::env::var("AIOSH_UPDATE_STAGING_DIR") {
-            if !val.trim().is_empty() {
+            if !val.trim().is_empty() && val.len() <= 1024 && !val.chars().any(|c| c.is_control()) && !val.contains("..") {
                 cfg.staging_dir = PathBuf::from(val);
             }
         }
@@ -164,7 +172,9 @@ impl SystemUpdateConfig {
         }
         if let Ok(val) = std::env::var("AIOSH_UPDATE_CHECK_INTERVAL_SECS") {
             if let Ok(secs) = val.parse::<u64>() {
-                cfg.check_interval_secs = secs;
+                if secs >= 60 && secs <= 2_592_000 {
+                    cfg.check_interval_secs = secs;
+                }
             }
         }
         if let Ok(val) = std::env::var("AIOSH_UPDATE_AUTO_APPLY") {
@@ -183,7 +193,9 @@ impl SystemUpdateConfig {
         }
         if let Ok(val) = std::env::var("AIOSH_UPDATE_MAX_PAYLOAD_BYTES") {
             if let Ok(bytes) = val.parse::<u64>() {
-                cfg.max_payload_bytes = bytes;
+                if bytes >= 1_048_576 && bytes <= 10_737_418_240 {
+                    cfg.max_payload_bytes = bytes;
+                }
             }
         }
         cfg
@@ -225,6 +237,9 @@ impl SystemUpdateConfig {
                 .map_err(|e| format!("{}: failed to create parent directory: {}", UCONF_VALIDATION_ERROR, e))?;
         }
         let tmp = p.with_extension(format!("tmp.{}", std::process::id()));
+        if tmp.exists() {
+            let _ = fs::remove_file(&tmp);
+        }
         let data = serde_json::to_vec_pretty(self)
             .map_err(|e| format!("{}: serialization failed: {}", UCONF_VALIDATION_ERROR, e))?;
         fs::write(&tmp, data)
