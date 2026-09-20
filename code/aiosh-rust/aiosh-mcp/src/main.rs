@@ -5481,7 +5481,13 @@ impl Server {
                         if mpath.chars().any(|c| c.is_control()) {
                             return Err("manifest_path cannot contain control characters".to_string());
                         }
-                        let meta = std::fs::metadata(mpath).map_err(|e| format!("cannot stat manifest file '{}': {}", mpath, e))?;
+                        if mpath.contains("..") {
+                            return Err("manifest_path cannot contain '..' parent directory components".to_string());
+                        }
+                        let meta = std::fs::symlink_metadata(mpath).map_err(|e| format!("cannot stat manifest file '{}': {}", mpath, e))?;
+                        if meta.file_type().is_symlink() {
+                            return Err(format!("manifest file '{}' cannot be a symlink", mpath));
+                        }
                         if meta.len() > 1_048_576 {
                             return Err(format!("manifest file size ({} bytes) exceeds 1MB limit", meta.len()));
                         }
@@ -5538,8 +5544,8 @@ impl Server {
                 let state_opt = arguments.get("state_dir").and_then(|v| v.as_str()).map(|s| s.to_string());
                 let f = || {
                     if let Some(ref ver) = ver_opt {
-                        if ver.len() > 64 || ver.chars().any(|c| c.is_control()) {
-                            return Err("confirmed version exceeds 64 characters or contains control characters".to_string());
+                        if ver.len() > 64 || ver.chars().any(|c| c.is_control() || c.is_whitespace()) {
+                            return Err("confirmed version exceeds 64 characters or contains control characters or whitespace".to_string());
                         }
                     }
                     let mut service = resolve_update_service(&state_opt, &None)?;
@@ -5880,36 +5886,24 @@ fn resolve_update_service(
     state_dir_opt: &Option<String>,
     staging_dir_opt: &Option<String>,
 ) -> Result<aiosh_core::system_update_service::SystemUpdateService, String> {
+    let mut cfg = aiosh_core::system_update_config::SystemUpdateConfig::from_env();
     if let Some(ref p) = state_dir_opt {
-        if p.len() > 1024 {
-            return Err("state_dir cannot exceed 1024 characters".to_string());
-        }
-        if p.chars().any(|c| c.is_control()) {
-            return Err("state_dir cannot contain control characters".to_string());
-        }
+        cfg.state_dir = std::path::PathBuf::from(p);
     }
     if let Some(ref p) = staging_dir_opt {
-        if p.len() > 1024 {
-            return Err("staging_dir cannot exceed 1024 characters".to_string());
-        }
-        if p.chars().any(|c| c.is_control()) {
-            return Err("staging_dir cannot contain control characters".to_string());
-        }
+        cfg.staging_dir = std::path::PathBuf::from(p);
     }
-    let state_dir = state_dir_opt.as_ref().map(std::path::PathBuf::from).unwrap_or_else(|| std::path::PathBuf::from("/var/lib/aiosh/updates"));
-    let staging_dir = staging_dir_opt.as_ref().map(std::path::PathBuf::from).unwrap_or_else(|| std::path::PathBuf::from("/var/lib/aiosh/updates/staging"));
-    let config = aiosh_core::system_update_service::SystemUpdateServiceConfig {
-        state_dir: state_dir.clone(),
-        staging_dir,
-        max_payload_bytes: aiosh_core::system_update::MAX_UPDATE_PAYLOAD_SIZE,
-        auto_rollback_on_failure: true,
-    };
-    match aiosh_core::system_update_service::SystemUpdateService::load_state_from_dir(&state_dir, config.clone()) {
+    cfg.validate().map_err(|e| format!("update config validation error: {}", e))?;
+
+    let state_dir = cfg.state_dir.clone();
+    let service_config = cfg.to_service_config();
+
+    match aiosh_core::system_update_service::SystemUpdateService::load_state_from_dir(&state_dir, service_config.clone()) {
         Ok(svc) => Ok(svc),
         Err(_) => Ok(aiosh_core::system_update_service::SystemUpdateService::new(
             "1.0.0",
             aiosh_core::system_update::UpdateSlot::SlotA,
-            config,
+            service_config,
             "2026-09-20T12:00:00Z",
         )),
     }

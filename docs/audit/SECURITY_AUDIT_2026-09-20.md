@@ -1708,5 +1708,40 @@ Read line-by-line: `pentest.rs` (597), `train_slm.py` (210), `train_unsloth.py` 
   - Pytest suite: 100% passing (`1 passed in 0.65s`).
   - Full regression test suite: 0 regressions across all epics.
 
+---
+
+## 23. Post-Audit Addendum: Batch T-01937 through T-01946 Verification
+
+**Date:** 2026-09-20  
+**Scope:** Batch `T-01937` through `T-01946` (System Update MCP & API Surface Sub-Epic 4 Closure & System Update Configuration & Policy Sub-Epic 5).  
+**Auditor:** Antigravity Autonomous Security Subsystem  
+**Verdict:** **PASS (Zero vulnerabilities)**
+
+### 1. Hardened Surface & Key Controls
+- **System Update MCP Surface Closure & Hardening (T-01937..T-01940)**:
+  - Threat modeled `THREAT-UMCP-01..06` (path traversal, manifest parsing DOS, version overflows, state machine evasion, PEP bypass, audit trail omissions).
+  - Hardened `code/aiosh-rust/aiosh-mcp/src/main.rs`:
+    - Strict manifest symlink rejection via `symlink_metadata()`.
+    - Prohibited parent directory traversal (`..`) in `state_dir`, `staging_dir`, and `manifest_path`.
+    - Version string whitespace and control character rejection.
+  - Master documentation authored in `docs/system_update.md` (Section 7).
+  - Formally closed Sub-Epic 4 with 100% test pass rate across unit and smoke tests.
+- **System Update Configuration & Policy Subsystem (T-01941..T-01946)**:
+  - Researched, specified, scaffolded, implemented, tested, and integrated `SystemUpdateConfig` in `code/aiosh-rust/aiosh-core/src/system_update_config.rs`.
+  - Enforced configuration invariants `UCONF1..UCONF6`:
+    - `UCONF1`: Path hygiene on `state_dir` and `staging_dir` (length $\le 1024$, non-empty UTF-8, zero control chars, zero `..` traversal).
+    - `UCONF2`: Resource & interval bounds ($60 \le \text{interval} \le 2_592_000$s, $1\text{MB} \le \text{payload} \le 10\text{GB}$, $\text{free space} \le 100\text{GB}$).
+    - `UCONF3`: Trusted keys bounds ($\le 32$ keys, each $\le 256$ chars, no control chars).
+    - `UCONF4`: Environment variable ingestion (`AIOSH_UPDATE_*`) validated before use.
+    - `UCONF5`: Atomic persistence via `.tmp.<pid>` and rename, bounded to 1MB.
+    - `UCONF6`: Fail-safe defaults ensuring manual apply and automatic rollback.
+  - Wired into `resolve_update_service()` in `aiosh-mcp/src/main.rs`.
+- **Test Verification**:
+  - `aiosh-core`: 5/5 unit tests in `test_system_update_config.rs` passing (defaults, path hygiene, bounds, env overrides, file persistence).
+  - `aiosh-mcp`: `test_system_update_config_smoke.py` passing (environment overrides, path hygiene rejection, JSON parity).
+  - Pytest suite: 100% passing (`1 passed in 0.25s`).
+  - Regression test suites: zero regressions across CLI and MCP update tools.
+
+
 
 

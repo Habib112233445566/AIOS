@@ -280,4 +280,106 @@ On error, `code` is non-zero, `data` is `null`, and `error` contains a machine-r
 - **`UCLI5` (Hermetic Isolation)**: Custom state and staging directory flags enable completely isolated operation without side-effects on host partitions.
 - **`UCLI6` (Terminal Safety)**: All strings printed in human-readable mode are filtered through `sanitize_terminal()`, preventing ANSI injection attacks.
 
+---
+
+## 7. Model Context Protocol (MCP) & Agent API Subsystem
+
+The Model Context Protocol (MCP) tool surface (`code/aiosh-rust/aiosh-mcp/src/main.rs`) exposes programmatic, structured JSON-RPC tools for autonomous AI agents, orchestrators, and external management APIs to discover, inspect, stage, apply, confirm, and roll back system updates.
+
+### 7.1 Tool Manifest & Schemas
+
+| Tool Name | Method / Description | Input Parameters | Output Payload |
+|---|---|---|---|
+| `aios.update.status` | Queries update engine state | `state_dir` (opt string) | `{ "state": string, "active_slot": string, "current_version": string, "target_version": opt string, "progress_percent": u8 }` |
+| `aios.update.slots` | Queries A/B partition slot details | `state_dir` (opt string) | `{ "current_slot": string, "target_slot": string, "rollback_slot": opt string, "slot_a_version": string, "slot_b_version": string, "slot_a_successful": bool, "slot_b_successful": bool }` |
+| `aios.update.check` | Checks & validates manifest | `manifest` (opt object), `manifest_path` (opt string), `state_dir` (opt string), `staging_dir` (opt string) | `{ "state": "downloading", "target_version": string, ... }` |
+| `aios.update.apply` | Verifies digests & sets next boot slot | `state_dir` (opt string), `staging_dir` (opt string) | `{ "next_boot_slot": string, "status": object }` |
+| `aios.update.confirm` | Confirms stable boot of updated slot | `version` (opt string), `state_dir` (opt string) | `{ "confirmed_version": string, "slot_status": object }` |
+| `aios.update.rollback` | Rolls back to previous functional slot | `state_dir` (opt string) | `{ "restored_slot": string, "slot_status": object }` |
+
+### 7.2 Copy-Pasteable JSON-RPC Examples
+
+#### Query Status
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "aios.update.status",
+    "arguments": {
+      "state_dir": "/var/lib/aiosh/updates"
+    }
+  }
+}
+```
+
+#### Check Manifest
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "tools/call",
+  "params": {
+    "name": "aios.update.check",
+    "arguments": {
+      "manifest": {
+        "update_id": "upd-2026-09-20-01",
+        "version": "2.0.0",
+        "channel": "stable",
+        "artifacts": [
+          {
+            "target": "rootfs",
+            "file_name": "rootfs.raw",
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "size_bytes": 1048576
+          }
+        ],
+        "release_notes": "Security maintenance release",
+        "published_at": "2026-09-20T00:00:00Z"
+      }
+    }
+  }
+}
+```
+
+#### Confirm Successful Boot
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "method": "tools/call",
+  "params": {
+    "name": "aios.update.confirm",
+    "arguments": {
+      "version": "2.0.0"
+    }
+  }
+}
+```
+
+### 7.3 Operational Invariants (UMCP1..UMCP6)
+- **`UMCP1` (Structured Input Validation)**: All tools validate parameter types, reject missing required parameters, and return structured error envelopes.
+- **`UMCP2` (Path & Traversal Hygiene)**: Enforces path length $\le 1024$ bytes, rejects control characters, and strictly prohibits `..` parent directory traversal components on `state_dir`, `staging_dir`, and `manifest_path`.
+- **`UMCP3` (Memory & Symlink Bounds)**: Manifest files are capped at 1MB and symlink manifests are rejected (`symlink_metadata`). Version strings are bounded to $\le 64$ characters without whitespace.
+- **`UMCP4` (PEP Policy Gating)**: Evaluates PEP permissions and records caller identity and grant ID for every tool call.
+- **`UMCP5` (Audit Trail Emission)**: Every call writes an immutable audit record to the SQLite WAL ring via `dispatch::recorded_call`.
+- **`UMCP6` (State Machine Gating)**: Tool calls enforce lifecycle constraints (e.g. `confirm` is only valid when state is `ready_to_reboot`).
+
+### 7.4 Constraints & Known Limitations
+1. **Isolated State**: In testing or containerized environments, callers must specify `--state-dir` / `state_dir` pointing to a writable directory.
+2. **Reboot Execution**: `confirm` and `rollback` update the boot flags and partition metadata. Physical rebooting is deferred to system reboot controllers (`systemctl reboot` or hypervisor hooks).
+3. **Staged Artifacts**: `apply` requires 100% of artifacts declared in the manifest to be present in `staging_dir` with matching cryptographic digests.
+
+### 7.5 Task Evidence Links
+- Research: [`docs/tasks/evidence/T-01931-mcp-surface-research.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01931-mcp-surface-research.md)
+- Specification: [`docs/tasks/evidence/T-01932-mcp-surface-specification.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01932-mcp-surface-specification.md)
+- Scaffold: [`docs/tasks/evidence/T-01933-mcp-surface-scaffold.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01933-mcp-surface-scaffold.md)
+- Implementation: [`docs/tasks/evidence/T-01934-mcp-surface-implementation.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01934-mcp-surface-implementation.md)
+- Unit Testing: [`docs/tasks/evidence/T-01935-mcp-surface-unit-test.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01935-mcp-surface-unit-test.md)
+- Integration: [`docs/tasks/evidence/T-01936-mcp-api-surface-integration.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01936-mcp-api-surface-integration.md)
+- Security Review: [`docs/tasks/evidence/T-01937-mcp-api-surface-security-review.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01937-mcp-api-surface-security-review.md)
+- Hardening: [`docs/tasks/evidence/T-01938-mcp-api-surface-hardening.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01938-mcp-api-surface-hardening.md)
+
+
 
