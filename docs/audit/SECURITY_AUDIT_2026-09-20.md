@@ -1591,3 +1591,39 @@ Read line-by-line: `pentest.rs` (597), `train_slm.py` (210), `train_unsloth.py` 
   - Sub-Epic 10 recovery tests: 8/8 unit tests and 6/6 smoke tests passed.
   - Regression suite: 0 regressions across all prior modules.
 
+---
+
+## 20. Post-Audit Addendum: Batch T-01907 through T-01916 Verification
+
+**Date:** 2026-09-20  
+**Scope:** Batch `T-01907` through `T-01916` (System Update Mechanism Data Model Sub-Epic 1 Closure & System Update Mechanism Core Service Sub-Epic 2).  
+**Auditor:** Antigravity Autonomous Security Subsystem  
+**Verdict:** **PASS (Zero vulnerabilities)**
+
+### 1. Hardened Surface & Key Controls
+- **System Update Data Model Closure & Hardening (T-01907..T-01910)**:
+  - Evaluated threat vectors `THREAT-UPD-01..06` (directory traversal, digest evasion, downgrade attacks, active slot mutation, DoS via integer overflow, state bypass).
+  - Hardened `system_update.rs`:
+    - Strict filename sanitization: forbidden `..`, `/`, `\`, leading dots, control characters, and whitespace (`MAX_ARTIFACT_FILENAME_LEN = 128`).
+    - Manifest bounds: capped artifacts per manifest at 32 (`MAX_ARTIFACTS_PER_MANIFEST`).
+    - Uniqueness enforcement: prohibited duplicate artifact filenames and duplicate partition targets.
+    - Safe math: replaced raw sum in `total_bytes()` with `saturating_add`.
+    - Exact 64-character ASCII hex SHA-256 validation.
+  - Authored master documentation `docs/system_update.md` (Sections 1..4).
+  - Formally closed Sub-Epic 1 with 7/7 Rust unit tests and 5/5 Python smoke tests.
+- **System Update Core Service Subsystem (T-01911..T-01916)**:
+  - Researched, specified, scaffolded, implemented, and tested `system_update_service.rs` in `aiosh-core`.
+  - Enforced operational invariants `USVC1..USVC6`:
+    - `USVC1`: Dedicated staging sandbox (`config.staging_dir`) with directory isolation.
+    - `USVC2`: Cryptographic gate: computes SHA-256 on incoming bytes and requires 100% digest match before advancing. Incomplete staging prevents entering `Verifying`.
+    - `USVC3`: Active running slot non-interference: updates stage and apply exclusively to `target_slot` (`current_slot.other()`).
+    - `USVC4`: Atomic state persistence: writes `slot_status.json` and `update_status.json` via `.tmp` files with atomic `fs::rename()`.
+    - `USVC5`: Rollback safeguard: captures functional slot in `rollback_slot`, allowing clean reversal on failed boot.
+    - `USVC6`: Deterministic error classification and lifecycle state reset.
+- **Test Verification**:
+  - `aiosh-core`: 8/8 unit tests in `test_system_update_service.rs` passed in 0.06s.
+  - `aiosh-core`: 7/7 unit tests in `test_system_update.rs` passed in 0.00s.
+  - `aiosh-cli`: 5/5 integration smoke tests in `test_system_update_service_smoke.py` passed in 0.10s.
+  - `aiosh-cli`: 5/5 integration smoke tests in `test_system_update_smoke.py` passed in 0.10s.
+  - Regression suite: 0 regressions across all prior modules.
+

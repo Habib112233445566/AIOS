@@ -99,6 +99,22 @@ fn test_upd3_artifact_validation() {
     bad_artifact.file_name = "rootfs\n.img".to_string();
     assert!(bad_artifact.validate().unwrap_err().contains(UPD_VALIDATION_ERROR));
 
+    // Path traversal in file name
+    bad_artifact.file_name = "../rootfs.img".to_string();
+    assert!(bad_artifact.validate().unwrap_err().contains(UPD_VALIDATION_ERROR));
+    bad_artifact.file_name = "subdir/rootfs.img".to_string();
+    assert!(bad_artifact.validate().unwrap_err().contains(UPD_VALIDATION_ERROR));
+    bad_artifact.file_name = "subdir\\rootfs.img".to_string();
+    assert!(bad_artifact.validate().unwrap_err().contains(UPD_VALIDATION_ERROR));
+
+    // Hidden file name
+    bad_artifact.file_name = ".rootfs.img".to_string();
+    assert!(bad_artifact.validate().unwrap_err().contains(UPD_VALIDATION_ERROR));
+
+    // File name with whitespace
+    bad_artifact.file_name = "rootfs image.img".to_string();
+    assert!(bad_artifact.validate().unwrap_err().contains(UPD_VALIDATION_ERROR));
+
     // Invalid SHA-256 digest (length != 64)
     bad_artifact.file_name = "rootfs.img".to_string();
     bad_artifact.sha256 = "abc".to_string();
@@ -174,6 +190,19 @@ fn test_upd3_manifest_validation_and_helpers() {
     bad_manifest.version = "2.1.0".to_string();
     bad_manifest.artifacts = vec![];
     assert!(bad_manifest.validate().unwrap_err().contains(UPD_VALIDATION_ERROR));
+
+    // Invalid: duplicate filenames
+    let mut dup_art = rootfs_artifact.clone();
+    dup_art.target = PartitionTarget::Initramfs;
+    bad_manifest.artifacts = vec![rootfs_artifact.clone(), dup_art];
+    assert!(bad_manifest.validate().unwrap_err().contains("duplicate artifact filename"));
+
+    // Invalid: duplicate partition target
+    let mut dup_tgt = kernel_artifact.clone();
+    dup_tgt.file_name = "vmlinuz-alt".to_string();
+    dup_tgt.target = PartitionTarget::Rootfs;
+    bad_manifest.artifacts = vec![rootfs_artifact.clone(), dup_tgt];
+    assert!(bad_manifest.validate().unwrap_err().contains("duplicate partition target"));
 }
 
 #[test]

@@ -45,13 +45,21 @@ def validate_sha256(digest: str) -> bool:
     return bool(SHA256_REGEX.match(digest.strip()))
 
 
+MAX_ARTIFACTS_PER_MANIFEST = 32
+MAX_ARTIFACT_FILENAME_LEN = 128
+
+
 def validate_artifact(art: dict) -> bool:
     target = art.get("target")
     if target not in VALID_PARTITIONS:
         return False
 
     file_name = art.get("file_name", "").strip()
-    if not file_name or len(file_name) > 256 or any(ord(c) < 32 for c in file_name):
+    if not file_name or len(file_name) > MAX_ARTIFACT_FILENAME_LEN:
+        return False
+    if "/" in file_name or "\\" in file_name or ".." in file_name or file_name.startswith("."):
+        return False
+    if any(ord(c) <= 32 for c in file_name):
         return False
 
     sha256 = art.get("sha256", "")
@@ -79,12 +87,20 @@ def validate_manifest(manifest: dict) -> bool:
         return False
 
     artifacts = manifest.get("artifacts")
-    if not isinstance(artifacts, list) or len(artifacts) == 0:
+    if not isinstance(artifacts, list) or len(artifacts) == 0 or len(artifacts) > MAX_ARTIFACTS_PER_MANIFEST:
         return False
 
+    seen_names = set()
+    seen_targets = set()
     for art in artifacts:
         if not validate_artifact(art):
             return False
+        fn = art.get("file_name")
+        tgt = art.get("target")
+        if fn in seen_names or tgt in seen_targets:
+            return False
+        seen_names.add(fn)
+        seen_targets.add(tgt)
 
     return True
 
@@ -179,6 +195,22 @@ def test_upd3_artifact_and_sha256():
     # Zero size
     zero_size = dict(art, size_bytes=0)
     assert not validate_artifact(zero_size)
+
+    # Path traversal rejection
+    traversal_art = dict(art, file_name="../rootfs.raw")
+    assert not validate_artifact(traversal_art)
+    slash_art = dict(art, file_name="sub/rootfs.raw")
+    assert not validate_artifact(slash_art)
+    backslash_art = dict(art, file_name="sub\\rootfs.raw")
+    assert not validate_artifact(backslash_art)
+
+    # Hidden file rejection
+    hidden_art = dict(art, file_name=".rootfs.raw")
+    assert not validate_artifact(hidden_art)
+
+    # Whitespace in filename rejection
+    space_art = dict(art, file_name="rootfs raw.raw")
+    assert not validate_artifact(space_art)
     print("PASS: test_upd3_artifact_and_sha256")
 
 
@@ -240,8 +272,15 @@ def test_upd5_upd6_manifest_and_json_parity():
     decoded = json.loads(encoded)
     assert decoded["update_id"] == "upd-2026-09-20-beta"
     assert len(decoded["artifacts"]) == 2
-    assert decoded["artifacts"][0]["target"] == "rootfs"
-    assert decoded["artifacts"][1]["target"] == "kernel"
+    # Duplicate artifact test
+    bad_manifest = json.loads(json.dumps(manifest))
+    bad_manifest["artifacts"].append(dict(manifest["artifacts"][0]))
+    assert not validate_manifest(bad_manifest)
+
+    # Duplicate target test
+    bad_tgt_manifest = json.loads(json.dumps(manifest))
+    bad_tgt_manifest["artifacts"][1]["target"] = "rootfs"
+    assert not validate_manifest(bad_tgt_manifest)
     print("PASS: test_upd5_upd6_manifest_and_json_parity")
 
 

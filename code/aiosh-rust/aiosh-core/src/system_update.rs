@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 pub const MAX_UPDATE_VERSION_LEN: usize = 64;
 pub const MAX_UPDATE_ID_LEN: usize = 128;
 pub const MAX_UPDATE_PAYLOAD_SIZE: u64 = 10 * 1024 * 1024 * 1024; // 10 GB
+pub const MAX_ARTIFACTS_PER_MANIFEST: usize = 32;
+pub const MAX_ARTIFACT_FILENAME_LEN: usize = 128;
 
 pub const UPD_VALIDATION_ERROR: &str = "UPD_VALIDATION_ERROR";
 pub const UPD_SLOT_ERROR: &str = "UPD_SLOT_ERROR";
@@ -157,11 +159,18 @@ pub struct UpdateArtifact {
 
 impl UpdateArtifact {
     pub fn validate(&self) -> Result<(), String> {
-        if self.file_name.trim().is_empty() {
+        let clean_name = self.file_name.trim();
+        if clean_name.is_empty() {
             return Err(format!("{}: artifact file_name cannot be empty", UPD_VALIDATION_ERROR));
         }
-        if self.file_name.len() > 256 || self.file_name.chars().any(|c| c.is_control()) {
-            return Err(format!("{}: invalid artifact file_name '{}'", UPD_VALIDATION_ERROR, self.file_name));
+        if clean_name.len() > MAX_ARTIFACT_FILENAME_LEN {
+            return Err(format!("{}: artifact file_name exceeds max length {} (was {})", UPD_VALIDATION_ERROR, MAX_ARTIFACT_FILENAME_LEN, clean_name.len()));
+        }
+        if clean_name.contains('/') || clean_name.contains('\\') || clean_name.contains("..") || clean_name.starts_with('.') {
+            return Err(format!("{}: invalid artifact file_name '{}' (traversal or hidden file forbidden)", UPD_VALIDATION_ERROR, clean_name));
+        }
+        if clean_name.chars().any(|c| c.is_control() || c.is_whitespace()) {
+            return Err(format!("{}: invalid characters in artifact file_name '{}'", UPD_VALIDATION_ERROR, clean_name));
         }
         if self.sha256.len() != 64 || !self.sha256.chars().all(|c| c.is_ascii_hexdigit()) {
             return Err(format!("{}: invalid SHA-256 digest '{}'", UPD_DIGEST_ERROR, self.sha256));
@@ -201,14 +210,25 @@ impl UpdateManifest {
         if self.artifacts.is_empty() {
             return Err(format!("{}: manifest must contain at least one artifact", UPD_VALIDATION_ERROR));
         }
+        if self.artifacts.len() > MAX_ARTIFACTS_PER_MANIFEST {
+            return Err(format!("{}: manifest contains {} artifacts, exceeding maximum of {}", UPD_VALIDATION_ERROR, self.artifacts.len(), MAX_ARTIFACTS_PER_MANIFEST));
+        }
+        let mut seen_filenames = std::collections::HashSet::new();
+        let mut seen_targets = std::collections::HashSet::new();
         for artifact in &self.artifacts {
             artifact.validate()?;
+            if !seen_filenames.insert(&artifact.file_name) {
+                return Err(format!("{}: duplicate artifact filename '{}'", UPD_VALIDATION_ERROR, artifact.file_name));
+            }
+            if !seen_targets.insert(artifact.target) {
+                return Err(format!("{}: duplicate partition target '{:?}'", UPD_VALIDATION_ERROR, artifact.target));
+            }
         }
         Ok(())
     }
 
     pub fn total_bytes(&self) -> u64 {
-        self.artifacts.iter().map(|a| a.size_bytes).sum()
+        self.artifacts.iter().fold(0u64, |acc, a| acc.saturating_add(a.size_bytes))
     }
 
     pub fn has_target(&self, target: PartitionTarget) -> bool {
