@@ -159,3 +159,35 @@ fn test_non_existent_file_check_and_recovery() {
     let fixed = KernelModuleStore::load_from_path(&store_path).expect("load fixed");
     assert_eq!(fixed.config.id, "default");
 }
+
+#[test]
+fn test_store_file_size_cap_and_regular_file_checks() {
+    let dir = tempdir().expect("tempdir");
+
+    // 1. Directory instead of file
+    let sub_dir = dir.path().join("directory_target");
+    fs::create_dir(&sub_dir).expect("create dir");
+
+    let check_dir = check_store_file(&sub_dir).expect("check dir");
+    assert!(!check_dir.healthy);
+    assert!(check_dir.errors.iter().any(|e| e.contains("not a regular file")));
+
+    let rec_dir_err = recover_store_file(&sub_dir);
+    assert!(rec_dir_err.is_err());
+    assert!(rec_dir_err.unwrap_err().contains("cannot recover non-regular file"));
+
+    // 2. Oversized file (exceeding MAX_STORE_FILE_SIZE)
+    let huge_file = dir.path().join("huge_store.json");
+    // Write 11 MB dummy file
+    let file = fs::File::create(&huge_file).expect("create huge file");
+    file.set_len(11 * 1024 * 1024).expect("set 11MB length");
+
+    let check_huge = check_store_file(&huge_file).expect("check huge");
+    assert!(!check_huge.healthy);
+    assert!(check_huge.errors.iter().any(|e| e.contains("exceeds maximum permitted size")));
+
+    let rec_huge_err = recover_store_file(&huge_file);
+    assert!(rec_huge_err.is_err());
+    assert!(rec_huge_err.unwrap_err().contains("exceeding 10485760 bytes limit"));
+}
+

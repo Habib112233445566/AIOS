@@ -564,6 +564,99 @@ aiosh mod doc search cramfs --json
 - Documentation: `docs/tasks/evidence/T-01689-documentation-documentation.md`.
 - Verification & Evidence: `docs/tasks/evidence/T-01690-documentation-verification-evidenc.md`.
 
+---
+
+## 13. Recovery & Validation Engine (Sub-Epic 10)
+
+The Recovery & Validation subsystem provides deep health inspection, syntax and invariant validation, non-destructive automated repair, and quarantine protection for the Kernel Module Management persistence layer (`aiosh-core::kernel_module_recovery`).
+
+### 13.1 Recovery Invariants (KR1..KR6)
+
+| Invariant | Name | Guarantee & Acceptance Criterion | Enforced in Code? |
+|---|---|---|---|
+| **KR1** | Rule Partition Completeness | `valid_rules + invalid_rules == total_rules`. | Yes (`validate_invariants`) |
+| **KR2** | Autoload Partition Completeness | `valid_autoload + invalid_autoload == total_autoload`. | Yes (`validate_invariants`) |
+| **KR3** | Health Consistency | `healthy == (errors.is_empty() && invalid_rules == 0 && invalid_autoload == 0)`. | Yes (`validate_invariants`) |
+| **KR4** | Conflict Resolution | Automatically detects and resolves KM3/KR4 conflicts where a module is both autoloaded and blacklisted/disabled by removing conflicting autoload entries while preserving security blacklist rules. | Yes (`recover_store_file`) |
+| **KR5** | Non-Destructive Quarantine | Never deletes corrupt or unparseable files; creates timestamped backup copy (`<file>.corrupt.<YYYYMMDD_HHMMSS_ffffff>.bak`) before resetting or repairing store. | Yes (`create_timestamped_backup`) |
+| **KR6** | Partial Corruption Recovery | Preserves all syntactically valid rules and autoload entries while pruning corrupt rules and writing atomic updates via `save_to_path`. | Yes (`recover_store_file`) |
+
+### 13.2 Operational Usage & Examples
+
+#### CLI Usage
+```bash
+# 1. Check store integrity in read-only mode (returns exit code 0 if healthy, 1 if unhealthy)
+aiosh mod check
+
+# 2. Check a custom store path with human-readable diagnostic report
+aiosh mod check --store /etc/modprobe.d/aios_modules.json
+
+# 3. Check store and output structured JSON report
+aiosh mod check --json
+
+# 4. Automatically repair a corrupt or conflicting store (creates quarantine backup)
+aiosh mod check --auto-recover
+
+# 5. Automatically repair custom store and output JSON report
+aiosh mod check --store /var/lib/aios/kernel_modules.json --auto-recover --json
+```
+
+#### MCP Tool Usage
+```json
+// MCP Tool: aios.kernel_module.check (Read-only check)
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "aios.kernel_module.check",
+    "arguments": {
+      "store_path": ".aios/kernel_modules.json",
+      "auto_recover": false
+    }
+  }
+}
+```
+
+```json
+// MCP Tool: aios.kernel_module.check (Mutating recovery with quarantine backup)
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "tools/call",
+  "params": {
+    "name": "aios.kernel_module.check",
+    "arguments": {
+      "store_path": ".aios/kernel_modules.json",
+      "auto_recover": true
+    }
+  }
+}
+```
+
+### 13.3 Security & Hardening Controls
+1. **File Size Cap**: `MAX_STORE_FILE_SIZE = 10 * 1024 * 1024` (10 MB). Rejects memory exhaustion attempts from oversized files or pseudo-devices before parsing.
+2. **Regular File Invariant**: Rejects directories, FIFOs, and character devices via `fs::metadata(path)?.is_file()`.
+3. **Control Character Rejection**: Validates path parameters against control characters (`\0`, `\r`, `\n`) across CLI and MCP surfaces.
+4. **PEP & Audit Integration**: Non-mutating checks emit read audit rows (`kernel_module:check`). Mutating recoveries emit write audit rows (`kernel_module:recover`) and require appropriate authorization grants.
+
+### 13.4 Constraints & Known Limitations
+- **Kernel-Level State Inconsistencies**: The recovery engine validates and repairs user-space configuration files (`.aios/kernel_modules.json`). If the running kernel currently has a conflicting module loaded in active RAM, recovery repairs on-disk config; unloading the running module still requires kernel privilege (`modprobe -r` / `rmmod`).
+- **Filesystem Permissions**: Store recovery requires write permissions on the target directory to create quarantine backups and atomically replace the store file.
+
+### 13.5 Verification Evidence
+- Research: `docs/tasks/evidence/T-01691-recovery-validation-research.md`.
+- Specification: `docs/tasks/evidence/T-01692-recovery-validation-specification.md`.
+- Scaffold: `docs/tasks/evidence/T-01693-recovery-validation-scaffold.md`.
+- Implementation: `docs/tasks/evidence/T-01694-recovery-validation-implementation.md`.
+- Unit Test: `docs/tasks/evidence/T-01695-recovery-validation-unit-test.md`.
+- Integration: `docs/tasks/evidence/T-01696-recovery-validation-integration.md`.
+- Security Review: `docs/tasks/evidence/T-01697-recovery-validation-security-review.md`.
+- Hardening: `docs/tasks/evidence/T-01698-recovery-validation-hardening.md`.
+- Documentation: `docs/tasks/evidence/T-01699-recovery-validation-documentation.md`.
+- Verification & Evidence: `docs/tasks/evidence/T-01700-recovery-validation-verification-evidenc.md`.
+
+
 
 
 

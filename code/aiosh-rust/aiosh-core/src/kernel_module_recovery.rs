@@ -197,6 +197,9 @@ pub fn validate_kernel_module_store(store: &KernelModuleStore, store_path: &Path
     }
 }
 
+/// Maximum permissible size for a kernel module store file (10 MB).
+pub const MAX_STORE_FILE_SIZE: u64 = 10 * 1024 * 1024;
+
 /// Checks an existing store file on disk in read-only mode.
 pub fn check_store_file(path: &Path) -> Result<KernelModuleValidationReport, String> {
     if !path.exists() {
@@ -209,6 +212,64 @@ pub fn check_store_file(path: &Path) -> Result<KernelModuleValidationReport, Str
             valid_autoload: 0,
             invalid_autoload: 0,
             errors: vec![format!("store file {:?} does not exist", path)],
+            healthy: false,
+            recovered: false,
+            backup_path: None,
+            evaluated_at: Utc::now().to_rfc3339(),
+        });
+    }
+
+    let meta = match fs::metadata(path) {
+        Ok(m) => m,
+        Err(e) => {
+            return Ok(KernelModuleValidationReport {
+                store_path: path.to_string_lossy().to_string(),
+                total_rules: 0,
+                valid_rules: 0,
+                invalid_rules: 0,
+                total_autoload: 0,
+                valid_autoload: 0,
+                invalid_autoload: 0,
+                errors: vec![format!("store metadata read failure: {}", e)],
+                healthy: false,
+                recovered: false,
+                backup_path: None,
+                evaluated_at: Utc::now().to_rfc3339(),
+            });
+        }
+    };
+
+    if !meta.is_file() {
+        return Ok(KernelModuleValidationReport {
+            store_path: path.to_string_lossy().to_string(),
+            total_rules: 0,
+            valid_rules: 0,
+            invalid_rules: 0,
+            total_autoload: 0,
+            valid_autoload: 0,
+            invalid_autoload: 0,
+            errors: vec![format!("store path {:?} is not a regular file", path)],
+            healthy: false,
+            recovered: false,
+            backup_path: None,
+            evaluated_at: Utc::now().to_rfc3339(),
+        });
+    }
+
+    if meta.len() > MAX_STORE_FILE_SIZE {
+        return Ok(KernelModuleValidationReport {
+            store_path: path.to_string_lossy().to_string(),
+            total_rules: 0,
+            valid_rules: 0,
+            invalid_rules: 0,
+            total_autoload: 0,
+            valid_autoload: 0,
+            invalid_autoload: 0,
+            errors: vec![format!(
+                "store file exceeds maximum permitted size of {} bytes (got {} bytes)",
+                MAX_STORE_FILE_SIZE,
+                meta.len()
+            )],
             healthy: false,
             recovered: false,
             backup_path: None,
@@ -263,6 +324,19 @@ pub fn recover_store_file(path: &Path) -> Result<KernelModuleValidationReport, S
         let mut rep = validate_kernel_module_store(&store, path);
         rep.recovered = true;
         return Ok(rep);
+    }
+
+    let meta = fs::metadata(path)
+        .map_err(|e| format!("failed to read store metadata at {:?}: {}", path, e))?;
+    if !meta.is_file() {
+        return Err(format!("cannot recover non-regular file at {:?}", path));
+    }
+    if meta.len() > MAX_STORE_FILE_SIZE {
+        return Err(format!(
+            "cannot recover file exceeding {} bytes limit (got {} bytes)",
+            MAX_STORE_FILE_SIZE,
+            meta.len()
+        ));
     }
 
     // Try reading content

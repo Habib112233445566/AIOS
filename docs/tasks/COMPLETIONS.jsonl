@@ -1694,3 +1694,13 @@
 {"seq":1694,"ts":"2026-09-20T01:05:08Z","event":"completed","task_id":1694,"note":"Implemented kernel module recovery and validation engine with non-destructive quarantine","evidence":[]}
 {"seq":1695,"ts":"2026-09-20T01:08:05Z","event":"completed","task_id":1695,"note":"Authored and passed unit tests for Kernel Module Management recovery and validation","evidence":[]}
 {"seq":1696,"ts":"2026-09-20T01:40:28Z","event":"completed","task_id":1696,"note":"Integrated Kernel Module Management recovery and validation into CLI and MCP surfaces","evidence":[]}
+{"seq":1697,"ts":"2026-09-20T01:46:19Z","event":"completed","task_id":1697,"note":"Security review for kernel module recovery & validation completed with threat scenarios documented","evidence":[]}
+{"seq":1698,"ts":"2026-09-20T01:48:16Z","event":"completed","task_id":1698,"note":"Hardened kernel module recovery with size caps, metadata validation, and directory checks","evidence":[]}
+{"seq":1699,"ts":"2026-09-20T01:48:44Z","event":"completed","task_id":1699,"note":"Documented kernel module recovery & validation engine in docs/kernel_module_management.md","evidence":[]}
+{"seq":1700,"ts":"2026-09-20T01:50:45Z","event":"completed","task_id":1700,"note":"Kernel Module Management Epic (T-01601..T-01700) fully verified and closed with comprehensive evidence","evidence":[]}
+{"seq":1701,"ts":"2026-09-20T01:51:08Z","event":"completed","task_id":1701,"note":"Completed Hardware Detection data model research with Linux sysfs architecture and invariant definitions HD1..HD5","evidence":[]}
+{"seq":1702,"ts":"2026-09-20T01:51:28Z","event":"completed","task_id":1702,"note":"Specified Hardware Detection data model with DeviceClass, DeviceBus, HardwareDevice, HardwareInventory and invariants HD1..HD5","evidence":[]}
+{"seq":1703,"ts":"2026-09-20T01:52:44Z","event":"completed","task_id":1703,"note":"Scaffolded Hardware Detection data model in hardware.rs and wired into lib.rs with clean cargo check","evidence":[]}
+{"seq":1704,"ts":"2026-09-20T01:53:32Z","event":"completed","task_id":1704,"note":"Implemented Hardware Detection data model with full builder, query methods, and invariant validators in hardware.rs","evidence":[]}
+{"seq":1705,"ts":"2026-09-20T01:55:28Z","event":"completed","task_id":1705,"note":"Authored and executed 9 unit tests in test_hardware.rs covering HD1..HD5 and all error paths","evidence":[]}
+{"seq":1706,"ts":"2026-09-20T01:56:01Z","event":"completed","task_id":1706,"note":"Integrated Hardware Detection data model with public exports in lib.rs and cross-substrate Python smoke tests","evidence":[]}
