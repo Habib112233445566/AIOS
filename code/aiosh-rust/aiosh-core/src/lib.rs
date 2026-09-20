@@ -77,6 +77,7 @@ pub mod network_config;
 pub mod network_doc;
 pub mod network_observability;
 pub mod network_policy;
+pub mod network_recovery;
 pub mod network_service;
 pub mod package;
 pub mod package_config;
@@ -192,6 +193,12 @@ pub use network_config::NetworkConfig;
 pub use network_policy::{
     validate_policy_path as validate_network_policy_path, NetworkPolicyMode, NetworkPolicyReport,
     NetworkPolicyViolation, NetworkSecurityPolicy, MAX_POLICY_FILE_BYTES as MAX_NETWORK_POLICY_FILE_BYTES,
+};
+pub use network_recovery::{
+    check_network_file, recover_network_file, recover_network_state_in_memory,
+    save_recovered_state_to_path, validate_network_state as validate_network_state_integrity,
+    validate_network_store_path, NetworkRecoveryAction, NetworkRecoveryReport,
+    NetworkValidationReport, MAX_NETWORK_STORE_SIZE,
 };
 pub use types::GENESIS_HASH;
 

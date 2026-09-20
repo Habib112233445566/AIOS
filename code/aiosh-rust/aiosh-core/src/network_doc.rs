@@ -107,6 +107,16 @@ pub fn validate_doc_path(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// Sanitizes text for safe inclusion inside Markdown table cells, escaping pipes and stripping control characters.
+pub fn sanitize_table_cell(s: &str) -> String {
+    s.chars()
+        .filter(|c| !c.is_control() && *c != '\0')
+        .collect::<String>()
+        .replace('|', "\\|")
+        .trim()
+        .to_string()
+}
+
 /// Offline in-memory repository and index for Network Bootstrap documentation.
 #[derive(Debug, Clone)]
 pub struct NetworkDocIndex {
@@ -247,6 +257,7 @@ impl NetworkDocIndex {
     }
 
     /// Searches topics with ranked scoring (NDOC3).
+    /// Searches topics with ranked scoring (NDOC3).
     pub fn search(&self, query: &str) -> Vec<NetworkDocSearchResult> {
         let trimmed_query = query.trim();
         if trimmed_query.is_empty() || trimmed_query.len() > MAX_DOC_QUERY_LEN {
@@ -254,7 +265,10 @@ impl NetworkDocIndex {
         }
 
         let query_lower = trimmed_query.to_ascii_lowercase();
-        let query_terms: Vec<&str> = query_lower.split_whitespace().collect();
+        let mut query_terms: Vec<&str> = query_lower.split_whitespace().collect();
+        if query_terms.len() > 16 {
+            query_terms.truncate(16);
+        }
         let mut results = Vec::new();
 
         for topic in &self.topics {
@@ -294,8 +308,10 @@ impl NetworkDocIndex {
             }
 
             if score > 0 {
-                let snippet = if topic.summary.len() > 120 {
-                    format!("{}...", &topic.summary[..117])
+                let snippet = if topic.summary.chars().count() > 120 {
+                    let mut s: String = topic.summary.chars().take(117).collect();
+                    s.push_str("...");
+                    s
                 } else {
                     topic.summary.clone()
                 };
@@ -370,8 +386,13 @@ impl NetworkDocIndex {
                     .join(", ")
             };
             md.push_str(&format!(
-                "| `{}` | `{:?}` | `{:?}` | `{}` | {} | {} |\n",
-                iface.name, iface.iftype, iface.operstate, mac, iface.mtu, ips
+                "| `{}` | `{}` | `{}` | `{}` | {} | {} |\n",
+                sanitize_table_cell(&iface.name),
+                sanitize_table_cell(&format!("{:?}", iface.iftype)),
+                sanitize_table_cell(&format!("{:?}", iface.operstate)),
+                sanitize_table_cell(mac),
+                iface.mtu,
+                sanitize_table_cell(&ips)
             ));
         }
         md.push('\n');
@@ -383,7 +404,13 @@ impl NetworkDocIndex {
         for route in &state.routes {
             let gw = route.gateway.as_deref().unwrap_or("direct");
             let iface = route.interface.as_deref().unwrap_or("none");
-            md.push_str(&format!("| `{}` | `{}` | `{}` | {} |\n", route.destination, gw, iface, route.metric));
+            md.push_str(&format!(
+                "| `{}` | `{}` | `{}` | {} |\n",
+                sanitize_table_cell(&route.destination),
+                sanitize_table_cell(gw),
+                sanitize_table_cell(iface),
+                route.metric
+            ));
         }
         md.push('\n');
 

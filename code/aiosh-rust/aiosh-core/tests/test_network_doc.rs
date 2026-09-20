@@ -157,3 +157,36 @@ fn test_ndoc6_oversized_document_rejected() {
     assert!(res.is_err());
     assert!(res.unwrap_err().contains("exceeds limit"));
 }
+
+#[test]
+fn test_ndoc_hardening_features() {
+    use aiosh_core::network_doc::{sanitize_table_cell, NetworkDocTopic, NetworkDocCategory};
+
+    // 1. Table cell sanitization
+    assert_eq!(sanitize_table_cell("eth0|evil\r\n"), "eth0\\|evil");
+    assert_eq!(sanitize_table_cell("lo\0control"), "locontrol");
+
+    // 2. UTF-8 multi-byte snippet safety
+    let mut index = NetworkDocIndex::new();
+    let multibyte_summary = "🦀".repeat(150); // 150 crab emojis (4 bytes each)
+    index.topics.push(NetworkDocTopic {
+        id: "net-emoji-topic".into(),
+        title: "Emoji Topic".into(),
+        category: NetworkDocCategory::Troubleshooting,
+        summary: multibyte_summary,
+        sections: Vec::new(),
+        tags: vec!["emoji".into()],
+        references: Vec::new(),
+        examples: Vec::new(),
+    });
+
+    let results = index.search("emoji");
+    assert_eq!(results.len(), 1);
+    assert!(results[0].snippet.ends_with("..."));
+
+    // 3. Query term bounds (> 16 terms)
+    let long_query = "term ".repeat(30);
+    let bounded_results = index.search(&long_query);
+    // Should execute safely without error
+    let _ = bounded_results;
+}

@@ -604,3 +604,89 @@ println!("Snapshots in ring buffer: {}", history.len());
 - Research & Specification: `docs/tasks/evidence/T-01871-observability-research.md`, `docs/tasks/evidence/T-01872-observability-specification.md`
 - Implementation & Testing: `docs/tasks/evidence/T-01874-observability-implementation.md`, `docs/tasks/evidence/T-01875-observability-unit-test.md`, `docs/tasks/evidence/T-01876-observability-integration.md`
 - Security Review & Hardening: `docs/tasks/evidence/T-01877-observability-security-review.md`, `docs/tasks/evidence/T-01878-observability-hardening.md`
+
+---
+
+## 12. Network Documentation Subsystem
+
+The Network Bootstrap subsystem provides a built-in, offline documentation index and dynamic report generator (`NetworkDocIndex`) defined in `code/aiosh-rust/aiosh-core/src/network_doc.rs`. It enables air-gapped runbook lookups, category-filtered technical references, multi-factor ranked search queries, and real-time Markdown and ASCII topology report generation directly from live `NetworkState`.
+
+### Architecture & Capabilities
+
+```
++-------------------------------------------------------------+
++-------------------------------------------------------------+
+|                      Offline Repository                     |
+|  - Pre-populated canonical topics (NDOC1)                   |
+|  - Loose category alias resolution (NDOC2)                  |
+|  - Multi-field ranked relevance search (NDOC3)              |
++------------------------------+------------------------------+
+                               |
+                               v
++-------------------------------------------------------------+
+|                      Format Renderers                       |
+|  - render_topic_markdown()     [Markdown reference topics]  |
+|  - render_state_markdown()     [Live interface/route report]|
+|  - render_ascii_topology()     [ASCII topology tree diagram]|
++------------------------------+------------------------------+
+                               |
+                               v
++-------------------------------------------------------------+
+|                   Atomic Storage & Hygiene                  |
+|  - validate_doc_path() [no '..', no nulls, <= 1024 chars]   |
+|  - save_to_path()      [atomic sibling swap + 0600 + guard] |
+|  - load_from_path()    [1 MB MAX_DOC_FILE_BYTES ceiling]    |
++-------------------------------------------------------------+
+```
+
+### Invariants (`NDOC1..NDOC6`)
+
+| Invariant | Name | Rules & Enforcement |
+|:---|:---|:---|
+| **`NDOC1`** | Canonical Offline Topics | Ships with pre-populated reference topics covering architecture (`net-arch-overview`), discovery (`net-discovery-sysfs`), security policy (`net-security-policy`), observability (`net-observability-telemetry`), configuration (`net-configuration-env`), and troubleshooting (`net-troubleshooting-triage`). Fully self-contained without external network calls. |
+| **`NDOC2`** | Loose Category Matching | Supports intuitive category aliases: `arch` -> `Architecture`, `probe`/`scan` -> `Discovery`, `sec`/`policy` -> `Security`, `obs`/`metrics` -> `Observability`, `cfg` -> `Configuration`, `triage`/`debug` -> `Troubleshooting`. String input capped at 32 characters. |
+| **`NDOC3`** | Ranked Relevance Search | Scores matches by field importance: Topic ID (+100), Title (+50), Tag (+25), Summary (+20), Section title/body (+15/+5). Query bounded to `MAX_DOC_QUERY_LEN = 256`, token count capped to 16, and results capped to `MAX_DOC_SEARCH_RESULTS = 50`. Zero panic on UTF-8 multi-byte glyphs. |
+| **`NDOC4`** | Markdown Topic Formatting | Generates formatted Markdown topics with header metadata, structured sections, copy-pasteable configuration/command code blocks, and RFC citations. |
+| **`NDOC5`** | Dynamic State & ASCII Topology | Generates Markdown state summaries with table cell sanitization (`sanitize_table_cell` escaping `|`) and hierarchical ASCII topology tree diagrams depicting host, default gateway, interfaces, IP addresses, and routing tables. |
+| **`NDOC6`** | Path Hygiene & Atomic Persistence | File paths validated against traversal (`..`), control characters, and 1024 character length. Document size capped at 1 MB (`MAX_DOC_FILE_BYTES`). Saved atomically via sibling temporary file `.{name}.tmp.{pid}` with permissions `0600` on Unix and RAII `TempFileGuard` cleanup. |
+
+### Programmatic Usage Example (Rust)
+
+```rust
+use std::path::Path;
+use aiosh_core::network::NetworkState;
+use aiosh_core::network_doc::{NetworkDocIndex, NetworkDocCategory};
+
+// 1. Initialize offline index
+let index = NetworkDocIndex::new();
+
+// 2. Search topics with ranked scoring
+let results = index.search("promiscuous");
+for res in &results {
+    println!("Found [{}] score={}: {}", res.topic_id, res.score, res.title);
+}
+
+// 3. Render a topic as Markdown
+if let Some(md) = index.render_topic_markdown("net-security-policy") {
+    println!("{}", md);
+}
+
+// 4. Generate dynamic host topology diagram
+let state = NetworkState::new("aios-node-01");
+let topology = index.render_ascii_topology(&state);
+println!("{}", topology);
+
+// 5. Save state report atomically
+let report_md = index.render_state_markdown(&state);
+index.save_to_path(&report_md, Path::new("/var/log/aios/network_report.md"))?;
+```
+
+### Stated Limitations
+- Canonical topics are compiled into binary data structures; adding custom external topics is done in memory or via structured JSON deserialization.
+- ASCII topology generation presents a single-host view (host -> interfaces -> routes -> DNS); multi-host mesh topologies require aggregating multiple node snapshots.
+
+### Evidence & Task References
+- Research & Specification: `docs/tasks/evidence/T-01881-documentation-research.md`, `docs/tasks/evidence/T-01882-documentation-specification.md`
+- Scaffold & Implementation: `docs/tasks/evidence/T-01883-documentation-scaffold.md`, `docs/tasks/evidence/T-01884-documentation-implementation.md`
+- Unit Testing & Integration: `docs/tasks/evidence/T-01885-documentation-unit-test.md`, `docs/tasks/evidence/T-01886-documentation-integration.md`
+- Security Review & Hardening: `docs/tasks/evidence/T-01887-documentation-security-review.md`, `docs/tasks/evidence/T-01888-documentation-hardening.md`
