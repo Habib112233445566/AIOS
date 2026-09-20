@@ -1307,6 +1307,20 @@ impl Server {
                 "additionalProperties": false
             }
         }));
+        tools.push(json!({
+            "name": "aios.kernel_module.doc",
+            "description": "Query kernel module documentation: list topics, get detailed markdown/JSON topic, or search by query",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "action": { "type": "string", "enum": ["list", "get", "search"], "description": "Documentation action: list topics, get topic, or search index (default: list)" },
+                    "topic": { "type": "string", "description": "Topic identifier to retrieve (required when action is 'get')" },
+                    "query": { "type": "string", "description": "Search query text (required when action is 'search')" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
         tools
     }
 
@@ -4751,6 +4765,54 @@ impl Server {
                 dispatch::recorded_call(
                     &mut self.ring, &self.pep,
                     "aios.kernel_module.observability", "Generate kernel module observability report", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.kernel_module.doc" => {
+                let action = arguments.get("action").and_then(|v| v.as_str()).unwrap_or("list").to_string();
+                let topic_opt = arguments.get("topic").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let query_opt = arguments.get("query").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+                let f = move || -> Result<Value, String> {
+                    let index = aiosh_core::kernel_module_doc::KernelModuleDocIndex::new();
+                    match action.as_str() {
+                        "get" => {
+                            let topic_id = topic_opt.as_deref().ok_or_else(|| "missing required argument 'topic'".to_string())?;
+                            let topic = index.get_topic(topic_id).ok_or_else(|| format!("topic '{}' not found in documentation index", topic_id))?;
+                            Ok(json!({
+                                "ok": true,
+                                "tool": "aios.kernel_module.doc",
+                                "action": "get",
+                                "data": topic,
+                                "markdown": aiosh_core::kernel_module_doc::KernelModuleDocIndex::format_topic_markdown(topic),
+                            }))
+                        }
+                        "search" => {
+                            let query = query_opt.as_deref().ok_or_else(|| "missing required argument 'query'".to_string())?;
+                            let results = index.search(query);
+                            Ok(json!({
+                                "ok": true,
+                                "tool": "aios.kernel_module.doc",
+                                "action": "search",
+                                "query": query,
+                                "data": results,
+                            }))
+                        }
+                        "list" => {
+                            let topics = index.list_topics();
+                            Ok(json!({
+                                "ok": true,
+                                "tool": "aios.kernel_module.doc",
+                                "action": "list",
+                                "data": topics,
+                            }))
+                        }
+                        other => Err(format!("unknown doc action '{}' (expected 'list', 'get', or 'search')", other)),
+                    }
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.kernel_module.doc", "Query kernel module documentation", arguments,
                     None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
                 )
             }

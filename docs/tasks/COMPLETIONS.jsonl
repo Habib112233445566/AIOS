@@ -1674,3 +1674,13 @@
 {"seq":1674,"ts":"2026-09-19T02:19:44Z","event":"completed","task_id":1674,"note":"Implemented KernelModuleObservabilityReport with invariants KO1..KO6 in aiosh-core","evidence":[]}
 {"seq":1675,"ts":"2026-09-19T02:20:35Z","event":"completed","task_id":1675,"note":"Added and verified comprehensive unit test suite for KernelModuleObservabilityReport (KO1..KO6)","evidence":[]}
 {"seq":1676,"ts":"2026-09-19T02:22:59Z","event":"completed","task_id":1676,"note":"Integrated Kernel Module Management observability into CLI and MCP surfaces with end-to-end smoke verification","evidence":[]}
+{"seq":1677,"ts":"2026-09-19T02:44:49Z","event":"completed","task_id":1677,"note":"Completed security review of Kernel Module Management observability with abuse scenarios AS-01..AS-06","evidence":[]}
+{"seq":1678,"ts":"2026-09-19T02:46:34Z","event":"completed","task_id":1678,"note":"Hardened Kernel Module Management observability with size caps, line length limits, and envelope integrity","evidence":[]}
+{"seq":1679,"ts":"2026-09-19T02:47:02Z","event":"completed","task_id":1679,"note":"Documented Kernel Module Management observability (§11 in docs/kernel_module_management.md)","evidence":[]}
+{"seq":1680,"ts":"2026-09-19T02:47:24Z","event":"completed","task_id":1680,"note":"Verified Kernel Module Management observability and closed Sub-Epic 8 milestone","evidence":[]}
+{"seq":1681,"ts":"2026-09-19T02:47:41Z","event":"completed","task_id":1681,"note":"Completed research on kernel module documentation standards, authoritative references, and invariants KD1..KD6","evidence":[]}
+{"seq":1682,"ts":"2026-09-19T02:47:59Z","event":"completed","task_id":1682,"note":"Specified Kernel Module Management documentation system data models, canonical topics, and invariants KD1..KD6","evidence":[]}
+{"seq":1683,"ts":"2026-09-19T02:48:52Z","event":"completed","task_id":1683,"note":"Scaffolded kernel_module_doc module and registered in aiosh-core lib.rs","evidence":[]}
+{"seq":1684,"ts":"2026-09-19T02:49:33Z","event":"completed","task_id":1684,"note":"Implemented KernelModuleDocIndex with 7 canonical topics, scored search, and markdown formatter","evidence":[]}
+{"seq":1685,"ts":"2026-09-19T02:50:37Z","event":"completed","task_id":1685,"note":"Authored and passed 6 in-tree unit tests for KernelModuleDocIndex validating invariants KD1..KD6","evidence":[]}
+{"seq":1686,"ts":"2026-09-19T02:56:29Z","event":"completed","task_id":1686,"note":"Integrated Kernel Module Management documentation into CLI and MCP with end-to-end smoke verification","evidence":[]}

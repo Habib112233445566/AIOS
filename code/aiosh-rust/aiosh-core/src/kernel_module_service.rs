@@ -17,6 +17,12 @@ use crate::kernel_module::{
 /// Maximum document size for kernel module store JSON (10 MiB, KS5).
 pub const MAX_MODULE_DOC_BYTES: u64 = 10 * 1024 * 1024;
 
+/// Maximum file size for proc modules reading (1 MiB, hardened T-01678).
+pub const MAX_PROC_MODULES_BYTES: usize = 1024 * 1024;
+
+/// Maximum line length in proc modules file (512 bytes, hardened T-01678).
+pub const MAX_MODULE_LINE_BYTES: usize = 512;
+
 /// In-memory and persistent store for kernel module configurations.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct KernelModuleStore {
@@ -229,21 +235,47 @@ impl KernelModuleService {
         self
     }
 
-    /// Lists loaded modules from procfs (KS1).
+    /// Lists loaded modules from procfs with defensive bounds (KS1, hardened T-01678).
     pub fn list_loaded_modules(&self) -> Result<Vec<ModuleInfo>, String> {
         if !self.proc_modules_path.exists() {
             // Graceful fallback for non-Linux or containerized mock environments
             return Ok(Vec::new());
         }
 
-        let content = fs::read_to_string(&self.proc_modules_path)
-            .map_err(|e| format!("failed to read {:?}: {}", self.proc_modules_path, e))?;
+        // Hardening (T-01678): check file metadata if available
+        if let Ok(meta) = fs::metadata(&self.proc_modules_path) {
+            let is_proc = self.proc_modules_path.to_string_lossy().starts_with("/proc");
+            if !is_proc && meta.len() > MAX_PROC_MODULES_BYTES as u64 {
+                return Err(format!(
+                    "modules file {:?} ({} bytes) exceeds maximum limit ({} bytes)",
+                    self.proc_modules_path, meta.len(), MAX_PROC_MODULES_BYTES
+                ));
+            }
+        }
+
+        let file = fs::File::open(&self.proc_modules_path)
+            .map_err(|e| format!("failed to open {:?}: {}", self.proc_modules_path, e))?;
+        let reader = std::io::BufReader::new(file);
+        use std::io::BufRead;
 
         let mut modules = Vec::new();
-        for line in content.lines() {
+        let mut total_bytes = 0usize;
+
+        for line_res in reader.lines() {
+            let line = line_res.map_err(|e| format!("failed to read line: {}", e))?;
+            total_bytes = total_bytes.saturating_add(line.len() + 1);
+            if total_bytes > MAX_PROC_MODULES_BYTES {
+                return Err("modules input exceeds maximum size limit of 1 MiB".to_string());
+            }
             let line = line.trim();
             if line.is_empty() {
                 continue;
+            }
+            if line.len() > MAX_MODULE_LINE_BYTES {
+                return Err(format!(
+                    "line in modules file exceeds maximum length of {} bytes",
+                    MAX_MODULE_LINE_BYTES
+                ));
             }
             let info = ModuleInfo::parse_proc_modules_line(line)?;
             modules.push(info);

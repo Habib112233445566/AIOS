@@ -113,3 +113,34 @@ fn test_oversized_store_refusal() {
     let err = KernelModuleStore::load_from_path(&store_path).unwrap_err();
     assert!(err.contains("exceeds maximum limit"));
 }
+
+#[test]
+fn test_oversized_proc_modules_refusal() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mock_proc = dir.path().join("huge_modules");
+
+    let file = fs::File::create(&mock_proc).expect("create file");
+    file.set_len((aiosh_core::kernel_module_service::MAX_PROC_MODULES_BYTES + 1024) as u64).expect("set len");
+    drop(file);
+
+    let store = KernelModuleStore::new("test", "desc");
+    let service = KernelModuleService::new(store).with_proc_modules_path(mock_proc);
+
+    let err = service.list_loaded_modules().unwrap_err();
+    assert!(err.contains("exceeds maximum limit"));
+}
+
+#[test]
+fn test_overlong_proc_modules_line_refusal() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mock_proc = dir.path().join("long_line_modules");
+
+    let long_line = "a".repeat(aiosh_core::kernel_module_service::MAX_MODULE_LINE_BYTES + 10);
+    fs::write(&mock_proc, format!("{}\n", long_line)).expect("write");
+
+    let store = KernelModuleStore::new("test", "desc");
+    let service = KernelModuleService::new(store).with_proc_modules_path(mock_proc);
+
+    let err = service.list_loaded_modules().unwrap_err();
+    assert!(err.contains("exceeds maximum length"));
+}

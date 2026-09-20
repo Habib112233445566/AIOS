@@ -425,6 +425,71 @@ aiosh mod policy --policy /etc/aios/kernel_module_policy.json --evaluate-store
 - Integration: `docs/tasks/evidence/T-01666-security-policy-integration.md`.
 - Security Review: `docs/tasks/evidence/T-01667-security-policy-security-review.md`.
 - Hardening: `docs/tasks/evidence/T-01668-security-policy-hardening.md`.
+- Documentation: `docs/tasks/evidence/T-01669-security-policy-documentation.md`.
+- Verification & Evidence: `docs/tasks/evidence/T-01670-security-policy-verification-evidenc.md`.
+
+---
+
+## 11. Sub-Epic 8: Kernel Module Observability & Telemetry Subsystem (T-01671..T-01680)
+
+### 11.1 Overview & Observability Invariants (KO1..KO6)
+The Observability subsystem provides comprehensive runtime and configuration telemetry through `KernelModuleObservabilityReport`:
+
+| Invariant | Name | Guarantee & Enforcement | Enforced in Code? |
+|---|---|---|---|
+| **KO1** | Fallback Grace | Gracefully handles non-Linux / containerized environments where `/proc/modules` is absent without failure or panic. | Yes (`list_loaded_modules` fallback) |
+| **KO2** | State & Memory Aggregation | Accurately computes `total_loaded_modules`, `total_memory_bytes` (saturating), `state_breakdown`, and `ref_count_distribution` (`0`, `1-2`, `3-5`, `6+`). | Yes (`KernelModuleObservabilityReport::generate`) |
+| **KO3** | Rule Type Distribution | Computes `store_rules_count`, `rule_type_breakdown` by directive type, and `autoload_modules_count`. | Yes |
+| **KO4** | Policy Compliance Tracking | Evaluates all store rules and autoload directives against the active or custom security policy, calculating `policy_compliant_count`, `policy_violations_count`, `prohibited_modules_configured`, and `protected_modules_configured`. | Yes |
+| **KO5** | Deterministic Serialization | Generates deterministic, machine-readable JSON telemetry for human operators and AI agents alike. | Yes (`serde_json`) |
+| **KO6** | Defensive Stream Bounds | Strict 1 MiB stream ceiling and 512 bytes per line ceiling on procfs input to defeat memory exhaustion. | Yes (`MAX_PROC_MODULES_BYTES`, `MAX_MODULE_LINE_BYTES`) |
+
+### 11.2 Usage & Examples
+
+```bash
+# 1. Human-readable observability overview
+aiosh mod observability
+
+# 2. JSON telemetry export
+aiosh mod observability --json
+
+# 3. Compact status alias
+aiosh mod status --json
+
+# 4. Custom mock procfs and store
+aiosh mod observability --proc-modules /tmp/mock_proc_modules --store /tmp/custom_store.json --json
+```
+
+```json
+// MCP Tool: aios.kernel_module.observability
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "aios.kernel_module.observability",
+    "arguments": {}
+  }
+}
+```
+
+### 11.3 Constraints & Security Considerations
+1. **Passive Read-Only**: The observability subsystem never modifies kernel state or configuration files; unprivileged users can safely inspect observability metrics.
+2. **KASLR Address Stripping**: Hexadecimal kernel memory addresses from `/proc/modules` are stripped to prevent address space layout leakage.
+3. **Bounded Ingestion**: Procfs and mock files larger than 1 MiB or containing lines longer than 512 bytes are safely rejected.
+
+### 11.4 Verification Evidence
+- Research: `docs/tasks/evidence/T-01671-observability-research.md`.
+- Specification: `docs/tasks/evidence/T-01672-observability-specification.md`.
+- Scaffold: `docs/tasks/evidence/T-01673-observability-scaffold.md`.
+- Implementation: `docs/tasks/evidence/T-01674-observability-implementation.md`.
+- Unit Test: `docs/tasks/evidence/T-01675-observability-unit-test.md`.
+- Integration: `docs/tasks/evidence/T-01676-observability-integration.md`.
+- Security Review: `docs/tasks/evidence/T-01677-observability-security-review.md`.
+- Hardening: `docs/tasks/evidence/T-01678-observability-hardening.md`.
+- Documentation: `docs/tasks/evidence/T-01679-observability-documentation.md`.
+- Verification & Evidence: `docs/tasks/evidence/T-01680-observability-verification-evidenc.md`.
+
 
 
 

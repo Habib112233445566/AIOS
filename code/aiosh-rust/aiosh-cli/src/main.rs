@@ -10541,8 +10541,201 @@ fn cmd_kernel_module(args: &[String]) -> i32 {
             }
             0
         }
+        Some("doc") => {
+            let positional: Vec<&str> = rest.iter().filter(|s| !s.starts_with("--")).map(|s| s.as_str()).collect();
+            let doc_action = positional.first().copied();
+            let index = aiosh_core::kernel_module_doc::KernelModuleDocIndex::new();
+
+            match doc_action {
+                Some("get") | Some("show") => {
+                    let topic_id = match positional.get(1).copied() {
+                        Some(id) => id,
+                        None => {
+                            let msg = "missing topic ID (usage: aiosh mod doc get <topic_id>)";
+                            classify_and_emit(
+                                &mut ctx,
+                                "kernel_module",
+                                "doc",
+                                json!({ "error": msg }),
+                                "failure",
+                                None,
+                                Some("Missing topic ID"),
+                                "operator",
+                                None,
+                            );
+                            if is_json {
+                                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_TOPIC_ID", "message": msg } }));
+                            } else {
+                                eprintln!("{}", sanitize_terminal(msg));
+                            }
+                            return 2;
+                        }
+                    };
+
+                    match index.get_topic(topic_id) {
+                        Some(topic) => {
+                            classify_and_emit(
+                                &mut ctx,
+                                "kernel_module",
+                                "doc",
+                                json!({ "topic": topic_id, "found": true }),
+                                "success",
+                                Some(topic_id),
+                                Some("Retrieved kernel module documentation topic"),
+                                "operator",
+                                None,
+                            );
+                            if is_json {
+                                println!("{}", json!({ "code": 0, "data": topic, "error": serde_json::Value::Null }));
+                            } else {
+                                println!("{}", aiosh_core::kernel_module_doc::KernelModuleDocIndex::format_topic_markdown(topic));
+                            }
+                            0
+                        }
+                        None => {
+                            let msg = format!("topic '{}' not found in documentation index", topic_id);
+                            classify_and_emit(
+                                &mut ctx,
+                                "kernel_module",
+                                "doc",
+                                json!({ "topic": topic_id, "found": false, "error": &msg }),
+                                "failure",
+                                Some(topic_id),
+                                Some("Topic not found"),
+                                "operator",
+                                None,
+                            );
+                            if is_json {
+                                println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "TOPIC_NOT_FOUND", "message": msg } }));
+                            } else {
+                                eprintln!("{}", sanitize_terminal(&msg));
+                            }
+                            1
+                        }
+                    }
+                }
+                Some("search") | Some("find") => {
+                    let query = match positional.get(1).copied() {
+                        Some(q) => q,
+                        None => {
+                            let msg = "missing search query (usage: aiosh mod doc search <query>)";
+                            classify_and_emit(
+                                &mut ctx,
+                                "kernel_module",
+                                "doc",
+                                json!({ "error": msg }),
+                                "failure",
+                                None,
+                                Some("Missing search query"),
+                                "operator",
+                                None,
+                            );
+                            if is_json {
+                                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_QUERY", "message": msg } }));
+                            } else {
+                                eprintln!("{}", sanitize_terminal(msg));
+                            }
+                            return 2;
+                        }
+                    };
+
+                    let results = index.search(query);
+                    classify_and_emit(
+                        &mut ctx,
+                        "kernel_module",
+                        "doc",
+                        json!({ "query": query, "matches": results.len() }),
+                        "success",
+                        None,
+                        Some("Searched kernel module documentation index"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 0, "data": results, "error": serde_json::Value::Null }));
+                    } else {
+                        println!("Search Results for '{}' ({} match(es)):", sanitize_terminal(query), results.len());
+                        for r in &results {
+                            println!("  [{}] {} (score: {})", r.topic_id, r.title, r.score);
+                            if !r.matched_tags.is_empty() {
+                                println!("    Tags: {}", r.matched_tags.join(", "));
+                            }
+                            if !r.snippet.is_empty() {
+                                println!("    Snippet: {}", sanitize_terminal(&r.snippet));
+                            }
+                        }
+                    }
+                    0
+                }
+                Some("list") | None => {
+                    let topics = index.list_topics();
+                    classify_and_emit(
+                        &mut ctx,
+                        "kernel_module",
+                        "doc",
+                        json!({ "topics_count": topics.len() }),
+                        "success",
+                        None,
+                        Some("Listed kernel module documentation topics"),
+                        "operator",
+                        None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 0, "data": topics, "error": serde_json::Value::Null }));
+                    } else {
+                        println!("Kernel Module Documentation Topics ({} total):", topics.len());
+                        for t in topics {
+                            println!("  `{}`: {} [{}]", t.id, t.title, t.category.as_str());
+                            println!("    {}", sanitize_terminal(&t.summary));
+                        }
+                    }
+                    0
+                }
+                Some(other) => {
+                    // Check if directly passed a topic ID
+                    if let Some(topic) = index.get_topic(other) {
+                        classify_and_emit(
+                            &mut ctx,
+                            "kernel_module",
+                            "doc",
+                            json!({ "topic": other, "found": true }),
+                            "success",
+                            Some(other),
+                            Some("Retrieved kernel module documentation topic"),
+                            "operator",
+                            None,
+                        );
+                        if is_json {
+                            println!("{}", json!({ "code": 0, "data": topic, "error": serde_json::Value::Null }));
+                        } else {
+                            println!("{}", aiosh_core::kernel_module_doc::KernelModuleDocIndex::format_topic_markdown(topic));
+                        }
+                        0
+                    } else {
+                        let msg = format!("unknown doc action or topic '{}' (expected 'list', 'get', 'search', or valid topic ID)", other);
+                        classify_and_emit(
+                            &mut ctx,
+                            "kernel_module",
+                            "doc",
+                            json!({ "error": &msg }),
+                            "failure",
+                            Some(other),
+                            Some("Unknown doc action"),
+                            "operator",
+                            None,
+                        );
+                        if is_json {
+                            println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "UNKNOWN_ACTION", "message": msg } }));
+                        } else {
+                            eprintln!("{}", sanitize_terminal(&msg));
+                        }
+                        2
+                    }
+                }
+            }
+        }
         Some("--help") | Some("-h") | None => {
-            println!("aiosh mod — Kernel Module Management\n\nUsage:\n  aiosh mod list [--store <path>] [--proc-modules <path>] [--json]\n  aiosh mod show <name> [--store <path>] [--proc-modules <path>] [--json]\n  aiosh mod blacklist <module> [--store <path>] [--json]\n  aiosh mod unblacklist <module> [--store <path>] [--json]\n  aiosh mod options <module> <k=v...> [--store <path>] [--json]\n  aiosh mod autoload <module> [--store <path>] [--json]\n  aiosh mod unautoload <module> [--store <path>] [--json]\n  aiosh mod preset list [--json]\n  aiosh mod preset apply <preset_name> [--store <path>] [--json]\n  aiosh mod export [--store <path>] [--modprobe <path>] [--autoload <path>] [--json]\n  aiosh mod import [--store <path>] [--modprobe <path>] [--autoload <path>] [--json]\n  aiosh mod policy [--policy <path>] [--evaluate-store] [--module <name>] [--json]\n  aiosh mod observability [--store <path>] [--proc-modules <path>] [--policy <path>] [--json]");
+            println!("aiosh mod — Kernel Module Management\n\nUsage:\n  aiosh mod list [--store <path>] [--proc-modules <path>] [--json]\n  aiosh mod show <name> [--store <path>] [--proc-modules <path>] [--json]\n  aiosh mod blacklist <module> [--store <path>] [--json]\n  aiosh mod unblacklist <module> [--store <path>] [--json]\n  aiosh mod options <module> <k=v...> [--store <path>] [--json]\n  aiosh mod autoload <module> [--store <path>] [--json]\n  aiosh mod unautoload <module> [--store <path>] [--json]\n  aiosh mod preset list [--json]\n  aiosh mod preset apply <preset_name> [--store <path>] [--json]\n  aiosh mod export [--store <path>] [--modprobe <path>] [--autoload <path>] [--json]\n  aiosh mod import [--store <path>] [--modprobe <path>] [--autoload <path>] [--json]\n  aiosh mod policy [--policy <path>] [--evaluate-store] [--module <name>] [--json]\n  aiosh mod observability [--store <path>] [--proc-modules <path>] [--policy <path>] [--json]\n  aiosh mod doc [list|get <topic>|search <query>] [--json]");
             0
         }
         Some(other) => {
