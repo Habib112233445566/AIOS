@@ -134,6 +134,126 @@ impl std::fmt::Display for CapabilityError {
 
 impl std::error::Error for CapabilityError {}
 
+/// Validates an identifier string (issuer or subject) against injection attacks.
+pub fn validate_identifier(id: &str, field_name: &str) -> Result<(), CapabilityError> {
+    let trimmed = id.trim();
+    if trimmed.is_empty() || trimmed.len() > MAX_SUBJECT_LEN {
+        return Err(CapabilityError::ValidationError(format!(
+            "{} must be between 1 and {} characters",
+            field_name, MAX_SUBJECT_LEN
+        )));
+    }
+    if trimmed.chars().any(|c| c.is_control() || c == '\0' || c.is_whitespace()) {
+        return Err(CapabilityError::ValidationError(format!(
+            "{} contains invalid control or whitespace characters",
+            field_name
+        )));
+    }
+    if !trimmed.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == ':' || c == '.') {
+        return Err(CapabilityError::ValidationError(format!(
+            "{} contains forbidden characters (only alphanumeric, '_', '-', ':', '.' permitted)",
+            field_name
+        )));
+    }
+    Ok(())
+}
+
+/// Validates resource scope format and path hygiene.
+pub fn validate_scope(scope: &CapabilityScope) -> Result<(), CapabilityError> {
+    match scope {
+        CapabilityScope::Filesystem { path, .. } => {
+            if path.trim().is_empty() || path.len() > MAX_RESOURCE_URI_LEN {
+                return Err(CapabilityError::ValidationError(
+                    "filesystem path must be between 1 and 1024 characters".to_string(),
+                ));
+            }
+            if path.chars().any(|c| c.is_control() || c == '\0') {
+                return Err(CapabilityError::ValidationError(
+                    "filesystem path cannot contain control characters".to_string(),
+                ));
+            }
+            let p = std::path::Path::new(path);
+            if p.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+                return Err(CapabilityError::ValidationError(
+                    "filesystem path cannot contain '..' traversal components".to_string(),
+                ));
+            }
+            let is_abs = p.is_absolute() || path.starts_with('/') || path.starts_with('\\')
+                || (path.len() >= 3 && path.chars().nth(1) == Some(':'));
+            if !is_abs {
+                return Err(CapabilityError::ValidationError(
+                    "filesystem path must be absolute".to_string(),
+                ));
+            }
+        }
+        CapabilityScope::Network { host, protocol, .. } => {
+            if host.trim().is_empty() || host.len() > 255 {
+                return Err(CapabilityError::ValidationError("network host cannot be empty or > 255 chars".to_string()));
+            }
+            if protocol.trim().is_empty() || protocol.len() > 32 {
+                return Err(CapabilityError::ValidationError("network protocol cannot be empty or > 32 chars".to_string()));
+            }
+        }
+        CapabilityScope::Tool { tool_name, allowed_actions } => {
+            if tool_name.trim().is_empty() || tool_name.len() > 128 {
+                return Err(CapabilityError::ValidationError("tool_name cannot be empty or > 128 chars".to_string()));
+            }
+            if allowed_actions.len() > MAX_ACTIONS_PER_SCOPE {
+                return Err(CapabilityError::ValidationError(format!(
+                    "allowed_actions exceeds limit of {}",
+                    MAX_ACTIONS_PER_SCOPE
+                )));
+            }
+        }
+        CapabilityScope::Process { executable, .. } => {
+            if executable.trim().is_empty() || executable.len() > MAX_RESOURCE_URI_LEN {
+                return Err(CapabilityError::ValidationError("executable cannot be empty or > 1024 chars".to_string()));
+            }
+        }
+        CapabilityScope::Ipc { channel } => {
+            if channel.trim().is_empty() || channel.len() > 255 {
+                return Err(CapabilityError::ValidationError("channel cannot be empty or > 255 chars".to_string()));
+            }
+        }
+        CapabilityScope::System { subsystem } => {
+            if subsystem.trim().is_empty() || subsystem.len() > 128 {
+                return Err(CapabilityError::ValidationError("subsystem cannot be empty or > 128 chars".to_string()));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Validates constraint temporal bounds and quotas.
+pub fn validate_constraints(constraints: &CapabilityConstraints) -> Result<(), CapabilityError> {
+    let mut nb_dt = None;
+    let mut exp_dt = None;
+
+    if let Some(ref nb_str) = constraints.not_before {
+        let dt = chrono::DateTime::parse_from_rfc3339(nb_str).map_err(|e| {
+            CapabilityError::ValidationError(format!("invalid not_before timestamp '{}': {}", nb_str, e))
+        })?;
+        nb_dt = Some(dt);
+    }
+
+    if let Some(ref exp_str) = constraints.expires_at {
+        let dt = chrono::DateTime::parse_from_rfc3339(exp_str).map_err(|e| {
+            CapabilityError::ValidationError(format!("invalid expires_at timestamp '{}': {}", exp_str, e))
+        })?;
+        exp_dt = Some(dt);
+    }
+
+    if let (Some(nb), Some(exp)) = (nb_dt, exp_dt) {
+        if nb > exp {
+            return Err(CapabilityError::ValidationError(
+                "not_before cannot be later than expires_at".to_string(),
+            ));
+        }
+    }
+
+    Ok(())
+}
+
 impl Capability {
     /// Creates a new root capability with validated inputs.
     pub fn new(
@@ -143,12 +263,11 @@ impl Capability {
         rights: Vec<CapabilityRight>,
         constraints: CapabilityConstraints,
     ) -> Result<Self, CapabilityError> {
-        if issuer.trim().is_empty() || issuer.len() > MAX_ISSUER_LEN {
-            return Err(CapabilityError::ValidationError(format!("invalid issuer: '{}'", issuer)));
-        }
-        if subject.trim().is_empty() || subject.len() > MAX_SUBJECT_LEN {
-            return Err(CapabilityError::ValidationError(format!("invalid subject: '{}'", subject)));
-        }
+        validate_identifier(issuer, "issuer")?;
+        validate_identifier(subject, "subject")?;
+        validate_scope(&scope)?;
+        validate_constraints(&constraints)?;
+
         if rights.is_empty() {
             return Err(CapabilityError::ValidationError("rights list cannot be empty".to_string()));
         }
@@ -328,9 +447,7 @@ impl Capability {
         // Enforce parent validity
         self.check_validity_at(Utc::now())?;
 
-        if new_subject.trim().is_empty() || new_subject.len() > MAX_SUBJECT_LEN {
-            return Err(CapabilityError::ValidationError(format!("invalid subject: '{}'", new_subject)));
-        }
+        validate_identifier(new_subject, "subject")?;
 
         if subset_rights.is_empty() {
             return Err(CapabilityError::InvalidAttenuation("child rights cannot be empty".to_string()));
@@ -348,6 +465,7 @@ impl Capability {
 
         // Scope attenuation
         let child_scope = if let Some(sub_scope) = narrowed_scope {
+            validate_scope(&sub_scope)?;
             if !self.matches_scope(&sub_scope) {
                 return Err(CapabilityError::InvalidAttenuation(
                     "child scope exceeds parent scope".to_string(),

@@ -28,6 +28,7 @@ pub mod base_image_recovery;
 pub mod base_image_service;
 pub mod canonical;
 pub mod capability;
+pub mod capability_service;
 pub mod ci;
 pub mod ci_config;
 pub mod classifier;
@@ -245,6 +246,11 @@ pub use capability::{
     CAP_ERROR_QUOTA_BYTES, CAP_ERROR_QUOTA_INVOCATIONS, CAP_ERROR_REVOKED, CAP_ERROR_RIGHT,
     CAP_ERROR_SCOPE, CAP_ERROR_VALIDATION,
 };
+pub use capability_service::{
+    CapabilityService, CSERV_IO_ERROR, CSERV_NOT_FOUND, CSERV_VALIDATION_ERROR,
+    MAX_CAPABILITY_STORE_SIZE,
+};
+
 
 
 

@@ -2004,3 +2004,13 @@
 {"seq":2004,"ts":"2026-09-20T09:58:48Z","event":"completed","task_id":2004,"note":"Capability Model / data model: Implementation completed","evidence":[]}
 {"seq":2005,"ts":"2026-09-20T10:00:35Z","event":"completed","task_id":2005,"note":"Capability Model / data model: Unit Test completed","evidence":[]}
 {"seq":2006,"ts":"2026-09-20T10:01:13Z","event":"completed","task_id":2006,"note":"Capability Model / data model: Integration completed","evidence":[]}
+{"seq":2007,"ts":"2026-09-20T10:02:54Z","event":"completed","task_id":2007,"note":"Capability Model / data model: Security Review completed","evidence":[]}
+{"seq":2008,"ts":"2026-09-20T10:04:47Z","event":"completed","task_id":2008,"note":"Capability Model / data model: Hardening completed","evidence":[]}
+{"seq":2009,"ts":"2026-09-20T10:05:20Z","event":"completed","task_id":2009,"note":"Capability Model / data model: Documentation completed","evidence":[]}
+{"seq":2010,"ts":"2026-09-20T10:05:45Z","event":"completed","task_id":2010,"note":"Capability Model / data model: Verification & Evidence completed. Sub-Epic 1 Formally Closed.","evidence":[]}
+{"seq":2011,"ts":"2026-09-20T10:06:06Z","event":"completed","task_id":2011,"note":"Capability Model / core service: Research completed","evidence":[]}
+{"seq":2012,"ts":"2026-09-20T10:06:27Z","event":"completed","task_id":2012,"note":"Capability Model / core service: Specification completed","evidence":[]}
+{"seq":2013,"ts":"2026-09-20T10:08:03Z","event":"completed","task_id":2013,"note":"Capability Model / core service: Scaffold completed","evidence":[]}
+{"seq":2014,"ts":"2026-09-20T10:09:03Z","event":"completed","task_id":2014,"note":"Capability Model / core service: Implementation completed","evidence":[]}
+{"seq":2015,"ts":"2026-09-20T10:10:44Z","event":"completed","task_id":2015,"note":"Capability Model / core service: Unit Test completed","evidence":[]}
+{"seq":2016,"ts":"2026-09-20T10:11:19Z","event":"completed","task_id":2016,"note":"Capability Model / core service: Integration completed","evidence":[]}

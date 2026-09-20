@@ -1944,6 +1944,40 @@ Read line-by-line: `pentest.rs` (597), `train_slm.py` (210), `train_unsloth.py` 
   - `aiosh-mcp`: 4/4 checks in `test_capability_smoke.py` passing.
   - Full regression test suite: zero regressions across all epics.
 
+---
+
+## 30. Post-Audit Addendum: Batch T-02007 through T-02016 Verification
+
+**Date:** 2026-09-20  
+**Scope:** Batch `T-02007` through `T-02016` (Capability Model Sub-Epic 1 Formal Closure & Sub-Epic 2 Core Service).  
+**Auditor:** Antigravity Autonomous Security Subsystem  
+**Verdict:** **PASS (Zero vulnerabilities)**
+
+### 1. Hardened Surface & Key Controls
+- **Capability Model Data Model Closure & Hardening (T-02007..T-02010)**:
+  - Evaluated threat vectors `THREAT-CAP-01..06` covering privilege escalation, identifier injection, path traversal, timestamp spoofing, and quota overflow.
+  - Hardened `capability.rs`:
+    - Strict identifier validation (`validate_identifier`) restricting characters to `[a-zA-Z0-9_\-:\.]` and rejecting whitespace, control characters, and NUL bytes.
+    - Path traversal defense (`validate_scope`) requiring absolute paths, $\le 1024$ chars, and blocking `..` components.
+    - RFC3339 timestamp validation (`validate_constraints`) enforcing `not_before <= expires_at`.
+  - Authored master architectural documentation `docs/capability_model.md` and formally closed Sub-Epic 1 with 6/6 unit tests and 4/4 Python smoke checks.
+- **Capability Model Core Service Subsystem (T-02011..T-02016)**:
+  - Researched, specified, scaffolded, implemented, unit-tested, and integrated `CapabilityService` in `code/aiosh-rust/aiosh-core/src/capability_service.rs`.
+  - Enforced service invariants `CSERV1..CSERV6`:
+    - `CSERV1`: Primary registry with $O(1)$ ID lookups and secondary indexes by subject (`by_subject`) and lineage (`by_parent`).
+    - `CSERV2`: Managed root capability issuance with full input and constraint validation.
+    - `CSERV3`: Atomic attenuation validating parent delegation rights, monotonicity, and registering parent-child lineage.
+    - `CSERV4`: Transitive cascade revocation traversing `by_parent` to revoke all descendant capabilities upon parent revocation.
+    - `CSERV5`: Atomic persistence via `.tmp.<pid>` rename with symlink refusal and 10 MB size limits.
+    - `CSERV6`: Pruning of expired leaf capabilities while preserving active lineage nodes.
+- **Test Verification**:
+  - `aiosh-core`: 6/6 unit tests in `test_capability_data_model.rs` passing in 0.00s.
+  - `aiosh-core`: 6/6 unit tests in `test_capability_service.rs` passing in 0.05s.
+  - `aiosh-mcp`: 4/4 checks in `test_capability_smoke.py` passing.
+  - `aiosh-mcp`: 4/4 checks in `test_capability_service_smoke.py` passing.
+  - Full regression test suite: zero regressions across all epics.
+
+
 
 
 
