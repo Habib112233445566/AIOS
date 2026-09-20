@@ -27,6 +27,7 @@ pub mod base_image_policy;
 pub mod base_image_recovery;
 pub mod base_image_service;
 pub mod canonical;
+pub mod capability;
 pub mod ci;
 pub mod ci_config;
 pub mod classifier;
@@ -237,6 +238,14 @@ pub use system_update_recovery::{
     validate_update_state, validate_update_store_path, SystemUpdateRecoveryAction,
     SystemUpdateRecoveryReport, SystemUpdateValidationReport, MAX_UPDATE_STORE_SIZE,
 };
+pub use capability::{
+    Capability, CapabilityConstraints, CapabilityError, CapabilityRight, CapabilityScope,
+    MAX_ACTIONS_PER_SCOPE, MAX_CAPABILITY_ID_LEN, MAX_ISSUER_LEN, MAX_RESOURCE_URI_LEN,
+    MAX_SUBJECT_LEN, CAP_ERROR_ATTENUATION, CAP_ERROR_EXPIRED, CAP_ERROR_NOT_YET_VALID,
+    CAP_ERROR_QUOTA_BYTES, CAP_ERROR_QUOTA_INVOCATIONS, CAP_ERROR_REVOKED, CAP_ERROR_RIGHT,
+    CAP_ERROR_SCOPE, CAP_ERROR_VALIDATION,
+};
+
 
 
 

@@ -1910,5 +1910,40 @@ Read line-by-line: `pentest.rs` (597), `train_slm.py` (210), `train_unsloth.py` 
   - `aiosh-mcp`: 4/4 checks in `test_system_update_doc_smoke.py` passing.
   - Full regression test suite: zero regressions across all epics.
 
+---
+
+## 29. Post-Audit Addendum: Batch T-01997 through T-02006 Verification
+
+**Date:** 2026-09-20  
+**Scope:** Batch `T-01997` through `T-02006` (System Update Recovery Sub-Epic 10 Formal Closure & Phase 1 Closure; Capability Model Data Model Sub-Epic 1 Launch).  
+**Auditor:** Antigravity Autonomous Security Subsystem  
+**Verdict:** **PASS (Zero vulnerabilities)**
+
+### 1. Hardened Surface & Key Controls
+- **System Update Recovery Closure & Hardening (T-01997..T-02000)**:
+  - Evaluated threat vectors `THREAT-UVAL-01..06` covering symlink hijacking, memory exhaustion via oversized state files, tempfile leakage, and slot conflict boot loops.
+  - Hardened `system_update_recovery.rs`:
+    - Replaced `fs::metadata()` with `fs::symlink_metadata()` and strictly rejected symlinks before reading or renaming.
+    - 1 MB file read limit (`MAX_UPDATE_STORE_SIZE`).
+    - Explicit unlinking of `.tmp.<pid>` files upon write/rename errors.
+    - Automated boot pointer conflict resolution (`current_slot == target_slot` auto-healed to alternate partition).
+  - Authored Section 13 in `docs/system_update.md` and formally closed Sub-Epic 10 and **Phase 1: Linux Base System & Bootable Target**.
+- **Capability Model Data Model (T-02001..T-02006)**:
+  - Researched, specified, scaffolded, implemented, unit-tested, and integrated `Capability` in `code/aiosh-rust/aiosh-core/src/capability.rs`.
+  - Enforced capability invariants `CAP1..CAP6`:
+    - `CAP1`: Cryptographic unforgeability (SHA-256 derived identifiers over issuer, subject, and timestamp).
+    - `CAP2`: Granular scoping (filesystem recursive/exact, network host/port/protocol wildcards, tool action allowlists) and explicit rights (`Read`, `Write`, `Execute`, `Delete`, `Admin`, `Delegate`).
+    - `CAP3`: Monotonic attenuation enforcing that child capabilities cannot escalate rights, exceed parent scope, or bypass parent delegation requirements.
+    - `CAP4`: Temporal validity (`not_before`, `expires_at`) and invocation/byte quota enforcement with saturated arithmetic.
+    - `CAP5`: Immediate revocation blocking all future validity checks and quota operations.
+    - `CAP6`: Deterministic JSON serialization fidelity with zero ambient authority defaults.
+- **Test Verification**:
+  - `aiosh-core`: 4/4 unit tests in `test_system_update_recovery.rs` passing in 0.12s.
+  - `aiosh-core`: 6/6 unit tests in `test_capability_data_model.rs` passing in 0.00s.
+  - `aiosh-mcp`: 3/3 checks in `test_system_update_recovery_smoke.py` passing.
+  - `aiosh-mcp`: 4/4 checks in `test_capability_smoke.py` passing.
+  - Full regression test suite: zero regressions across all epics.
+
+
 
 

@@ -151,8 +151,11 @@ pub fn check_update_files(state_dir: &Path, staging_dir: &Path) -> SystemUpdateV
     if !slot_path.exists() {
         slot_status_valid = false;
         errors.push("slot_status.json does not exist".to_string());
-    } else if let Ok(meta) = fs::metadata(&slot_path) {
-        if meta.len() > MAX_UPDATE_STORE_SIZE {
+    } else if let Ok(meta) = fs::symlink_metadata(&slot_path) {
+        if meta.file_type().is_symlink() {
+            slot_status_valid = false;
+            errors.push("slot_status.json is a symlink (rejected)".to_string());
+        } else if meta.len() > MAX_UPDATE_STORE_SIZE {
             slot_status_valid = false;
             errors.push(format!("slot_status.json exceeds size limit: {} bytes", meta.len()));
         } else {
@@ -182,8 +185,11 @@ pub fn check_update_files(state_dir: &Path, staging_dir: &Path) -> SystemUpdateV
     if !update_path.exists() {
         update_status_valid = false;
         errors.push("update_status.json does not exist".to_string());
-    } else if let Ok(meta) = fs::metadata(&update_path) {
-        if meta.len() > MAX_UPDATE_STORE_SIZE {
+    } else if let Ok(meta) = fs::symlink_metadata(&update_path) {
+        if meta.file_type().is_symlink() {
+            update_status_valid = false;
+            errors.push("update_status.json is a symlink (rejected)".to_string());
+        } else if meta.len() > MAX_UPDATE_STORE_SIZE {
             update_status_valid = false;
             errors.push(format!("update_status.json exceeds size limit: {} bytes", meta.len()));
         } else {
@@ -320,12 +326,24 @@ pub fn recover_update_files_with_backup(
             return Ok(None);
         }
 
-        let is_valid = match fs::read_to_string(file_path) {
-            Ok(content) => {
-                if is_slot {
-                    serde_json::from_str::<SystemSlotStatus>(&content).is_ok()
+        let is_valid = match fs::symlink_metadata(file_path) {
+            Ok(meta) => {
+                if meta.file_type().is_symlink() {
+                    return Err(format!("{}: file {:?} is a symlink, refusing to read or quarantine", UVAL_PATH_ERROR, file_path));
+                }
+                if meta.len() > MAX_UPDATE_STORE_SIZE {
+                    false
                 } else {
-                    serde_json::from_str::<SystemUpdateStatus>(&content).is_ok()
+                    match fs::read_to_string(file_path) {
+                        Ok(content) => {
+                            if is_slot {
+                                serde_json::from_str::<SystemSlotStatus>(&content).is_ok()
+                            } else {
+                                serde_json::from_str::<SystemUpdateStatus>(&content).is_ok()
+                            }
+                        }
+                        Err(_) => false,
+                    }
                 }
             }
             Err(_) => false,
@@ -360,10 +378,14 @@ pub fn recover_update_files_with_backup(
             .map_err(|e| format!("{}: failed to serialize slot status: {}", UVAL_VALIDATION_ERROR, e))?;
         
         let tmp_slot = format!("{}.tmp.{}", slot_path.to_string_lossy(), std::process::id());
-        fs::write(&tmp_slot, data.as_bytes())
-            .map_err(|e| format!("{}: failed to write {:?}: {}", UVAL_IO_ERROR, tmp_slot, e))?;
-        fs::rename(&tmp_slot, &slot_path)
-            .map_err(|e| format!("{}: failed to rename {:?} to {:?}: {}", UVAL_IO_ERROR, tmp_slot, slot_path, e))?;
+        if let Err(e) = fs::write(&tmp_slot, data.as_bytes()) {
+            let _ = fs::remove_file(&tmp_slot);
+            return Err(format!("{}: failed to write {:?}: {}", UVAL_IO_ERROR, tmp_slot, e));
+        }
+        if let Err(e) = fs::rename(&tmp_slot, &slot_path) {
+            let _ = fs::remove_file(&tmp_slot);
+            return Err(format!("{}: failed to rename {:?} to {:?}: {}", UVAL_IO_ERROR, tmp_slot, slot_path, e));
+        }
 
         actions_taken.push(SystemUpdateRecoveryAction::RestoredDefaultSlotStatus {
             active_slot: fallback_slot,
@@ -378,10 +400,14 @@ pub fn recover_update_files_with_backup(
             .map_err(|e| format!("{}: failed to serialize update status: {}", UVAL_VALIDATION_ERROR, e))?;
 
         let tmp_update = format!("{}.tmp.{}", update_path.to_string_lossy(), std::process::id());
-        fs::write(&tmp_update, data.as_bytes())
-            .map_err(|e| format!("{}: failed to write {:?}: {}", UVAL_IO_ERROR, tmp_update, e))?;
-        fs::rename(&tmp_update, &update_path)
-            .map_err(|e| format!("{}: failed to rename {:?} to {:?}: {}", UVAL_IO_ERROR, tmp_update, update_path, e))?;
+        if let Err(e) = fs::write(&tmp_update, data.as_bytes()) {
+            let _ = fs::remove_file(&tmp_update);
+            return Err(format!("{}: failed to write {:?}: {}", UVAL_IO_ERROR, tmp_update, e));
+        }
+        if let Err(e) = fs::rename(&tmp_update, &update_path) {
+            let _ = fs::remove_file(&tmp_update);
+            return Err(format!("{}: failed to rename {:?} to {:?}: {}", UVAL_IO_ERROR, tmp_update, update_path, e));
+        }
 
         actions_taken.push(SystemUpdateRecoveryAction::ResetFailedUpdateState {
             previous_state: UpdateState::Failed,
@@ -396,7 +422,11 @@ pub fn recover_update_files_with_backup(
             for entry in entries.flatten() {
                 let p = entry.path();
                 if let Ok(meta) = fs::symlink_metadata(&p) {
-                    if meta.file_type().is_file() {
+                    if meta.file_type().is_symlink() {
+                        if fs::remove_file(&p).is_ok() {
+                            count += 1;
+                        }
+                    } else if meta.file_type().is_file() {
                         bytes_freed = bytes_freed.saturating_add(meta.len());
                         if fs::remove_file(&p).is_ok() {
                             count += 1;

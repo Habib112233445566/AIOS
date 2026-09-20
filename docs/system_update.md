@@ -678,5 +678,100 @@ python code/aiosh-mcp/tests/test_system_update_doc_smoke.py
 - Security Review: [`docs/tasks/evidence/T-01987-documentation-security-review.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01987-documentation-security-review.md)
 - Hardening: [`docs/tasks/evidence/T-01988-documentation-hardening.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01988-documentation-hardening.md)
 
+---
+
+## 13. System Update Recovery & Validation Subsystem
+
+### 13.1 Overview & Architecture
+The System Update Recovery & Validation Subsystem provides robust health verification, corruption detection, automated quarantine, and non-destructive self-healing for the system update state machine and storage layers:
+- **Core Module**: [`code/aiosh-rust/aiosh-core/src/system_update_recovery.rs`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/code/aiosh-rust/aiosh-core/src/system_update_recovery.rs).
+- **Primary Capabilities**:
+  - Validates disk and in-memory update state against rigorous invariants.
+  - Quarantines corrupted or malformed JSON state files using timestamped `.corrupt.<timestamp>` suffixes.
+  - Synthesizes coherent fallback state and synchronizes boot slot pointers when conflicts occur.
+  - Cleans up dangling staging artifacts and reclaims unreferenced disk space.
+
+### 13.2 Invariants Enforced (UVAL1 - UVAL6)
+1. **`UVAL1` (Path Hygiene & Validation)**: Validates state paths against directory traversal (`..`), control characters, length boundaries ($\le 1024$ chars), and enforces the `.json` extension.
+2. **`UVAL2` (In-Memory State Integrity)**: Detects invalid lifecycle states, out-of-bounds progress indicators ($0..100\%$), empty version strings, and conflicting slot assignments (`current_slot == target_slot`).
+3. **`UVAL3` (Disk State Inspection & Quarantine)**: Inspects files on disk using `symlink_metadata` to enforce maximum size limits ($\le 1 \text{ MB}$) and reject symbolic link tampering; automatically quarantines malformed files.
+4. **`UVAL4` (Non-Destructive Self-Healing)**: Restores coherent slot and update status from backup files or synthesized defaults without panicking or inducing crash loops.
+5. **`UVAL5` (Dual-Slot Boot Pointer Synchronization)**: Automatically resolves slot conflicts by reassigning the target slot to the alternate partition and ensuring proper rollback configuration.
+6. **`UVAL6` (Staging Hygiene & Pruning)**: Discovers and removes partial or orphaned update artifacts (`*.tmp*`, `*.downloading`) from the staging directory while accurately tracking reclaimed byte metrics.
+
+### 13.3 Data Models & Reports
+
+#### `SystemUpdateValidationReport`
+```json
+{
+  "state_dir": "/var/lib/aiosh/updates",
+  "slot_status_valid": true,
+  "update_status_valid": true,
+  "staging_dir_valid": true,
+  "slot_conflict_detected": false,
+  "dangling_artifacts": [],
+  "errors": [],
+  "healthy": true,
+  "evaluated_at": "2026-09-20T14:30:00Z"
+}
+```
+
+#### `SystemUpdateRecoveryReport`
+```json
+{
+  "state_dir": "/var/lib/aiosh/updates",
+  "recovered": true,
+  "actions_taken": [
+    {
+      "QuarantinedCorruptFile": {
+        "original_path": "/var/lib/aiosh/updates/slot_status.json",
+        "quarantine_path": "/var/lib/aiosh/updates/slot_status.json.corrupt.20260920_143000"
+      }
+    },
+    {
+      "RestoredDefaultSlotStatus": {
+        "active_slot": "slot_a",
+        "version": "1.0.0"
+      }
+    },
+    {
+      "PrunedDanglingArtifacts": {
+        "count": 2,
+        "bytes_freed": 20971520
+      }
+    }
+  ],
+  "timestamp": "2026-09-20T14:30:00Z"
+}
+```
+
+### 13.4 Invocation Examples
+
+#### Run Recovery Unit Tests
+```bash
+cargo test --manifest-path code/aiosh-rust/Cargo.toml -p aiosh-core --test test_system_update_recovery -- --nocapture
+```
+
+#### Run Recovery Python Smoke Suite
+```bash
+python code/aiosh-mcp/tests/test_system_update_recovery_smoke.py
+```
+
+### 13.5 Constraints & Known Limitations
+- **Maximum State File Size**: State files cannot exceed 1 MB (`MAX_UPDATE_STORE_SIZE`).
+- **Symlink Defense**: Symlinks in state or staging directories are rejected or unlinked without traversal.
+- **Atomic Operations**: All writes use `.tmp.<pid>` files with guaranteed cleanup on failure before renaming.
+
+### 13.6 Evidence Artifacts
+- Research: [`docs/tasks/evidence/T-01991-recovery-validation-research.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01991-recovery-validation-research.md)
+- Specification: [`docs/tasks/evidence/T-01992-recovery-validation-specification.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01992-recovery-validation-specification.md)
+- Scaffold: [`docs/tasks/evidence/T-01993-recovery-validation-scaffold.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01993-recovery-validation-scaffold.md)
+- Implementation: [`docs/tasks/evidence/T-01994-recovery-validation-implementation.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01994-recovery-validation-implementation.md)
+- Unit Testing: [`docs/tasks/evidence/T-01995-recovery-validation-unit-test.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01995-recovery-validation-unit-test.md)
+- Integration: [`docs/tasks/evidence/T-01996-recovery-validation-integration.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01996-recovery-validation-integration.md)
+- Security Review: [`docs/tasks/evidence/T-01997-recovery-validation-security-review.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01997-recovery-validation-security-review.md)
+- Hardening: [`docs/tasks/evidence/T-01998-recovery-validation-hardening.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01998-recovery-validation-hardening.md)
+
+
 
 
