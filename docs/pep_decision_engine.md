@@ -64,7 +64,47 @@ pub struct PepDecision {
 
 ---
 
-## 4. MCP Integration (`aios.pep.evaluate`)
+## 4. Core Service: `PepDecisionService`
+
+The `PepDecisionService` provides stateful rule management, multi-index lookups (`by_subject`, `by_action`), atomic persistence, and quarantine recovery.
+
+### 4.1 Features & Limits
+- **Capacity Cap**: `MAX_RULES_IN_SERVICE = 5000` rules per service instance.
+- **Atomic Persistence**: `save_to_path` writes to a temporary file (`.tmp.<pid>.<timestamp>`) and atomically renames to the target path.
+- **Non-Destructive Quarantine**: Corrupted policy files are safely renamed to `<path>.bak.<timestamp>` (mode `0600` on Unix) before a clean store is reinitialized.
+- **Thread Safety**: Pure evaluation and cloneable rule models ensure safe concurrent reads.
+
+### 4.2 Rust API Example
+
+```rust
+use aiosh_core::pep_decision::{PepPolicyRule, PepDecisionEffect, PepRequest, PepCombiningAlgorithm};
+use aiosh_core::pep_decision_service::PepDecisionService;
+
+// Initialize service
+let mut service = PepDecisionService::new();
+
+// Add a policy rule
+service.add_rule(PepPolicyRule {
+    id: "rule-101".into(),
+    target_subject: "agent:analyst".into(),
+    target_resource: "fs:/data/*".into(),
+    target_action: "read".into(),
+    effect: PepDecisionEffect::Permit,
+    priority: 10,
+    obligations: vec![],
+    description: "Allow analyst to read data".into(),
+}).expect("add rule");
+
+// Evaluate an access request
+let request = PepRequest::new("agent:analyst", "fs:/data/stats.json", "read", None).unwrap();
+let decision = service.evaluate(&request, PepCombiningAlgorithm::DenyOverrides);
+
+assert!(decision.allowed);
+```
+
+---
+
+## 5. MCP Integration (`aios.pep.evaluate`)
 
 The decision engine is exposed to agents and tools via `aios.pep.evaluate`.
 
@@ -128,3 +168,42 @@ The decision engine is exposed to agents and tools via `aios.pep.evaluate`.
   }
 }
 ```
+
+---
+
+## 6. CLI Surface Preview (`aiosh pep`)
+
+The engine provides operator CLI tooling:
+```bash
+# Evaluate authorization request
+aiosh pep evaluate --subject agent:analyst --action read --resource fs:/data/stats.json --json
+
+# Add a policy rule
+aiosh pep rule-add --id rule-1 --subject agent:analyst --action read --resource fs:/data/* --effect permit
+
+# List active policy rules
+aiosh pep rule-list --subject agent:analyst
+
+# Show engine status and capacity
+aiosh pep status
+```
+
+---
+
+## 7. Evidence & Traceability
+
+- `T-02106`: [Data Model Integration](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02106-data-model-integration.md)
+- `T-02107`: [Data Model Security Review](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02107-data-model-security-review.md)
+- `T-02108`: [Data Model Hardening](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02108-data-model-hardening.md)
+- `T-02109`: [Data Model Documentation](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02109-data-model-documentation.md)
+- `T-02110`: [Data Model Verification](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02110-data-model-verification-evidenc.md)
+- `T-02111`: [Core Service Research](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02111-core-service-research.md)
+- `T-02112`: [Core Service Specification](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02112-core-service-specification.md)
+- `T-02113`: [Core Service Scaffold](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02113-core-service-scaffold.md)
+- `T-02114`: [Core Service Implementation](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02114-core-service-implementation.md)
+- `T-02115`: [Core Service Unit Tests](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02115-core-service-unit-test.md)
+- `T-02116`: [Core Service Integration](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02116-core-service-integration.md)
+- `T-02117`: [Core Service Security Review](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02117-core-service-security-review.md)
+- `T-02118`: [Core Service Hardening](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02118-core-service-hardening.md)
+- `T-02119`: [Core Service Documentation](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02119-core-service-documentation.md)
+- `T-02120`: [Core Service Verification & Evidence](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02120-core-service-verification-evidenc.md)

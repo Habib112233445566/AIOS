@@ -219,8 +219,9 @@ fn main() {
         Some("net") | Some("network") => cmd_network(&args[1..]),
         Some("update") | Some("upd") => cmd_update(&args[1..]),
         Some("capability") | Some("cap") => cmd_capability(&args[1..]),
+        Some("pep") => cmd_pep(&args[1..]),
         Some("--help") | Some("-h") | None => {
-            println!("aiosh — AIOS shell CLI (Rust)\n\nUsage: aiosh <status|run|agent|audit|grant|pentest|classify|task|ci|release|backup|toolchain|doc|evidence|repo|secrets|triage|handoff|distro|image|package|service|session|layout|mod|hw|net|update|capability> ...\n\n  aiosh task <status|done|block|unblock|skip|rebuild|check>  Task ledger control\n  aiosh ci <show|failures|check|config|metrics> [--file PATH]  CI smoke reports\n  aiosh release generate  Create bootable ISO\n  aiosh backup create  Create system snapshot zip\n  aiosh toolchain check [--config <path>]  Verify host environment against ToolchainManifest\n  aiosh toolchain show [--config <path>]   Display the resolved ToolchainManifest\n  aiosh doc <show|check|search>  Documentation Index Control\n  aiosh evidence <verify|hash|scan>   Evidence & Audit Trail Control\n  aiosh repo <health|check>  Repository Health Diagnostics\n  aiosh secrets <scan|check> [--config <path>]  Secrets & Access Hygiene Scanner\n  aiosh triage <list|show|record|resolve|ingest|check>  Regression Triage Manager\n  aiosh handoff <list|show|initiate|accept|reject|complete|cancel>  Agent Handoff Protocol Manager\n  aiosh distro <list|show|evaluate|recommend|policy|stats|check>  Linux Distro Selection & Justification Manager\n  aiosh image <list|show|plan|filter>  Linux Base Image Build & Packaging Manager\n  aiosh package <list|show|search|plan|apply|validate>  Linux Package Management & Store Control\n  aiosh service <validate|list|show|status|action|start|stop|restart|reload|order>  Init & Service Supervision Control\n  aiosh session <validate|list|show|status|create|action|activate|lock|unlock|terminate|config>  User Session Bootstrap Control\n  aiosh layout <list|show|validate|check|probe|diff|fstab|register|set-active|remove|import-fstab>  Filesystem Layout & Target Partitioning Manager\n  aiosh mod <list|show|blacklist|unblacklist|options|autoload|unautoload|preset|export>  Kernel Module Management\n  aiosh hw <scan|list|show|summary|verify>  Hardware Detection & Inventory Control\n  aiosh net <list|show|routes|dns|state|up|down>  Network Bootstrap & Interface Control\n  aiosh update <status|slots|check|apply|confirm|rollback>  System Update & Dual-Slot Control\n  aiosh capability <list|show|issue|attenuate|revoke|check|prune>  Capability & Zero-Ambient Authority Control");
+            println!("aiosh — AIOS shell CLI (Rust)\n\nUsage: aiosh <status|run|agent|audit|grant|pentest|classify|task|ci|release|backup|toolchain|doc|evidence|repo|secrets|triage|handoff|distro|image|package|service|session|layout|mod|hw|net|update|capability|pep> ...\n\n  aiosh task <status|done|block|unblock|skip|rebuild|check>  Task ledger control\n  aiosh ci <show|failures|check|config|metrics> [--file PATH]  CI smoke reports\n  aiosh release generate  Create bootable ISO\n  aiosh backup create  Create system snapshot zip\n  aiosh toolchain check [--config <path>]  Verify host environment against ToolchainManifest\n  aiosh toolchain show [--config <path>]   Display the resolved ToolchainManifest\n  aiosh doc <show|check|search>  Documentation Index Control\n  aiosh evidence <verify|hash|scan>   Evidence & Audit Trail Control\n  aiosh repo <health|check>  Repository Health Diagnostics\n  aiosh secrets <scan|check> [--config <path>]  Secrets & Access Hygiene Scanner\n  aiosh triage <list|show|record|resolve|ingest|check>  Regression Triage Manager\n  aiosh handoff <list|show|initiate|accept|reject|complete|cancel>  Agent Handoff Protocol Manager\n  aiosh distro <list|show|evaluate|recommend|policy|stats|check>  Linux Distro Selection & Justification Manager\n  aiosh image <list|show|plan|filter>  Linux Base Image Build & Packaging Manager\n  aiosh package <list|show|search|plan|apply|validate>  Linux Package Management & Store Control\n  aiosh service <validate|list|show|status|action|start|stop|restart|reload|order>  Init & Service Supervision Control\n  aiosh session <validate|list|show|status|create|action|activate|lock|unlock|terminate|config>  User Session Bootstrap Control\n  aiosh layout <list|show|validate|check|probe|diff|fstab|register|set-active|remove|import-fstab>  Filesystem Layout & Target Partitioning Manager\n  aiosh mod <list|show|blacklist|unblacklist|options|autoload|unautoload|preset|export>  Kernel Module Management\n  aiosh hw <scan|list|show|summary|verify>  Hardware Detection & Inventory Control\n  aiosh net <list|show|routes|dns|state|up|down>  Network Bootstrap & Interface Control\n  aiosh update <status|slots|check|apply|confirm|rollback>  System Update & Dual-Slot Control\n  aiosh capability <list|show|issue|attenuate|revoke|check|prune>  Capability & Zero-Ambient Authority Control\n  aiosh pep <evaluate|rule-add|rule-list|rule-remove|status>  PEP Decision Engine & Policy Control");
             0
         }
         Some(other) => {
@@ -14779,6 +14780,458 @@ fn cmd_capability(args: &[String]) -> i32 {
     }
 }
 
+fn cmd_pep(args: &[String]) -> i32 {
+    let mut ctx = open_context();
+    let sub = args.first().map(|s| s.as_str());
+    let rest = if args.len() > 1 { &args[1..] } else { &[] };
+    let is_json = has_flag(rest, "--json");
+
+    let store_path_str = parse_flag(rest, "--store").unwrap_or_else(|| format!("{}/pep_policies.json", ai_home()));
+    let store_path = std::path::Path::new(&store_path_str);
+
+    if let Err(e) = aiosh_core::pep_decision_service::validate_pep_service_path(store_path) {
+        let msg = format!("invalid store path: {}", e);
+        classify_and_emit(
+            &mut ctx, "pep", sub.unwrap_or("unknown"), json!({ "error": &msg }),
+            "failure", None, Some("Invalid store path"), "operator", None,
+        );
+        if is_json {
+            println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_STORE_PATH", "message": msg } }));
+        } else {
+            eprintln!("{}", sanitize_terminal(&msg));
+        }
+        return 2;
+    }
+
+    match sub {
+        Some("evaluate") | Some("eval") => {
+            let subject = match parse_flag(rest, "--subject") {
+                Some(s) => s,
+                None => {
+                    let msg = "missing required flag: --subject";
+                    classify_and_emit(&mut ctx, "pep", "evaluate", json!({ "error": msg }), "failure", None, Some("Missing flag"), "operator", None);
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_FLAG", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+            };
+            let action = match parse_flag(rest, "--action") {
+                Some(a) => a,
+                None => {
+                    let msg = "missing required flag: --action";
+                    classify_and_emit(&mut ctx, "pep", "evaluate", json!({ "error": msg }), "failure", None, Some("Missing flag"), "operator", None);
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_FLAG", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+            };
+            let resource = match parse_flag(rest, "--resource") {
+                Some(r) => r,
+                None => {
+                    let msg = "missing required flag: --resource";
+                    classify_and_emit(&mut ctx, "pep", "evaluate", json!({ "error": msg }), "failure", None, Some("Missing flag"), "operator", None);
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_FLAG", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+            };
+
+            let req = match aiosh_core::pep_decision::PepRequest::new(&subject, &resource, &action, None) {
+                Ok(r) => r,
+                Err(e) => {
+                    let msg = format!("invalid request parameters: {}", e);
+                    classify_and_emit(&mut ctx, "pep", "evaluate", json!({ "error": &msg }), "failure", Some(&resource), Some("Invalid parameters"), "operator", None);
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_PARAMETERS", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    return 2;
+                }
+            };
+
+            let algo = match parse_flag(rest, "--algorithm").as_deref() {
+                Some("permit_overrides") => aiosh_core::pep_decision::PepCombiningAlgorithm::PermitOverrides,
+                Some("first_applicable") => aiosh_core::pep_decision::PepCombiningAlgorithm::FirstApplicable,
+                Some("deny_overrides") | None => aiosh_core::pep_decision::PepCombiningAlgorithm::DenyOverrides,
+                Some(other) => {
+                    let msg = format!("unknown combining algorithm: {}", other);
+                    classify_and_emit(&mut ctx, "pep", "evaluate", json!({ "error": &msg }), "failure", Some(&resource), Some("Unknown algorithm"), "operator", None);
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ALGORITHM", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    return 2;
+                }
+            };
+
+            let service = if store_path.exists() {
+                let (s, _recovered, _quarantine) = aiosh_core::pep_decision_service::PepDecisionService::load_or_recover(store_path);
+                s
+            } else {
+                aiosh_core::pep_decision_service::PepDecisionService::new()
+            };
+
+            let decision = service.evaluate_with_algorithm(&req, algo);
+
+            classify_and_emit(
+                &mut ctx, "pep", "evaluate",
+                json!({
+                    "subject": subject,
+                    "resource": resource,
+                    "action": action,
+                    "allowed": decision.allowed,
+                    "effect": decision.effect,
+                    "matched_rule_id": decision.matched_rule_id,
+                }),
+                if decision.allowed { "success" } else { "failure" },
+                Some(&resource),
+                Some(&decision.reason),
+                "operator",
+                None,
+            );
+
+            if is_json {
+                println!("{}", json!({
+                    "code": if decision.allowed { 0 } else { 1 },
+                    "data": decision,
+                    "error": serde_json::Value::Null
+                }));
+            } else {
+                let status_str = if decision.allowed { "PERMIT" } else { "DENY" };
+                println!("Decision: {} (rule: {}) - {}", status_str, decision.matched_rule_id.as_deref().unwrap_or("none"), decision.reason);
+            }
+
+            if decision.allowed { 0 } else { 1 }
+        }
+        Some("rule-add") | Some("add-rule") => {
+            let id = match parse_flag(rest, "--id") {
+                Some(i) => i,
+                None => {
+                    let msg = "missing required flag: --id";
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_FLAG", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+            };
+            let subject = match parse_flag(rest, "--subject") {
+                Some(s) => s,
+                None => {
+                    let msg = "missing required flag: --subject";
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_FLAG", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+            };
+            let resource = match parse_flag(rest, "--resource") {
+                Some(r) => r,
+                None => {
+                    let msg = "missing required flag: --resource";
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_FLAG", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+            };
+            let action = match parse_flag(rest, "--action") {
+                Some(a) => a,
+                None => {
+                    let msg = "missing required flag: --action";
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_FLAG", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+            };
+            let effect_str = match parse_flag(rest, "--effect") {
+                Some(e) => e,
+                None => {
+                    let msg = "missing required flag: --effect";
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_FLAG", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+            };
+
+            let effect = match effect_str.to_ascii_lowercase().as_str() {
+                "permit" => aiosh_core::pep_decision::PepDecisionEffect::Permit,
+                "deny" => aiosh_core::pep_decision::PepDecisionEffect::Deny,
+                other => {
+                    let msg = format!("invalid effect: '{}' (must be 'permit' or 'deny')", other);
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_EFFECT", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    return 2;
+                }
+            };
+
+            let desc = parse_flag(rest, "--desc").unwrap_or_else(|| "User-defined policy rule".into());
+
+            // Path hygiene on resource
+            if resource.contains("..") || resource.chars().any(|c| c.is_control()) {
+                let msg = "invalid resource: path traversal ('..') and control characters are not allowed";
+                if is_json {
+                    println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_RESOURCE", "message": msg } }));
+                } else {
+                    eprintln!("{}", msg);
+                }
+                return 2;
+            }
+
+            // ID hygiene
+            if id.is_empty() || id.len() > 128 || id.chars().any(|c| c.is_control()) {
+                let msg = "invalid rule id: must be non-empty, <= 128 chars, and contain no control characters";
+                if is_json {
+                    println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ID", "message": msg } }));
+                } else {
+                    eprintln!("{}", msg);
+                }
+                return 2;
+            }
+
+            let mut service = if store_path.exists() {
+                let (s, _recovered, _quarantine) = aiosh_core::pep_decision_service::PepDecisionService::load_or_recover(store_path);
+                s
+            } else {
+                aiosh_core::pep_decision_service::PepDecisionService::new()
+            };
+
+            let rule = aiosh_core::pep_decision::PepPolicyRule {
+                id: id.clone(),
+                target_subject: Some(subject),
+                target_resource: Some(resource),
+                target_action: Some(action),
+                effect,
+                obligations: Vec::new(),
+                description: desc,
+            };
+
+            if let Err(e) = service.add_rule(rule.clone()) {
+                let msg = format!("failed to add rule: {}", e);
+                classify_and_emit(&mut ctx, "pep", "rule-add", json!({ "error": &msg, "id": &id }), "failure", Some(&id), Some("Add rule failed"), "operator", None);
+                if is_json {
+                    println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "ADD_ERROR", "message": msg } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(&msg));
+                }
+                return 1;
+            }
+
+            if let Err(e) = service.save_to_path(store_path) {
+                let msg = format!("failed to save policy store: {}", e);
+                classify_and_emit(&mut ctx, "pep", "rule-add", json!({ "error": &msg, "id": &id }), "failure", Some(&id), Some("Save store failed"), "operator", None);
+                if is_json {
+                    println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "SAVE_ERROR", "message": msg } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(&msg));
+                }
+                return 1;
+            }
+
+            classify_and_emit(&mut ctx, "pep", "rule-add", json!({ "rule_id": id, "effect": effect_str }), "success", Some(&id), Some("Rule added"), "operator", None);
+            if is_json {
+                println!("{}", json!({ "code": 0, "data": rule, "error": serde_json::Value::Null }));
+            } else {
+                println!("Rule '{}' successfully added.", id);
+            }
+            0
+        }
+        Some("rule-list") | Some("list-rules") => {
+            let service = if store_path.exists() {
+                let (s, _recovered, _quarantine) = aiosh_core::pep_decision_service::PepDecisionService::load_or_recover(store_path);
+                s
+            } else {
+                aiosh_core::pep_decision_service::PepDecisionService::new()
+            };
+
+            let subject_filter = parse_flag(rest, "--subject");
+            let action_filter = parse_flag(rest, "--action");
+
+            let all_rules = service.list_rules();
+            let rules: Vec<aiosh_core::pep_decision::PepPolicyRule> = all_rules.into_iter().filter(|r| {
+                if let Some(ref s) = subject_filter {
+                    if r.target_subject.as_ref() != Some(s) {
+                        return false;
+                    }
+                }
+                if let Some(ref a) = action_filter {
+                    if r.target_action.as_ref() != Some(a) {
+                        return false;
+                    }
+                }
+                true
+            }).collect();
+
+            classify_and_emit(&mut ctx, "pep", "rule-list", json!({ "count": rules.len() }), "success", None, Some("Listed rules"), "operator", None);
+            if is_json {
+                println!("{}", json!({ "code": 0, "data": rules, "error": serde_json::Value::Null }));
+            } else {
+                println!("{:<24} {:<8} {:<20} {:<12} {}", "ID", "EFFECT", "SUBJECT", "ACTION", "RESOURCE");
+                println!("{}", "-".repeat(80));
+                for r in &rules {
+                    let eff = format!("{:?}", r.effect).to_lowercase();
+                    let subj = r.target_subject.as_deref().unwrap_or("*");
+                    let act = r.target_action.as_deref().unwrap_or("*");
+                    let res = r.target_resource.as_deref().unwrap_or("*");
+                    println!("{:<24} {:<8} {:<20} {:<12} {}", r.id, eff, subj, act, res);
+                }
+                println!("\nTotal rules: {}", rules.len());
+            }
+            0
+        }
+        Some("rule-remove") | Some("remove-rule") => {
+            let mut id_opt = None;
+            let mut i = 0;
+            while i < rest.len() {
+                if rest[i] == "--store" {
+                    i += 2;
+                } else if rest[i].starts_with("--") {
+                    i += 1;
+                } else {
+                    id_opt = Some(rest[i].as_str());
+                    break;
+                }
+            }
+            let id = match id_opt {
+                Some(i) => i,
+                None => {
+                    let msg = "usage: aiosh pep rule-remove <id> [--store <path>] [--json]";
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_ARGUMENT", "message": msg } }));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    return 2;
+                }
+            };
+
+            if id.is_empty() || id.len() > 128 || id.chars().any(|c| c.is_control()) {
+                let msg = "invalid rule id: must be non-empty, <= 128 chars, and contain no control characters";
+                if is_json {
+                    println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ID", "message": msg } }));
+                } else {
+                    eprintln!("{}", msg);
+                }
+                return 2;
+            }
+
+            let mut service = if store_path.exists() {
+                let (s, _recovered, _quarantine) = aiosh_core::pep_decision_service::PepDecisionService::load_or_recover(store_path);
+                s
+            } else {
+                aiosh_core::pep_decision_service::PepDecisionService::new()
+            };
+
+            if service.remove_rule(id) {
+                let _ = service.save_to_path(store_path);
+                classify_and_emit(&mut ctx, "pep", "rule-remove", json!({ "rule_id": id }), "success", Some(id), Some("Rule removed"), "operator", None);
+                if is_json {
+                    println!("{}", json!({ "code": 0, "data": { "removed": true, "id": id }, "error": serde_json::Value::Null }));
+                } else {
+                    println!("Rule '{}' successfully removed.", id);
+                }
+                0
+            } else {
+                let msg = format!("rule '{}' not found", id);
+                classify_and_emit(&mut ctx, "pep", "rule-remove", json!({ "error": &msg, "id": id }), "failure", Some(id), Some("Rule not found"), "operator", None);
+                if is_json {
+                    println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "NOT_FOUND", "message": msg } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(&msg));
+                }
+                1
+            }
+        }
+        Some("status") => {
+            let service = if store_path.exists() {
+                let (s, _recovered, _quarantine) = aiosh_core::pep_decision_service::PepDecisionService::load_or_recover(store_path);
+                s
+            } else {
+                aiosh_core::pep_decision_service::PepDecisionService::new()
+            };
+
+            let all_rules = service.list_rules();
+            let mut subjects = std::collections::HashSet::new();
+            let mut actions = std::collections::HashSet::new();
+            for r in &all_rules {
+                if let Some(ref s) = r.target_subject {
+                    subjects.insert(s.clone());
+                }
+                if let Some(ref a) = r.target_action {
+                    actions.insert(a.clone());
+                }
+            }
+
+            let status_data = json!({
+                "rules_count": all_rules.len(),
+                "max_capacity": aiosh_core::pep_decision_service::MAX_RULES_IN_SERVICE,
+                "unique_subjects": subjects.len(),
+                "unique_actions": actions.len(),
+                "default_algorithm": "deny_overrides",
+                "store_path": store_path.to_string_lossy(),
+                "store_exists": store_path.exists(),
+            });
+
+            classify_and_emit(&mut ctx, "pep", "status", status_data.clone(), "success", None, Some("PEP Decision Engine status"), "operator", None);
+            if is_json {
+                println!("{}", json!({ "code": 0, "data": status_data, "error": serde_json::Value::Null }));
+            } else {
+                println!("PEP Decision Engine Status:\n  Total rules:       {}/{}\n  Unique subjects:   {}\n  Unique actions:    {}\n  Default algorithm: deny_overrides\n  Store path:        {}\n  Store exists:      {}",
+                    all_rules.len(),
+                    aiosh_core::pep_decision_service::MAX_RULES_IN_SERVICE,
+                    subjects.len(),
+                    actions.len(),
+                    store_path.to_string_lossy(),
+                    store_path.exists(),
+                );
+            }
+            0
+        }
+        Some("--help") | Some("-h") | None => {
+            println!("aiosh pep — PEP Decision Engine & Policy Control\n\nUsage: aiosh pep <evaluate|rule-add|rule-list|rule-remove|status> [options]\n\nCommands:\n  evaluate                   Evaluate authorization request against policies\n  rule-add                   Add a new policy rule\n  rule-list                  List loaded policy rules\n  rule-remove <id>           Remove a policy rule by ID\n  status                     Display PEP Decision Engine status & metrics\n\nOptions:\n  --store <PATH>             Custom policy JSON store path\n  --json                     Output structured JSON envelope\n  -h, --help                 Display this help message");
+            0
+        }
+        Some(unknown) => {
+            let msg = format!("unknown pep subcommand: {}", unknown);
+            classify_and_emit(
+                &mut ctx, "pep", unknown, json!({ "error": &msg }),
+                "failure", None, Some("Unknown subcommand"), "operator", None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "UNKNOWN_SUBCOMMAND", "message": msg } }));
+            } else {
+                eprintln!("{}", sanitize_terminal(&msg));
+            }
+            2
+        }
+    }
+}
+
 #[cfg(test)]
 mod update_cli_tests {
     use super::*;
@@ -15076,6 +15529,142 @@ mod capability_cli_tests {
         let _ = std::fs::remove_dir_all(&tmp_dir);
     }
 }
+
+#[cfg(test)]
+mod pep_cli_tests {
+    use super::*;
+
+    fn s(v: &[&str]) -> Vec<String> {
+        v.iter().map(|x| x.to_string()).collect()
+    }
+
+    #[test]
+    fn test_pep_cli_help_and_unknown() {
+        assert_eq!(cmd_pep(&[]), 0);
+        assert_eq!(cmd_pep(&s(&["--help"])), 0);
+        assert_eq!(cmd_pep(&s(&["-h"])), 0);
+        assert_eq!(cmd_pep(&s(&["unknown_cmd"])), 2);
+        assert_eq!(cmd_pep(&s(&["unknown_cmd", "--json"])), 2);
+    }
+
+    #[test]
+    fn test_pep_cli_path_hygiene() {
+        let long_path = format!("{}.json", "a".repeat(1025));
+        assert_eq!(cmd_pep(&s(&["status", "--store", &long_path])), 2);
+        assert_eq!(cmd_pep(&s(&["status", "--store", "path\nwith\ncontrol.json"])), 2);
+        assert_eq!(cmd_pep(&s(&["status", "--store", "invalid_ext.txt"])), 2);
+        assert_eq!(cmd_pep(&s(&["status", "--store", "path/../traversal/pep.json"])), 2);
+    }
+
+    #[test]
+    fn test_pep_cli_rule_lifecycle_and_evaluation() {
+        let tmp_dir = std::env::temp_dir().join(format!("aiosh_pep_cli_test_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&tmp_dir);
+        let store = tmp_dir.join("pep_policies.json").to_string_lossy().to_string();
+
+        // 1. Initial status empty
+        assert_eq!(cmd_pep(&s(&["status", "--store", &store])), 0);
+        assert_eq!(cmd_pep(&s(&["status", "--store", &store, "--json"])), 0);
+
+        // 2. Initial evaluation without rules -> default deny (exit code 1)
+        assert_eq!(cmd_pep(&s(&[
+            "evaluate",
+            "--subject", "agent:analyst",
+            "--resource", "fs:/data/reports/q1.pdf",
+            "--action", "read",
+            "--store", &store,
+        ])), 1);
+
+        // 3. Add permit rule
+        assert_eq!(cmd_pep(&s(&[
+            "rule-add",
+            "--id", "rule_allow_reports",
+            "--subject", "agent:analyst",
+            "--resource", "fs:/data/reports/*",
+            "--action", "read",
+            "--effect", "permit",
+            "--desc", "allow reports read",
+            "--store", &store,
+        ])), 0);
+
+        // 4. Evaluate matching request -> permit (exit code 0)
+        assert_eq!(cmd_pep(&s(&[
+            "evaluate",
+            "--subject", "agent:analyst",
+            "--resource", "fs:/data/reports/q1.pdf",
+            "--action", "read",
+            "--store", &store,
+        ])), 0);
+
+        // 5. Evaluate non-matching action -> deny (exit code 1)
+        assert_eq!(cmd_pep(&s(&[
+            "evaluate",
+            "--subject", "agent:analyst",
+            "--resource", "fs:/data/reports/q1.pdf",
+            "--action", "write",
+            "--store", &store,
+        ])), 1);
+
+        // 6. List rules
+        assert_eq!(cmd_pep(&s(&["rule-list", "--store", &store])), 0);
+        assert_eq!(cmd_pep(&s(&["rule-list", "--subject", "agent:analyst", "--store", &store, "--json"])), 0);
+
+        // 7. Remove rule
+        assert_eq!(cmd_pep(&s(&["rule-remove", "rule_allow_reports", "--store", &store])), 0);
+        // Remove again -> not found (code 1)
+        assert_eq!(cmd_pep(&s(&["rule-remove", "rule_allow_reports", "--store", &store])), 1);
+
+        // 8. Evaluate after removal -> deny (code 1)
+        assert_eq!(cmd_pep(&s(&[
+            "evaluate",
+            "--subject", "agent:analyst",
+            "--resource", "fs:/data/reports/q1.pdf",
+            "--action", "read",
+            "--store", &store,
+        ])), 1);
+
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+    }
+
+    #[test]
+    fn test_pep_cli_validation_and_hardening() {
+        let tmp_dir = std::env::temp_dir().join(format!("aiosh_pep_cli_hard_test_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&tmp_dir);
+        let store = tmp_dir.join("pep_policies.json").to_string_lossy().to_string();
+
+        // 1. Missing required flags in evaluate -> code 2
+        assert_eq!(cmd_pep(&s(&["evaluate", "--resource", "fs:/data", "--action", "read", "--store", &store])), 2);
+        assert_eq!(cmd_pep(&s(&["evaluate", "--subject", "agent:x", "--action", "read", "--store", &store])), 2);
+        assert_eq!(cmd_pep(&s(&["evaluate", "--subject", "agent:x", "--resource", "fs:/data", "--store", &store])), 2);
+
+        // 2. Traversal in resource -> code 2
+        assert_eq!(cmd_pep(&s(&[
+            "evaluate",
+            "--subject", "agent:x",
+            "--resource", "fs:/data/../etc/passwd",
+            "--action", "read",
+            "--store", &store,
+        ])), 2);
+
+        // 3. Invalid effect in rule-add -> code 2
+        assert_eq!(cmd_pep(&s(&[
+            "rule-add",
+            "--id", "r1",
+            "--subject", "agent:x",
+            "--resource", "fs:/data",
+            "--action", "read",
+            "--effect", "invalid_effect",
+            "--store", &store,
+        ])), 2);
+
+        // 4. Invalid rule ID in rule-remove -> code 2
+        assert_eq!(cmd_pep(&s(&["rule-remove", "--store", &store])), 2);
+        assert_eq!(cmd_pep(&s(&["rule-remove", "bad\nid", "--store", &store])), 2);
+
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+    }
+}
+
 
 
 
