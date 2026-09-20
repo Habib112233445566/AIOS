@@ -105,11 +105,15 @@ impl CapabilityService {
         &mut self.policy
     }
 
-    /// Calculates the derivation depth of a capability in the registry.
+    /// Calculates the derivation depth of a capability in the registry with cycle detection.
     pub fn get_derivation_depth(&self, cap_id: &str) -> usize {
         let mut depth = 0;
         let mut current_id = cap_id.to_string();
+        let mut visited = HashSet::new();
         while let Some(cap) = self.capabilities.get(&current_id) {
+            if !visited.insert(current_id.clone()) || depth >= 256 {
+                break;
+            }
             if let Some(ref parent_id) = cap.parent_id {
                 depth += 1;
                 current_id = parent_id.clone();
@@ -151,6 +155,11 @@ impl CapabilityService {
     /// Checks if the registry is empty.
     pub fn is_empty(&self) -> bool {
         self.capabilities.is_empty()
+    }
+
+    /// Returns a reference to all registered capabilities.
+    pub fn capabilities(&self) -> &HashMap<String, Capability> {
+        &self.capabilities
     }
 
     /// Issues a new root capability with validated inputs (CSERV2).

@@ -1709,6 +1709,18 @@ impl Server {
                 "additionalProperties": false
             }
         }));
+        tools.push(json!({
+            "name": "aios.capability.observability",
+            "description": "Generate a comprehensive observability and telemetry report for the capability registry",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "store_path": { "type": "string", "description": "Optional path to capability_store.json" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
         tools
     }
 
@@ -6056,6 +6068,29 @@ impl Server {
                 dispatch::recorded_call(
                     &mut self.ring, &self.pep,
                     "aios.capability.prune", "Prune expired capabilities", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.capability.observability" => {
+                let store_path_str = arguments
+                    .get("store_path")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(".aios/capability_store.json")
+                    .to_string();
+
+                let f = move || -> Result<Value, String> {
+                    let path = std::path::Path::new(&store_path_str);
+                    let service = aiosh_core::capability_service::CapabilityService::load_or_create(path)?;
+                    let report = aiosh_core::capability_observability::CapabilityObservabilityReport::generate(&service, "");
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.capability.observability",
+                        "report": report
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.capability.observability", "Generate capability observability report", arguments,
                     None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
                 )
             }

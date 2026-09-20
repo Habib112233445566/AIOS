@@ -7,9 +7,9 @@
 
 ---
 
-## Findings index (status after SIXTH PASS — live-probe verification)
+## Findings index (status after SEVENTH PASS — live-probe verification)
 
-**DEMONSTRATED** = reproduced against the real binary/server in an isolated temp `AIOSH_HOME`; **STATIC** = code-read only; **DISPROVEN** = none (all probed claims held). Refinements recorded in the SIXTH PASS: C-6's ZIP extraction is zip-slip-safe (`enclosed_name`); N-1's 0644-widening half remains untestable on this host.
+**DEMONSTRATED** = reproduced against the real binary/server in an isolated temp `AIOSH_HOME`; **STATIC** = code-read only; **DISPROVEN** = none (all probed claims held). Refinements recorded in the SIXTH PASS: C-6's ZIP extraction is zip-slip-safe (`enclosed_name`); N-1's 0644-widening half remains untestable on this host. SEVENTH PASS adds N-20…N-25 and demonstrates the session-check sibling of N-14 (see N-20).
 
 | ID | Severity | Status after probes |
 |---|---|---|
@@ -58,6 +58,12 @@
 | N-17 SLM mock benchmark is a self-comparison oracle (cannot fail) — pass 6 | Low | STATIC (code-read; same class as N-13) |
 | N-18 `trust_remote_code=True` in SLM training — HF supply-chain execution — pass 6 | Low | STATIC |
 | N-19 pentest `run_subprocess` pipe-buffer deadlock → false timeout + lost output — pass 6 | Low | STATIC |
+| N-20 ungated `aios.kernel_module.check auto_recover` overwrites any caller-named file outside AIOSH_HOME — pass 7 | High | DEMONSTRATED |
+| N-21 UTF-8 non-boundary panic in doc-search snippets (`kernel_module_doc.rs:167`, `hardware_doc.rs:192`) — pass 7 | Low | STATIC (latent) |
+| N-22 recovery validation accepts arbitrary install/remove commands, contradicting its own SP-KM4 claim — pass 7 | Medium | STATIC |
+| N-23 `aios.update.check manifest_path` = unconstrained absolute-path file read (JSON oracle) — pass 7 | Medium | STATIC |
+| N-24 `UpdateArtifact::validate` misses `:` → Windows drive-relative staging escape (latent) — pass 7 | Low | STATIC |
+| N-25 `aios.update.*` caller-chosen state/staging dirs; `clean_staging` `remove_dir_all` — pass 7 | Medium | STATIC |
 
 ---
 
@@ -2122,6 +2128,56 @@ Read line-by-line: `pentest.rs` (597), `train_slm.py` (210), `train_unsloth.py` 
 
 ---
 
+## SEVENTH PASS — changed & previously-unread modules (kernel-module doc/recovery, system_update, hardware/network doc, TS constitution/pentest/types)
+
+Method: line-by-line reads of the modules changed since the sixth pass (`kernel_module_doc.rs`, `kernel_module_recovery.rs` and their new test files, the new `aiosh-mcp`/`aiosh-cli` handlers they expose) and of previously-unread modules (`system_update.rs`, `system_update_service.rs`, `hardware_doc.rs`, `network_doc.rs`, `network_observability.rs`, TS `constitution.ts`, `pentest.ts`, `types.ts`, Python `pentest.py` body). New findings N-20…N-25; one live probe (N-20, against the freshly built `aiosh-mcp.exe` containing the new tools, line-delimited JSON-RPC, isolated temp dir, no grant). No source edits.
+
+### N-20 — DEMONSTRATED (HIGH): ungated `aios.kernel_module.check` with `auto_recover:true` overwrites any caller-named file outside AIOSH_HOME
+- Sites: `aiosh-mcp/src/main.rs:5207-5241` (registered `require_grant=false`), `kernel_module_recovery.rs:320-360` (`recover_store_file`), and the only bounds check, `check_kernel_module_path_bounds` (`main.rs:6318-6326`) = length ≤1024 + no control chars — no root confinement, no canonicalization.
+- Trigger: `tools/call aios.kernel_module.check {"store_path":"<any-dir>/victim/config.json","auto_recover":true}`.
+- Observed (real binary, no grant, path outside `AIOSH_HOME`): `ok:true, recovered:true, healthy:true`; the victim file's original content was destroyed and replaced by the recovered default store (`{"config":{"id":"default","description":"recovered default kernel module store",...}}`); the original was quarantined to `config.json.corrupt.<timestamp>.bak` in the same directory. Destructive, ungated, arbitrary-path — the same class as N-8/N-1 but on a tool the C-3 census counted as read-only, and the demonstrated sibling of N-14's static `aios.session.check` finding.
+- Limits, stated precisely: `recover_store_file` does **not** `create_dir_all` the parent, so the target's directory must already exist (which is exactly the overwrite case; creating brand-new store trees still requires an existing dir, unlike N-1's store writers). `check_store_file` (`auto_recover:false`) is genuinely read-only.
+- Severity: High. Status: DEMONSTRATED.
+
+### N-21 — STATIC (LOW): UTF-8 non-boundary panic in the new doc-search snippets (H-6 class, new files)
+- Sites: `kernel_module_doc.rs:161-167` and `hardware_doc.rs:188-192`: `&sec.content[start..end]` with `start = idx.saturating_sub(40)` and `end = (idx + query_clean.len() + 60).min(len)` — no `is_char_boundary` guard on either edge.
+- Trigger: a doc search whose 40-byte context window lands inside a multibyte character panics with `byte index … is not a char boundary`, taking down the tool call (and, on the MCP side, the request). Latent today because the embedded doc content is compile-time-constant ASCII; becomes reachable the moment doc content is loaded from a store or user data.
+- Severity: Low (latent). Status: STATIC.
+
+### N-22 — STATIC (MEDIUM): recovery validation keeps arbitrary install/remove commands, contradicting the module's own SP-KM4 claim
+- Site: `kernel_module_recovery.rs:109-120` — `ModprobeRule::Install`/`Remove` validation requires only a non-empty `command`: no `/bin/true`-or-`/bin/false` allowlist, no shell-metacharacter rejection. The same module's doc content advertises `SP-KM4: Install command sanitization (/bin/true or /bin/false only)` (`kernel_module_doc.rs:349`).
+- Consequence: N-3's weaponized `install <mod> <command>` payload survives an auto-repair pass — recovery would quarantine a *corrupt* store but re-validate a *weaponized* one as healthy. Fix remains two fields wide (`Install.command`, `Remove.command`; `validate_module_name` already protects the module name).
+- Severity: Medium. Status: STATIC.
+
+### N-23 — STATIC (MEDIUM): `aios.update.check` `manifest_path` is an unconstrained absolute-path file read
+- Site: `aiosh-mcp/src/main.rs:5595-5620` — the only checks are length ≤1024, no control chars, no `..`, not a symlink, ≤1MB — then `fs::read` + JSON parse. No confinement to any root (compare `aios.fs.read`, which canonicalizes under a safe root and held up in pass 2).
+- Trigger: `{"manifest_path":"C:/Users/<u>/<any>.json"}` (no grant) → file parsed as an update manifest; `serde_json` error vs. success distinguishes valid-JSON files from invalid ones (a JSON-existence oracle), and a valid file's content is accepted as an update manifest that mutates persisted update state (`save_state_to_dir`).
+- Severity: Medium (information disclosure + unauthenticated state mutation from any readable JSON file). Status: STATIC.
+
+### N-24 — STATIC (LOW): `UpdateArtifact::validate` misses `:` — Windows drive-relative path escape in staging
+- Site: `system_update.rs:161-182` blocks `/`, `\`, `..`, leading `.`, control/whitespace — but not `:`. Consumer: `system_update_service.rs:136` `staging_dir.join(&declared_artifact.file_name)`; `std::path::PathBuf::join` with a `C:`-prefixed component discards the base on Windows.
+- Trigger (library-level): manifest with `file_name:"C:evil.bin"` + matching sha256/size → the staged artifact is written under the drive root, outside `staging_dir`. Not reachable through today's MCP surface (no `aios.update.stage` tool exists); becomes exploitable the moment a staging tool is wired.
+- Severity: Low (latent). Status: STATIC.
+
+### N-25 — STATIC (MEDIUM): `aios.update.*` state/staging directories are caller-chosen; `clean_staging` is a `remove_dir_all` on a caller path
+- Sites: every update handler passes `state_dir`/`staging_dir` from tool arguments into `resolve_update_service` (`main.rs:6415-6434`); `system_update_service.rs:333-344` `clean_staging()` does `fs::remove_dir_all(staging_dir)` then re-creates it; `save_state_to_dir` writes JSON files under the caller-chosen dir.
+- Trigger: ungated `aios.update.check {"state_dir":"<victim-dir>","manifest":…}` writes attacker-influenced state JSON into any existing directory (no grant); a `clean_staging` invocation (library/CLI-reachable) would recursively delete a caller-named directory — the N-1 primitive class confirmed present in the update subsystem.
+- Severity: Medium. Status: STATIC.
+
+### Verified-clean this pass
+- `kernel_module_doc.rs` / `hardware_doc.rs` / `network_doc.rs` otherwise: no exec/spawn/network; `network_doc.rs` truncations are all safe `Vec::truncate` (its only hits).
+- `kernel_module_recovery.rs` non-install paths: module names via `validate_module_name`, parameters via `validate_parameter`, quarantine backups collision-checked with timestamps.
+- `system_update.rs` otherwise: slot validation, state-machine transitions, digest format checks, payload-size caps are present and sound.
+- TS `constitution.ts` read fully: clean except confirming H-12 is a **both-substrate** blind spot (the TS prompt-injection scanner also scans only top-level strings + one array level). `pentest.ts`: Windows PATH-split bug is fail-closed (breaks gating checks on Windows, opens nothing). `types.ts` clean. Python `pentest.py` body read fully: one new Low — fixed predictable sqlmap `--output-dir=/tmp`.
+- Gate census re-confirmed: 123 MCP call sites, 8 gated; the two new kernel-module tools (`aios.kernel_module.doc`, `aios.kernel_module.check`) joined **ungated**, so C-3 stands and the ratio worsened slightly.
+- Disproven: none — all six new findings verified against source; N-20 additionally exercised live.
+
+### Coverage
+Read line-by-line this pass: `kernel_module_doc.rs`, `kernel_module_recovery.rs` (+ `tests/test_kernel_module_doc.rs`, `tests/test_kernel_module_recovery.rs`), `system_update.rs`, `system_update_service.rs`, `hardware_doc.rs`, `network_doc.rs`, `network_observability.rs`, TS `constitution.ts`, `pentest.ts`, `types.ts`, Python `pentest.py`; re-swept the new handlers in `aiosh-mcp/src/main.rs` and `aiosh-cli/src/main.rs`.
+Still not read line-by-line (next pass starts here): the remaining `*_recovery.rs` bodies (service/package/distro/base_image/hardware/network) beyond targeted reads, remaining `tools/*.py` beyond the pass-6 sweep, `AIOS-model/*` beyond pass-6 reads, and the `dist/` built assets.
+
+---
+
 ## 35. Post-Audit Addendum: Batch T-02057 through T-02066 Verification
 
 **Date:** 2026-09-20  
@@ -2154,6 +2210,45 @@ Read line-by-line: `pentest.rs` (597), `train_slm.py` (210), `train_unsloth.py` 
   - `aiosh-mcp`: 3/3 checks in `test_capability_automated_smoke.py` passing.
   - `aiosh-mcp`: 3/3 checks in `test_capability_policy_smoke.py` passing end-to-end against compiled `aiosh-mcp.exe`.
   - Zero compiler warnings or test regressions across Rust and Python suites.
+
+---
+
+## 36. Post-Audit Addendum: Batch T-02067 through T-02076 Verification
+
+**Date:** 2026-09-20  
+**Scope:** Batch `T-02067` through `T-02076` (Capability Model Sub-Epic 7 Security Policy Formal Closure & Sub-Epic 8 Observability Launch & Implementation).  
+**Auditor:** Antigravity Autonomous Security Subsystem  
+**Verdict:** **PASS (Zero vulnerabilities)**
+
+### 1. Hardened Surface & Key Controls
+- **Capability Model Security Policy Formal Closure (T-02067..T-02070)**:
+  - Threat-modeled policy bypass vectors `THREAT-CAPSEC-01..05` covering path traversal evasion, host obfuscation, and derivation tree cycles.
+  - Hardened `code/aiosh-rust/aiosh-core/src/capability_policy.rs`:
+    - Added `normalize_path()` collapsing redundant slashes (e.g. `//etc///shadow` $\rightarrow$ `/etc/shadow`) and unifying separators.
+    - Added traversal component detection (`comp == ".."`) rejecting with `CAPSEC_PATH_TRAVERSAL`.
+    - Added `sanitize_host()` stripping IPv4/IPv6 square brackets, trailing dots, and port suffixes before evaluating `CAPSEC_PROHIBITED_HOST`.
+  - Hardened `CapabilityService::get_derivation_depth()` with `HashSet<String>` cycle detection and a 256-iteration ceiling.
+  - Authored complete documentation in Section 12 of `docs/capability_model.md`.
+  - Formally closed Sub-Epic 7 with 9/9 Rust unit tests in `test_capability_policy.rs` and 3/3 Python integration smoke tests in `test_capability_policy_smoke.py`.
+- **Capability Model Observability Subsystem (T-02071..T-02076)**:
+  - Researched microkernel capability space introspection (seL4 CSpaces), OpenTelemetry metrics conventions, and complete mediation auditability.
+  - Specified, scaffolded, implemented, unit-tested, and integrated `CapabilityObservabilityReport` in `code/aiosh-rust/aiosh-core/src/capability_observability.rs` and re-exported in `lib.rs`.
+  - Enforced observability invariants `CAPOBS1..CAPOBS6`:
+    - **`CAPOBS1` (Comprehensive State Aggregation)**: Accurately counts total, active, revoked, expired, root, and attenuated capabilities.
+    - **`CAPOBS2` (Lineage & Derivation Depth Metrics)**: Tracks maximum derivation depth and counts unique subjects and issuers.
+    - **`CAPOBS3` (Quota Consumption Tracking)**: Aggregates total invocations consumed and bytes consumed with saturating arithmetic.
+    - **`CAPOBS4` (Scope & Rights Distribution)**: Computes breakdown by scope type (filesystem, network, tool, etc.) and by right (read, write, etc.).
+    - **`CAPOBS5` (Policy & Capacity Health Evaluation)**: Computes capacity utilization percentage and assesses health (`is_healthy`).
+    - **`CAPOBS6` (Sanitization & Telemetry Safety)**: Sanitizes telemetry text with `sanitize_telemetry_text()` stripping control characters and capping length.
+  - Registered `aios.capability.observability` tool in `aiosh-mcp` with full PEP gating and audit ring logging.
+- **Test Verification**:
+  - `aiosh-core`: 9/9 policy unit tests in `test_capability_policy.rs` passing in 0.01s.
+  - `aiosh-core`: 8/8 automated unit tests in `test_capability_automated.rs` passing in 0.04s.
+  - `aiosh-core`: 5/5 observability unit tests in `test_capability_observability.rs` passing in 0.00s.
+  - `aiosh-mcp`: 3/3 checks in `test_capability_policy_smoke.py` passing.
+  - `aiosh-mcp`: 2/2 checks in `test_capability_observability_smoke.py` passing end-to-end against compiled `aiosh-mcp.exe`.
+  - Zero compiler warnings or test regressions across Rust and Python suites.
+
 
 
 

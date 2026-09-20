@@ -416,6 +416,70 @@ The Automated Test framework for the Capability Model ensures end-to-end correct
 - **Fault Injection**: Validates path traversal and extension rejection over MCP JSON-RPC.
 - **Process Safety**: Enforces leak-proof child process reaping (`p.kill()` and `p.wait()` in `finally` block).
 
+---
+
+## 12. Capability Security Policy (`CAPSEC1..CAPSEC6`)
+
+The **Capability Security Policy** subsystem governs capability issuance and monotonic attenuation, enforcing Mandatory Access Control (MAC) rules across all subjects in the Security Kernel.
+
+### 12.1 Policy Invariants (`CAPSEC1..CAPSEC6`)
+
+| Invariant | Name | Description |
+|---|---|---|
+| `CAPSEC1` | Default Deny & Policy Modes | Policy operates in `Enforcing`, `Audit`, or `Permissive` mode. In `Enforcing` mode, any policy violation immediately blocks capability issuance or derivation. |
+| `CAPSEC2` | Attenuation Depth Bound | Derivation depth cannot exceed `max_attenuation_depth` (default: 64, configurable: 1..=128) to prevent unbounded recursion or tree explosion. |
+| `CAPSEC3` | Sensitive Resource Restrictions | Filesystem paths matching prohibited prefixes (`/etc`, `/proc`, `/sys`, `/dev`, `/root`, `C:\Windows`, etc.) and network hosts matching prohibited targets (`169.254.169.254`, `metadata.google.internal`) are blocked. |
+| `CAPSEC4` | Subject Disallowed Rights | Subjects with specified prefixes (e.g. `untrusted:*`, `guest:*`) are strictly forbidden from receiving dangerous rights (`Admin`, `Delegate`, `Delete`, `Write`). |
+| `CAPSEC5` | Mandatory Temporal Bounds | When `require_temporal_bounds` is active, capabilities issued to non-system subjects must specify `expires_at` within `max_validity_duration_seconds`. |
+| `CAPSEC6` | Auditability & Determinism | Every policy check returns a deterministic `CapabilityPolicyVerdict` containing structured `CapabilityPolicyViolation` records for telemetry and auditing. |
+
+### 12.2 Hardened Evaluation Logic
+
+1. **Path Normalization & Traversal Defense**:
+   - Rejects paths containing path traversal components (`..`) with `CAPSEC_PATH_TRAVERSAL`.
+   - Collapses redundant slashes (`//etc///shadow` $\rightarrow$ `/etc/shadow`).
+   - Normalizes Windows and POSIX separators.
+2. **Host Sanitization**:
+   - Strips IPv4/IPv6 square brackets (`[...]`).
+   - Strips accidental port suffixes (`:80`).
+   - Strips trailing dots (`metadata.google.internal.`).
+3. **Cycle Detection in Derivation Trees**:
+   - Uses a `HashSet` visited set in `get_derivation_depth()` to detect cycles and caps traversal iterations to 256.
+
+### 12.3 MCP Usage Example
+
+#### Request: Attempting Prohibited Path Issuance
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "aios.capability.issue",
+    "arguments": {
+      "issuer": "kernel",
+      "subject": "agent:tester",
+      "scope_type": "filesystem",
+      "scope_target": "/etc/shadow",
+      "rights": ["read"]
+    }
+  }
+}
+```
+
+#### Response: Policy Rejection Envelope
+```json
+{
+  "ok": false,
+  "error": "CSERV_VALIDATION_ERROR: policy violation: CAPSEC_PROHIBITED_PATH: path '/etc/shadow' matches prohibited prefix '/etc'"
+}
+```
+
+### 12.4 Known Constraints & Limitations
+1. **Static Prefix Rules**: Prohibited paths use normalized prefix matching; symlink resolution at capability issuance time requires filesystem access and is enforced at execution/PEP dispatch time.
+2. **In-Memory Cycle Guard**: Cycles are detected dynamically during depth calculation; structural parent-child acyclicity is guaranteed by monotonic UUID generation during issuance.
+
+
 
 
 

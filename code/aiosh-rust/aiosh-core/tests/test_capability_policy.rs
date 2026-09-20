@@ -464,3 +464,101 @@ fn test_capability_service_policy_enforcement() {
     assert_eq!(child.rights, vec![CapabilityRight::Read]);
     assert_eq!(child.subject, "untrusted:worker");
 }
+
+#[test]
+fn test_policy_hardening_and_cycle_prevention() {
+    let policy = CapabilitySecurityPolicy::default();
+
+    // 1. Redundant slashes in prohibited path: //etc///shadow
+    let scope_slashes = CapabilityScope::Filesystem {
+        path: "//etc///shadow".into(),
+        recursive: false,
+    };
+    let verdict_slashes = policy.evaluate_issuance(
+        "kernel",
+        "agent:test",
+        &scope_slashes,
+        &[CapabilityRight::Read],
+        &CapabilityConstraints::default(),
+    );
+    assert!(!verdict_slashes.allowed);
+    assert!(verdict_slashes.violations.iter().any(|v| v.rule_id == "CAPSEC_PROHIBITED_PATH"));
+
+    // 2. Traversal component in path: /workspace/../../etc/shadow
+    let scope_traversal = CapabilityScope::Filesystem {
+        path: "/workspace/../../etc/shadow".into(),
+        recursive: false,
+    };
+    let verdict_traversal = policy.evaluate_issuance(
+        "kernel",
+        "agent:test",
+        &scope_traversal,
+        &[CapabilityRight::Read],
+        &CapabilityConstraints::default(),
+    );
+    assert!(!verdict_traversal.allowed);
+    assert!(verdict_traversal.violations.iter().any(|v| v.rule_id == "CAPSEC_PATH_TRAVERSAL"));
+
+    // 3. Sanitized bracketed and port-suffixed host: [169.254.169.254]:80
+    let scope_meta_bracketed = CapabilityScope::Network {
+        host: "[169.254.169.254]:80".into(),
+        port: Some(80),
+        protocol: "tcp".into(),
+    };
+    let verdict_meta = policy.evaluate_issuance(
+        "kernel",
+        "agent:test",
+        &scope_meta_bracketed,
+        &[CapabilityRight::Read],
+        &CapabilityConstraints::default(),
+    );
+    assert!(!verdict_meta.allowed);
+    assert!(verdict_meta.violations.iter().any(|v| v.rule_id == "CAPSEC_PROHIBITED_HOST"));
+
+    // 4. Trailing dot on hostname: metadata.google.internal.
+    let scope_meta_dot = CapabilityScope::Network {
+        host: "metadata.google.internal.".into(),
+        port: Some(80),
+        protocol: "tcp".into(),
+    };
+    let verdict_dot = policy.evaluate_issuance(
+        "kernel",
+        "agent:test",
+        &scope_meta_dot,
+        &[CapabilityRight::Read],
+        &CapabilityConstraints::default(),
+    );
+    assert!(!verdict_dot.allowed);
+    assert!(verdict_dot.violations.iter().any(|v| v.rule_id == "CAPSEC_PROHIBITED_HOST"));
+
+    // 5. Cycle prevention in derivation depth
+    let mut service = CapabilityService::new();
+    let cap1 = service.issue_root_capability(
+        "kernel",
+        "agent:test",
+        CapabilityScope::Filesystem {
+            path: "/workspace".into(),
+            recursive: true,
+        },
+        vec![CapabilityRight::Read, CapabilityRight::Delegate],
+        CapabilityConstraints::default(),
+    ).expect("cap1");
+
+    let cap2 = service.attenuate_capability(
+        &cap1.id,
+        "agent:test2",
+        None,
+        vec![CapabilityRight::Read, CapabilityRight::Delegate],
+        None,
+    ).expect("cap2");
+
+    // Manually create a cycle: cap1's parent becomes cap2
+    if let Some(cap1_mut) = service.get_capability_mut(&cap1.id) {
+        cap1_mut.parent_id = Some(cap2.id.clone());
+    }
+
+    // Depth calculation should terminate safely without infinite loop
+    let depth = service.get_derivation_depth(&cap2.id);
+    assert!(depth <= 256);
+}
+

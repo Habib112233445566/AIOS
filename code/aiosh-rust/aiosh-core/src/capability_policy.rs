@@ -159,14 +159,30 @@ impl CapabilitySecurityPolicy {
 
         let mut violations = Vec::new();
 
-        // 1. Prohibited path prefixes
+        // 1. Prohibited path prefixes & path hygiene
         if let CapabilityScope::Filesystem { path, .. } = scope {
+            if path.chars().any(|c| c.is_control()) {
+                violations.push(CapabilityPolicyViolation {
+                    rule_id: "CAPSEC_MALFORMED_PATH".into(),
+                    description: format!("path contains control characters"),
+                    fatal: true,
+                });
+            }
+
+            let has_traversal = path.split(['/', '\\']).any(|comp| comp == "..");
+            if has_traversal {
+                violations.push(CapabilityPolicyViolation {
+                    rule_id: "CAPSEC_PATH_TRAVERSAL".into(),
+                    description: format!("path '{}' contains path traversal ('..')", path),
+                    fatal: true,
+                });
+            }
+
+            let normalized_path = normalize_path(path);
             for prefix in &self.prohibited_path_prefixes {
-                let normalized_prefix = prefix.replace('\\', "/");
-                let normalized_path = path.replace('\\', "/");
+                let normalized_prefix = normalize_path(prefix);
                 if normalized_path == normalized_prefix
                     || normalized_path.starts_with(&format!("{}/", normalized_prefix))
-                    || normalized_path.starts_with(prefix)
                 {
                     violations.push(CapabilityPolicyViolation {
                         rule_id: "CAPSEC_PROHIBITED_PATH".into(),
@@ -178,9 +194,13 @@ impl CapabilitySecurityPolicy {
             }
         }
 
-        // 2. Prohibited network hosts
+        // 2. Prohibited network hosts with sanitization
         if let CapabilityScope::Network { host, .. } = scope {
-            if self.prohibited_network_hosts.iter().any(|h| h.eq_ignore_ascii_case(host)) {
+            let sanitized_host = sanitize_host(host);
+            if self.prohibited_network_hosts.iter().any(|h| {
+                let sanitized_rule = sanitize_host(h);
+                sanitized_rule.eq_ignore_ascii_case(&sanitized_host)
+            }) {
                 violations.push(CapabilityPolicyViolation {
                     rule_id: "CAPSEC_PROHIBITED_HOST".into(),
                     description: format!("network host '{}' is prohibited by policy", host),
@@ -301,3 +321,44 @@ impl CapabilitySecurityPolicy {
         verdict
     }
 }
+
+/// Normalizes path separators and collapses redundant slashes.
+pub fn normalize_path(path: &str) -> String {
+    let unified = path.replace('\\', "/");
+    let mut result = String::with_capacity(unified.len());
+    let mut prev_slash = false;
+    for c in unified.chars() {
+        if c == '/' {
+            if !prev_slash {
+                result.push(c);
+                prev_slash = true;
+            }
+        } else {
+            result.push(c);
+            prev_slash = false;
+        }
+    }
+    // Remove trailing slash if length > 1
+    if result.len() > 1 && result.ends_with('/') {
+        result.pop();
+    }
+    result
+}
+
+/// Sanitizes a host string by stripping brackets, trailing dots, and accidental port numbers.
+pub fn sanitize_host(host: &str) -> String {
+    let mut trimmed = host.trim();
+    if let Some(colon_pos) = trimmed.rfind(':') {
+        let after_colon = &trimmed[colon_pos + 1..];
+        if !after_colon.is_empty() && after_colon.chars().all(|c| c.is_ascii_digit()) {
+            trimmed = &trimmed[..colon_pos];
+        }
+    }
+    let unbracketed = if trimmed.starts_with('[') && trimmed.ends_with(']') {
+        &trimmed[1..trimmed.len() - 1]
+    } else {
+        trimmed
+    };
+    unbracketed.trim_end_matches('.').to_string()
+}
+
