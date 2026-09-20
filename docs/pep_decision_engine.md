@@ -381,6 +381,49 @@ The PEP Decision Engine is configured via `PepConfig` in `aiosh-core`, supportin
 - `T-02148`: [Configuration Hardening](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02148-configuration-hardening.md)
 - `T-02149`: [Configuration Documentation](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02149-configuration-documentation.md)
 - `T-02150`: [Configuration Verification & Evidence](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02150-configuration-verification-evidenc.md)
+- `T-02151`: [Automated Tests Research](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02151-automated-tests-research.md)
+- `T-02152`: [Automated Tests Specification](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02152-automated-tests-specification.md)
+- `T-02153`: [Automated Tests Scaffold](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02153-automated-tests-scaffold.md)
+- `T-02154`: [Automated Tests Implementation](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02154-automated-tests-implementation.md)
+- `T-02155`: [Automated Tests Unit Test](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02155-automated-tests-unit-test.md)
+- `T-02156`: [Automated Tests Integration](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02156-automated-tests-integration.md)
+- `T-02157`: [Automated Tests Security Review](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02157-automated-tests-security-review.md)
+- `T-02158`: [Automated Tests Hardening](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02158-automated-tests-hardening.md)
+- `T-02159`: [Automated Tests Documentation](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02159-automated-tests-documentation.md)
+- `T-02160`: [Automated Tests Verification & Evidence](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02160-automated-tests-verification-evidenc.md)
+
+---
+
+## 10. Automated Test Suite Reference (Sub-Epic 6)
+
+The PEP Decision Engine automated test suite (`code/aiosh-rust/aiosh-core/tests/test_pep_decision_e2e.rs`) verifies end-to-end integration and security invariants across the decision engine lifecycle.
+
+### 10.1 Invariants Matrix
+- **`PEPE2E1` (Algorithm Matrix)**: Verifies `DenyOverrides`, `PermitOverrides`, `FirstApplicable`, and default-deny against conflicting and unmatched requests.
+- **`PEPE2E2` (Obligation Delivery)**: Asserts accurate delivery of structured obligations (`AuditLog`, `RateLimit`).
+- **`PEPE2E3` (Capacity Stress & Boundary Limits)**: Tests 5,000 rules registered, fast indexed evaluation, and rejection of rule 5,001 with `PEPSERV_ERR_CAPACITY`.
+- **`PEPE2E4` (Corrupt Store Quarantine)**: Simulates corrupted JSON files and verifies non-destructive quarantine to `.bak.<timestamp>`.
+- **`PEPE2E5` (Adversarial Fuzzing & Traversal)**: Asserts rejection of path traversals (`..`), null bytes, control characters, and non-`.json` extensions.
+- **`PEPE2E6` (Cross-Surface Persistence Parity)**: Verifies lossless JSON roundtrip serialization between memory and disk stores.
+
+### 10.2 Invocation Examples
+```bash
+# Run the Rust end-to-end integration test suite
+cargo test --manifest-path code/aiosh-rust/Cargo.toml -p aiosh-core --test test_pep_decision_e2e
+
+# Run all PEP test suites in aiosh-core
+cargo test --manifest-path code/aiosh-rust/Cargo.toml -p aiosh-core --test test_pep_decision --test test_pep_decision_service --test test_pep_config --test test_pep_decision_e2e
+
+# Run CLI and MCP smoke suites
+python code/aiosh-cli/tests/test_pep_cli_smoke.py
+python code/aiosh-cli/tests/test_pep_config_smoke.py
+python code/aiosh-mcp/tests/test_pep_decision_smoke.py
+```
+
+### 10.3 Constraints and Known Limitations
+1. `FirstApplicable` combines candidate rules sorted deterministically by rule ID. Rules with lower lexical IDs evaluate earlier.
+2. Single-query evaluation evaluates up to `MAX_PEP_RULES_PER_EVALUATION = 1000` matching candidate rules. Total registry capacity supports up to `MAX_RULES_IN_SERVICE = 5000` rules.
+
 
 
 

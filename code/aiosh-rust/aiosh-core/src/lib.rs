@@ -97,6 +97,7 @@ pub mod pep;
 pub mod pep_decision;
 pub mod pep_decision_service;
 pub mod pep_config;
+pub mod pep_security_policy;
 pub mod release;
 pub mod release_config;
 pub mod repo_health;
@@ -266,3 +267,11 @@ pub use pep_config::{
     MIN_RULES_COUNT as MIN_PEP_RULES_COUNT,
     PEPCONF_ERR_BOUNDS, PEPCONF_ERR_IO, PEPCONF_ERR_PARSE, PEPCONF_ERR_VALIDATION,
 };
+pub use pep_security_policy::{
+    PepEnforcementMode, PepObligationCriticality, PepSecurityPolicy,
+    MAX_PEP_POLICY_DESC_LEN, MAX_PEP_POLICY_VERSION_LEN, MAX_PEP_SECURITY_POLICY_BYTES,
+    MAX_PREFIX_LEN, MAX_RESTRICTED_PREFIXES,
+    PEPPOL_ERR_IO, PEPPOL_ERR_PRIVILEGE, PEPPOL_ERR_TEMPORAL, PEPPOL_ERR_VALIDATION,
+    validate_policy_path as validate_pep_security_policy_path,
+};
+
