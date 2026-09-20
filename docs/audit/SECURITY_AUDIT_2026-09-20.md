@@ -1876,4 +1876,39 @@ Read line-by-line: `pentest.rs` (597), `train_slm.py` (210), `train_unsloth.py` 
   - `aiosh-mcp`: 6/6 checks in `test_system_update_observability_smoke.py` passing.
   - Full regression test suite: zero regressions across all epics.
 
+---
+
+## 28. Post-Audit Addendum: Batch T-01987 through T-01996 Verification
+
+**Date:** 2026-09-20  
+**Scope:** Batch `T-01987` through `T-01996` (System Update Documentation Sub-Epic 9 Formal Closure & System Update Recovery & Validation Sub-Epic 10).  
+**Auditor:** Antigravity Autonomous Security Subsystem  
+**Verdict:** **PASS (Zero vulnerabilities)**
+
+### 1. Hardened Surface & Key Controls
+- **System Update Documentation Closure & Hardening (T-01987..T-01990)**:
+  - Evaluated threat vectors `THREAT-UDOC-01..05` covering export path traversal, search ReDoS/DoS, memory exhaustion, control character injection, and symlink following.
+  - Hardened `system_update_doc.rs`:
+    - Strict path traversal defense (`..` rejection, length $\le 1024$, `.md` extension requirement).
+    - Query clamping $\le 256$ characters and result set capping $\le 50$ items.
+    - 1 MB ceiling on exported documentation payloads.
+    - Atomic persistence via `.tmp.<pid>` pattern with immediate unlinking on error.
+  - Authored Section 12 in `docs/system_update.md` and formally closed Sub-Epic 9 with 6/6 unit tests and 4/4 Python smoke checks.
+- **System Update Recovery & Validation Subsystem (T-01991..T-01996)**:
+  - Researched, specified, scaffolded, implemented, unit-tested, and integrated recovery & validation in `code/aiosh-rust/aiosh-core/src/system_update_recovery.rs`.
+  - Enforced recovery invariants `UVAL1..UVAL6`:
+    - `UVAL1`: Rigorous path hygiene (`validate_update_store_path`) enforcing $\le 1024$ chars, `.json` extension requirement, control character rejection, and parent directory traversal (`..`) defense.
+    - `UVAL2`: In-memory state validation (`validate_update_state`) detecting slot conflicts, invalid state enums, progress bounds ($0..100\%$), and empty version strings.
+    - `UVAL3`: Disk state inspection and quarantine (`check_update_files`), detecting missing or malformed JSON files, timestamped quarantine (`.corrupted.<timestamp>`), and dangling staging artifact detection.
+    - `UVAL4`: Non-destructive self-healing recovery (`recover_update_files_with_backup`), restoring corrupted state from `.bak` or synthesizing clean default structures without panic.
+    - `UVAL5`: Dual-slot boot synchronization (`recover_update_state_in_memory`), automatically resolving slot pointer conflicts (`current_slot == target_slot`) by reassigning target to alternate slot and configuring rollback slot.
+    - `UVAL6`: Staging hygiene and dangling artifact pruning, removing partial payloads (`*.tmp.*`, `*.downloading`) while tracking reclaimed bytes.
+- **Test Verification**:
+  - `aiosh-core`: 4/4 unit tests in `test_system_update_recovery.rs` passing in 0.06s.
+  - `aiosh-core`: 6/6 unit tests in `test_system_update_doc.rs` passing in 0.01s.
+  - `aiosh-mcp`: 3/3 checks in `test_system_update_recovery_smoke.py` passing.
+  - `aiosh-mcp`: 4/4 checks in `test_system_update_doc_smoke.py` passing.
+  - Full regression test suite: zero regressions across all epics.
+
+
 

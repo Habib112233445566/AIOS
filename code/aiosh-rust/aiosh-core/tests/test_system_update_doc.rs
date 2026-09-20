@@ -110,6 +110,12 @@ fn test_udoc6_file_export_and_hygiene() {
     let content = std::fs::read_to_string(&export_path).unwrap();
     assert!(content.contains("# AIOS System Update Documentation Index"));
 
+    // Traversal defense
+    let traversal_path = dir.path().join("..").join("forbidden.md");
+    let err = index.export_to_file(&traversal_path);
+    assert!(err.is_err());
+    assert!(err.unwrap_err().contains("parent directory traversal"));
+
     #[cfg(unix)]
     {
         let symlink_path = dir.path().join("symlink.md");

@@ -115,6 +115,7 @@ pub mod system_update_config;
 pub mod system_update_doc;
 pub mod system_update_observability;
 pub mod system_update_policy;
+pub mod system_update_recovery;
 pub mod system_update_service;
 pub mod task_service;
 pub mod toolchain_config;
@@ -230,6 +231,11 @@ pub use system_update_observability::{
 pub use system_update_doc::{
     SystemUpdateDocCategory, SystemUpdateDocIndex, SystemUpdateDocSearchResult,
     SystemUpdateDocTopic,
+};
+pub use system_update_recovery::{
+    check_update_files, recover_update_files_with_backup, recover_update_state_in_memory,
+    validate_update_state, validate_update_store_path, SystemUpdateRecoveryAction,
+    SystemUpdateRecoveryReport, SystemUpdateValidationReport, MAX_UPDATE_STORE_SIZE,
 };
 
 

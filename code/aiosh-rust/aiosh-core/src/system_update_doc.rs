@@ -167,7 +167,7 @@ impl SystemUpdateDocIndex {
 
     /// Searches documentation index using tokenized keyword scoring (UDOC3).
     pub fn search(&self, query: &str) -> Vec<SystemUpdateDocSearchResult> {
-        let q_clean = query.trim().to_ascii_lowercase();
+        let q_clean: String = query.chars().take(256).collect::<String>().trim().to_ascii_lowercase();
         if q_clean.is_empty() {
             return Vec::new();
         }
@@ -220,6 +220,7 @@ impl SystemUpdateDocIndex {
         }
 
         results.sort_by(|a, b| b.score.cmp(&a.score));
+        results.truncate(50);
         results
     }
 
@@ -298,6 +299,14 @@ impl SystemUpdateDocIndex {
 
     /// Exports full documentation to file atomically with symlink defense and size limit (UDOC6).
     pub fn export_to_file(&self, path: &Path) -> Result<(), String> {
+        if path.to_string_lossy().len() > 1024 {
+            return Err("export path exceeds maximum length of 1024 characters".to_string());
+        }
+
+        if path.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+            return Err(format!("path {:?} contains parent directory traversal ('..') which is disallowed", path));
+        }
+
         let content = self.render_full_index_markdown();
         if content.len() > 1024 * 1024 {
             return Err("documentation export exceeds maximum size (1 MB)".to_string());

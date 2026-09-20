@@ -630,4 +630,53 @@ python code/aiosh-mcp/tests/test_system_update_observability_smoke.py
 - Security Review: [`docs/tasks/evidence/T-01977-observability-security-review.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01977-observability-security-review.md)
 - Hardening: [`docs/tasks/evidence/T-01978-observability-hardening.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01978-observability-hardening.md)
 
+---
+
+## 12. System Update Documentation Subsystem
+
+### 12.1 Overview & Architecture
+The System Update Documentation Subsystem provides an offline-capable, pre-populated technical documentation catalog, ranked multi-keyword full-text search, and dynamic status Markdown rendering for operators and autonomous agents:
+- **Core Module**: [`code/aiosh-rust/aiosh-core/src/system_update_doc.rs`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/code/aiosh-rust/aiosh-core/src/system_update_doc.rs).
+- **Primary Data Models**:
+  - `SystemUpdateDocCategory`: 6 categorical domains (`Architecture`, `ABPartitioning`, `Security`, `Observability`, `Configuration`, `Troubleshooting`).
+  - `SystemUpdateDocTopic`: Individual technical documentation topics with cross-references and tags.
+  - `SystemUpdateDocIndex`: In-memory searchable documentation repository and dynamic Markdown generator.
+
+### 12.2 Invariants Enforced (UDOC1 - UDOC6)
+1. **`UDOC1` (Canonical Offline Index)**: Pre-populated repository containing canonical topics across architecture, dual-slot layout, security policy, observability, configuration, and rollback procedures.
+2. **`UDOC2` (Deterministic Category Navigation)**: Standardized categories with loose string alias resolution (e.g. `"arch"`, `"slots"`, `"policy"`).
+3. **`UDOC3` (Ranked Full-Text Search)**: Weighted keyword scoring: exact ID match (+100), ID token (+50), title token (+40), tag match (+20), and content token (+5).
+4. **`UDOC4` (Markdown Export)**: Standard GitHub Flavored Markdown generation for individual topics and complete index sections.
+5. **`UDOC5` (Dynamic Status & Diagram Rendering)**: Live Markdown rendering of partition slot status including ASCII dual-slot diagrams and observability summaries.
+6. **`UDOC6` (Bounded I/O & Path Hygiene)**: File exports enforce path hygiene ($\le 1024$ chars, zero `..` components), 1 MB file ceiling, and atomic sibling persistence (`.tmp.<pid>`).
+
+### 12.3 Invocation Examples
+
+#### Run Documentation Unit Tests
+```bash
+cargo test --manifest-path code/aiosh-rust/Cargo.toml -p aiosh-core --test test_system_update_doc -- --nocapture
+```
+
+#### Run Documentation Python Smoke Suite
+```bash
+python code/aiosh-mcp/tests/test_system_update_doc_smoke.py
+```
+
+### 12.4 Constraints & Known Limitations
+- **Query Length Clamping**: Search queries are truncated at 256 characters.
+- **Search Result Caps**: Maximum 50 ranked results returned per search query.
+- **Maximum Export Size**: File exports cannot exceed 1 MB.
+- **Symlink Defense**: Export destination paths that are symlinks are rejected.
+
+### 12.5 Evidence Artifacts
+- Research: [`docs/tasks/evidence/T-01981-documentation-research.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01981-documentation-research.md)
+- Specification: [`docs/tasks/evidence/T-01982-documentation-specification.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01982-documentation-specification.md)
+- Scaffold: [`docs/tasks/evidence/T-01983-documentation-scaffold.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01983-documentation-scaffold.md)
+- Implementation: [`docs/tasks/evidence/T-01984-documentation-implementation.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01984-documentation-implementation.md)
+- Unit Testing: [`docs/tasks/evidence/T-01985-documentation-unit-test.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01985-documentation-unit-test.md)
+- Integration: [`docs/tasks/evidence/T-01986-documentation-integration.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01986-documentation-integration.md)
+- Security Review: [`docs/tasks/evidence/T-01987-documentation-security-review.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01987-documentation-security-review.md)
+- Hardening: [`docs/tasks/evidence/T-01988-documentation-hardening.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-01988-documentation-hardening.md)
+
+
 
