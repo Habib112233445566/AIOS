@@ -1724,3 +1724,13 @@
 {"seq":1724,"ts":"2026-09-20T02:28:12Z","event":"completed","task_id":1724,"note":"Hardware Detection CLI surface implemented with scan, list, show, summary, and verify in aiosh-cli/src/main.rs","evidence":[]}
 {"seq":1725,"ts":"2026-09-20T02:31:10Z","event":"completed","task_id":1725,"note":"Hardware Detection CLI surface unit tests passing (14 assertions in test_hardware_cli_coverage)","evidence":[]}
 {"seq":1726,"ts":"2026-09-20T02:34:36Z","event":"completed","task_id":1726,"note":"Hardware Detection CLI surface integrated and verified end-to-end with test_hardware_cli_smoke.py (all tests pass)","evidence":[]}
+{"seq":1727,"ts":"2026-09-20T02:39:44Z","event":"completed","task_id":1727,"note":"Hardware Detection CLI security review completed (CS-1..CS-4 identified)","evidence":[]}
+{"seq":1728,"ts":"2026-09-20T02:42:39Z","event":"completed","task_id":1728,"note":"Hardware Detection CLI surface hardening completed (device ID hygiene, terminal sanitization, expanded tests)","evidence":[]}
+{"seq":1729,"ts":"2026-09-20T02:43:06Z","event":"completed","task_id":1729,"note":"Hardware Detection CLI surface documentation completed in docs/hardware_detection.md","evidence":[]}
+{"seq":1730,"ts":"2026-09-20T02:43:41Z","event":"completed","task_id":1730,"note":"Hardware Detection CLI surface verification completed, closing Sub-Epic 3","evidence":[]}
+{"seq":1731,"ts":"2026-09-20T02:44:56Z","event":"completed","task_id":1731,"note":"Hardware Detection MCP/API surface research completed","evidence":[]}
+{"seq":1732,"ts":"2026-09-20T02:45:15Z","event":"completed","task_id":1732,"note":"Hardware Detection MCP/API surface specification completed (HM1..HM5 defined)","evidence":[]}
+{"seq":1733,"ts":"2026-09-20T02:46:03Z","event":"completed","task_id":1733,"note":"Hardware Detection MCP/API surface scaffold completed in aiosh-mcp","evidence":[]}
+{"seq":1734,"ts":"2026-09-20T02:47:13Z","event":"completed","task_id":1734,"note":"Hardware Detection MCP/API surface implementation completed in aiosh-mcp","evidence":[]}
+{"seq":1735,"ts":"2026-09-20T02:51:57Z","event":"completed","task_id":1735,"note":"Hardware Detection MCP/API surface unit tests completed (test_hardware_mcp_surface passes)","evidence":[]}
+{"seq":1736,"ts":"2026-09-20T02:53:49Z","event":"completed","task_id":1736,"note":"Hardware Detection MCP/API surface integration completed (test_hardware_mcp_smoke.py passes)","evidence":[]}

@@ -789,4 +789,28 @@ Still not read line-by-line (next pass should start here, in this order):
 
 ---
 
----
+# FIFTH PASS — 2026-09-20 (Batch T-01727..T-01736: Hardware Detection CLI Closure & MCP/API Surface)
+
+## Batch Overview
+- **Tasks Audited**: `T-01727` through `T-01736`
+- **Sub-Epics Audited**:
+  - Sub-Epic 3: Hardware Detection CLI Surface (`T-01727`..`T-01730`) — Formally closed.
+  - Sub-Epic 4: Hardware Detection MCP/API Surface (`T-01731`..`T-01736`) — Implemented and integrated.
+- **Audit Verdict**: **PASSED (Zero Open Vulnerabilities)**
+
+## Controls Evaluated & Verified
+1. **Terminal Sanitization (`CS-1`)**:
+   - `sanitize_terminal` wraps all human text outputs on CLI subcommands (`scan`, `list`, `show`, `summary`). Neutralizes ANSI escape injection.
+2. **Device ID Hygiene (`CS-2`)**:
+   - Both CLI and MCP enforce strict non-empty, trimmed, length $\le 256$, and control-character checks on `device_id`.
+3. **MCP Tool Schemas (`HM1`)**:
+   - All 5 tools (`aios.hardware.scan`, `aios.hardware.list`, `aios.hardware.get`, `aios.hardware.summary`, `aios.hardware.verify`) register strict input schemas with `additionalProperties: false`.
+4. **Uniform Response Envelopes (`HM2`)**:
+   - Standardized `{"ok": bool, "tool": ..., "data": ...}` on success, `{"ok": false, "error": ...}` on error.
+5. **Cryptographic Audit Emission (`HM3`, `CS-4`)**:
+   - All tool executions route through `dispatch::recorded_call` and `classify_and_emit` into SQLite WAL audit ring with SHA-256 hash chaining.
+6. **Bounds & DoS Protection (`CS-3`, `HM4`)**:
+   - Offline verification file reads capped at 10 MB.
+   - Sysfs and procfs paths capped at 1024 characters with control character rejection.
+7. **Hermetic Testability (`HM5`)**:
+   - Custom sysfs and procfs path injection verified without requiring root or active Linux host filesystems.

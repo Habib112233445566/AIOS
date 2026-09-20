@@ -240,3 +240,55 @@ let inventory = service.scan(&options)?;
 - Documentation: `docs/tasks/evidence/T-01719-core-service-documentation.md`.
 - Verification & Evidence: `docs/tasks/evidence/T-01720-core-service-verification-evidenc.md`.
 
+---
+
+## 9. Hardware Detection CLI Surface (Sub-Epic 3)
+
+### 9.1 Command Overview & Syntax
+The CLI surface is accessed via `aiosh hw` (or `aiosh hardware`) in the Rust `aiosh-cli` binary:
+
+```text
+aiosh hw <scan|list|show|summary|verify> [OPTIONS]
+```
+
+### 9.2 Subcommands
+| Subcommand | Description | Arguments & Flags |
+| :--- | :--- | :--- |
+| `scan` | Discovers host hardware across all or filtered subsystems | `--class <name>`, `--no-attrs`, `--sysfs <path>`, `--procfs <path>`, `--json` |
+| `list` | Displays tabular overview of discovered hardware devices | `--class <name>`, `--sysfs <path>`, `--procfs <path>`, `--json` |
+| `show <id>` | Displays full attributes and metadata for a single device ID | `<device_id>`, `--sysfs <path>`, `--procfs <path>`, `--json` |
+| `summary` | Displays device counts aggregated by functional class | `--class <name>`, `--sysfs <path>`, `--procfs <path>`, `--json` |
+| `verify` | Validates inventory integrity against invariants HD1..HD5 | `--file <path>`, `--sysfs <path>`, `--procfs <path>`, `--json` |
+
+### 9.3 Options & Flags
+- `--class <name>`: Filter discovery to a single device class (`cpu`, `gpu`, `block`, `network`, `usb`, `pci`, `system`, `memory`, `other`).
+- `--no-attrs`: Exclude detailed device attributes from discovery to optimize payload size.
+- `--sysfs <path>`: Specify a custom sysfs root (enables hermetic testing or alternate root mounts).
+- `--procfs <path>`: Specify a custom procfs root.
+- `--file <path>`: Specify a serialized inventory JSON file for offline invariant verification.
+- `--json`: Format all output in the standardized AIOS JSON envelope (`{"code": 0, "data": ..., "error": null}`).
+
+### 9.4 Exit Code Conventions
+- `0`: Success — command executed and completed successfully.
+- `1`: Operation Failure — device not found, inventory invariant failure, or I/O failure during scan.
+- `2`: Parameter / Invocation Error — missing required device ID, unknown subcommand, invalid device class, path exceeding 1024 chars, or presence of control characters.
+
+### 9.5 Security & Audit Invariants (CS1..CS4)
+- **CS1 (Terminal Injection Prevention)**: All human-readable output strings are sanitized via `sanitize_terminal` to strip ANSI escape codes.
+- **CS2 (Device ID Hygiene)**: Device IDs on `show` are trimmed, non-empty, capped at 256 characters, and checked for control characters.
+- **CS3 (Buffer Limits)**: Input JSON files for `--file` verification are strictly capped at 10 MB.
+- **CS4 (Audit Trail Logging)**: Every invocation, whether successful or rejected during parameter validation, is recorded in the SQLite WAL audit ring with category `hardware`.
+
+### 9.6 Sub-Epic 3 Verification Evidence
+- Research: `docs/tasks/evidence/T-01721-cli-surface-research.md`.
+- Specification: `docs/tasks/evidence/T-01722-cli-surface-specification.md`.
+- Scaffold: `docs/tasks/evidence/T-01723-cli-surface-scaffold.md`.
+- Implementation: `docs/tasks/evidence/T-01724-cli-surface-implementation.md`.
+- Unit Test: `docs/tasks/evidence/T-01725-cli-surface-unit-test.md`.
+- Integration: `docs/tasks/evidence/T-01726-cli-surface-integration.md`.
+- Security Review: `docs/tasks/evidence/T-01727-cli-surface-security-review.md`.
+- Hardening: `docs/tasks/evidence/T-01728-cli-surface-hardening.md`.
+- Documentation: `docs/tasks/evidence/T-01729-cli-surface-documentation.md`.
+- Verification & Evidence: `docs/tasks/evidence/T-01730-cli-surface-verification-evidenc.md`.
+
+

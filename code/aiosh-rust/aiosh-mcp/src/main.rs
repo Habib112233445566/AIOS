@@ -1334,6 +1334,87 @@ impl Server {
                 "additionalProperties": false
             }
         }));
+
+        // Hardware Detection Tools (HM1..HM5)
+        tools.push(json!({
+            "name": "aios.hardware.scan",
+            "description": "Discover host hardware across all or filtered subsystems with summary statistics",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "classes": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Optional list of device classes to discover (cpu, gpu, block, network, usb, pci, system, memory, other)"
+                    },
+                    "include_attributes": { "type": "boolean", "description": "Whether to include detailed attributes for discovered devices (default: true)" },
+                    "sysfs_path": { "type": "string", "description": "Optional custom sysfs root directory path" },
+                    "procfs_path": { "type": "string", "description": "Optional custom procfs root directory path" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.hardware.list",
+            "description": "List discovered hardware devices with optional class filtering",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "classes": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Optional list of device classes to filter by"
+                    },
+                    "sysfs_path": { "type": "string", "description": "Optional custom sysfs root directory path" },
+                    "procfs_path": { "type": "string", "description": "Optional custom procfs root directory path" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.hardware.get",
+            "description": "Inspect full details, vendor/device IDs, paths, and attributes for a specific device ID",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "device_id": { "type": "string", "description": "Unique deterministic identifier of the hardware device" },
+                    "sysfs_path": { "type": "string", "description": "Optional custom sysfs root directory path" },
+                    "procfs_path": { "type": "string", "description": "Optional custom procfs root directory path" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "required": ["device_id"],
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.hardware.summary",
+            "description": "Get device count summary aggregated by device classification",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "sysfs_path": { "type": "string", "description": "Optional custom sysfs root directory path" },
+                    "procfs_path": { "type": "string", "description": "Optional custom procfs root directory path" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.hardware.verify",
+            "description": "Validate hardware inventory against mathematical invariants HD1..HD5 from live scan or serialized JSON file",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "file_path": { "type": "string", "description": "Optional path to a serialized hardware inventory JSON file" },
+                    "sysfs_path": { "type": "string", "description": "Optional custom sysfs root directory path" },
+                    "procfs_path": { "type": "string", "description": "Optional custom procfs root directory path" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
         tools
     }
 
@@ -4862,6 +4943,172 @@ impl Server {
                     None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
                 )
             }
+            "aios.hardware.scan" => {
+                let sysfs_opt = arguments.get("sysfs_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let procfs_opt = arguments.get("procfs_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let include_attrs = arguments.get("include_attributes").and_then(|v| v.as_bool()).unwrap_or(true);
+                let classes_val = arguments.get("classes").cloned();
+
+                let f = move || -> Result<Value, String> {
+                    let service = resolve_hardware_service(&sysfs_opt, &procfs_opt)?;
+                    let classes = parse_hardware_classes(classes_val.as_ref())?;
+                    let options = aiosh_core::HardwareScanOptions {
+                        classes,
+                        include_attributes: include_attrs,
+                    };
+                    let inv = service.scan(&options).map_err(|e| format!("hardware scan failed: {}", e))?;
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.hardware.scan",
+                        "data": inv,
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.hardware.scan", "Discover host hardware across subsystems", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.hardware.list" => {
+                let sysfs_opt = arguments.get("sysfs_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let procfs_opt = arguments.get("procfs_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let classes_val = arguments.get("classes").cloned();
+
+                let f = move || -> Result<Value, String> {
+                    let service = resolve_hardware_service(&sysfs_opt, &procfs_opt)?;
+                    let classes = parse_hardware_classes(classes_val.as_ref())?;
+                    let options = aiosh_core::HardwareScanOptions {
+                        classes,
+                        include_attributes: true,
+                    };
+                    let inv = service.scan(&options).map_err(|e| format!("hardware list failed: {}", e))?;
+                    let total = inv.devices.len();
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.hardware.list",
+                        "data": {
+                            "devices": inv.devices,
+                            "count": total,
+                        }
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.hardware.list", "List discovered hardware devices", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.hardware.get" => {
+                let device_id = match arguments.get("device_id").and_then(|v| v.as_str()) {
+                    Some(id) if !id.trim().is_empty() => id.trim().to_string(),
+                    _ => return json!({ "ok": false, "error": "missing required parameter 'device_id'" }),
+                };
+                if device_id.len() > 256 {
+                    return json!({ "ok": false, "error": "device_id cannot exceed 256 characters" });
+                }
+                if device_id.chars().any(|c| c.is_control()) {
+                    return json!({ "ok": false, "error": "device_id cannot contain control characters" });
+                }
+
+                let sysfs_opt = arguments.get("sysfs_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let procfs_opt = arguments.get("procfs_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let dev_id = device_id.clone();
+
+                let f = move || -> Result<Value, String> {
+                    let service = resolve_hardware_service(&sysfs_opt, &procfs_opt)?;
+                    let inv = service.scan(&aiosh_core::HardwareScanOptions::default())
+                        .map_err(|e| format!("hardware scan failed: {}", e))?;
+                    if let Some(dev) = inv.devices.into_iter().find(|d| d.id == dev_id) {
+                        Ok(json!({
+                            "ok": true,
+                            "tool": "aios.hardware.get",
+                            "data": { "device": dev },
+                        }))
+                    } else {
+                        Err(format!("device '{}' not found in hardware inventory", dev_id))
+                    }
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.hardware.get", "Inspect specific hardware device details", arguments,
+                    Some(&device_id), grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.hardware.summary" => {
+                let sysfs_opt = arguments.get("sysfs_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let procfs_opt = arguments.get("procfs_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+                let f = move || -> Result<Value, String> {
+                    let service = resolve_hardware_service(&sysfs_opt, &procfs_opt)?;
+                    let inv = service.scan(&aiosh_core::HardwareScanOptions::default())
+                        .map_err(|e| format!("hardware summary failed: {}", e))?;
+                    let total = inv.devices.len();
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.hardware.summary",
+                        "data": {
+                            "summary": inv.summary,
+                            "total": total,
+                        }
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.hardware.summary", "Get hardware summary counts", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.hardware.verify" => {
+                let file_path_opt = arguments.get("file_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let sysfs_opt = arguments.get("sysfs_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let procfs_opt = arguments.get("procfs_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+                if let Some(ref fp) = file_path_opt {
+                    if fp.len() > 1024 {
+                        return json!({ "ok": false, "error": "file_path cannot exceed 1024 characters" });
+                    }
+                    if fp.chars().any(|c| c.is_control()) {
+                        return json!({ "ok": false, "error": "file_path cannot contain control characters" });
+                    }
+                }
+
+                let f = move || -> Result<Value, String> {
+                    let inv = if let Some(ref path_str) = file_path_opt {
+                        let path = std::path::Path::new(path_str);
+                        if !path.exists() || !path.is_file() {
+                            return Err(format!("inventory file not found or not a regular file: {}", path_str));
+                        }
+                        let meta = path.metadata().map_err(|e| e.to_string())?;
+                        if meta.len() > 10 * 1024 * 1024 {
+                            return Err(format!("inventory file exceeds 10MB limit: {} bytes", meta.len()));
+                        }
+                        let content = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+                        aiosh_core::HardwareInventory::from_json(&content)
+                            .map_err(|e| format!("invalid inventory JSON: {}", e))?
+                    } else {
+                        let service = resolve_hardware_service(&sysfs_opt, &procfs_opt)?;
+                        service.scan(&aiosh_core::HardwareScanOptions::default())
+                            .map_err(|e| format!("scan failed: {}", e))?
+                    };
+
+                    aiosh_core::validate_hardware_inventory(&inv)
+                        .map_err(|e| format!("hardware inventory invariants violated: {}", e))?;
+
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.hardware.verify",
+                        "data": {
+                            "valid": true,
+                            "device_count": inv.devices.len(),
+                        }
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.hardware.verify", "Validate hardware inventory invariants", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
             _ => json!({"ok": false, "error": format!("unknown tool: {}", tool)}),
         }
     }
@@ -5117,6 +5364,62 @@ fn save_kernel_module_service(
         let _ = std::fs::create_dir_all(parent);
     }
     service.store.save_to_path(path)
+}
+
+fn resolve_hardware_service(
+    sysfs_opt: &Option<String>,
+    procfs_opt: &Option<String>,
+) -> Result<aiosh_core::HardwareService, String> {
+    if let Some(ref p) = sysfs_opt {
+        if p.len() > 1024 {
+            return Err("sysfs_path cannot exceed 1024 characters".to_string());
+        }
+        if p.chars().any(|c| c.is_control()) {
+            return Err("sysfs_path cannot contain control characters".to_string());
+        }
+    }
+    if let Some(ref p) = procfs_opt {
+        if p.len() > 1024 {
+            return Err("procfs_path cannot exceed 1024 characters".to_string());
+        }
+        if p.chars().any(|c| c.is_control()) {
+            return Err("procfs_path cannot contain control characters".to_string());
+        }
+    }
+    let svc = match (sysfs_opt, procfs_opt) {
+        (Some(s), Some(p)) => aiosh_core::HardwareService::with_roots(s, p),
+        (Some(s), None) => aiosh_core::HardwareService::with_roots(s, "/proc"),
+        (None, Some(p)) => aiosh_core::HardwareService::with_roots("/sys", p),
+        (None, None) => aiosh_core::HardwareService::new(),
+    };
+    Ok(svc)
+}
+
+fn parse_hardware_classes(classes_val: Option<&Value>) -> Result<Option<Vec<aiosh_core::DeviceClass>>, String> {
+    match classes_val {
+        Some(Value::Array(arr)) => {
+            let mut res = Vec::new();
+            for item in arr {
+                let s = item.as_str().ok_or_else(|| "each class item must be a string".to_string())?;
+                let cls = match s.to_ascii_lowercase().as_str() {
+                    "cpu" => aiosh_core::DeviceClass::Cpu,
+                    "gpu" => aiosh_core::DeviceClass::Gpu,
+                    "block" => aiosh_core::DeviceClass::Block,
+                    "network" | "net" => aiosh_core::DeviceClass::Network,
+                    "usb" => aiosh_core::DeviceClass::Usb,
+                    "pci" => aiosh_core::DeviceClass::Pci,
+                    "system" | "dmi" => aiosh_core::DeviceClass::System,
+                    "memory" | "ram" => aiosh_core::DeviceClass::Memory,
+                    "other" => aiosh_core::DeviceClass::Other,
+                    other => return Err(format!("unrecognized device class: {}", other)),
+                };
+                res.push(cls);
+            }
+            Ok(Some(res))
+        }
+        Some(_) => Err("'classes' must be an array of strings".to_string()),
+        None => Ok(None),
+    }
 }
 
 /// Upper bound for an inline (non-file) layout / fstab payload. Mirrors the explicit
@@ -7418,6 +7721,162 @@ mod tests {
             "store_path": "bad\x00path"
         }));
         assert_eq!(res_check_ctrl.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+    }
+
+    #[test]
+    fn test_hardware_mcp_surface() {
+        let mut server = Server::open();
+
+        // 1. Verify tools/list contains all 5 hardware tools with schema conformity (HM1)
+        let tools = server.tool_manifest();
+        let hw_tools = [
+            "aios.hardware.scan",
+            "aios.hardware.list",
+            "aios.hardware.get",
+            "aios.hardware.summary",
+            "aios.hardware.verify",
+        ];
+        for t in &hw_tools {
+            let found = tools.iter().find(|tool| tool.get("name").and_then(|n| n.as_str()) == Some(*t));
+            assert!(found.is_some(), "tool '{}' must be registered in tools/list", t);
+            let schema = found.unwrap().get("inputSchema").expect("inputSchema");
+            assert_eq!(
+                schema.get("additionalProperties").and_then(|v| v.as_bool()),
+                Some(false),
+                "tool '{}' inputSchema must set additionalProperties: false",
+                t
+            );
+        }
+
+        // Setup mock sysfs/procfs
+        let tmp_dir = std::env::temp_dir().join(format!("aios_hw_mcp_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+        let mock_sys = tmp_dir.join("sys");
+        let mock_proc = tmp_dir.join("proc");
+        let pci_dir = mock_sys.join("bus/pci/devices/0000_01_00.0");
+        std::fs::create_dir_all(&pci_dir).unwrap();
+        std::fs::create_dir_all(&mock_proc).unwrap();
+        std::fs::write(pci_dir.join("vendor"), "0x10de\n").unwrap();
+        std::fs::write(pci_dir.join("device"), "0x2684\n").unwrap();
+        std::fs::write(pci_dir.join("class"), "0x030000\n").unwrap();
+
+        let sys_str = mock_sys.to_string_lossy().to_string();
+        let proc_str = mock_proc.to_string_lossy().to_string();
+
+        // 2. aios.hardware.scan
+        let res_scan = server.call_tool("aios.hardware.scan", &json!({
+            "sysfs_path": sys_str,
+            "procfs_path": proc_str
+        }));
+        assert_eq!(res_scan.get("ok").and_then(|v| v.as_bool()), Some(true), "scan should succeed: {:?}", res_scan);
+        assert_eq!(res_scan.pointer("/data/devices/0/id").and_then(|v| v.as_str()), Some("pci:0000:01:00.0"));
+        assert_eq!(res_scan.pointer("/data/summary/gpu").and_then(|v| v.as_u64()), Some(1));
+
+        // 3. aios.hardware.list
+        let res_list = server.call_tool("aios.hardware.list", &json!({
+            "sysfs_path": sys_str,
+            "procfs_path": proc_str
+        }));
+        assert_eq!(res_list.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_list.pointer("/data/count").and_then(|v| v.as_u64()), Some(1));
+
+        // 4. aios.hardware.list with class filtering
+        let res_list_gpu = server.call_tool("aios.hardware.list", &json!({
+            "sysfs_path": sys_str,
+            "procfs_path": proc_str,
+            "classes": ["gpu"]
+        }));
+        assert_eq!(res_list_gpu.pointer("/data/count").and_then(|v| v.as_u64()), Some(1));
+
+        let res_list_block = server.call_tool("aios.hardware.list", &json!({
+            "sysfs_path": sys_str,
+            "procfs_path": proc_str,
+            "classes": ["block"]
+        }));
+        assert_eq!(res_list_block.pointer("/data/count").and_then(|v| v.as_u64()), Some(0));
+
+        // 5. aios.hardware.get (existing)
+        let res_get = server.call_tool("aios.hardware.get", &json!({
+            "device_id": "pci:0000:01:00.0",
+            "sysfs_path": sys_str,
+            "procfs_path": proc_str
+        }));
+        assert_eq!(res_get.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_get.pointer("/data/device/id").and_then(|v| v.as_str()), Some("pci:0000:01:00.0"));
+
+        // 6. aios.hardware.get (missing / invalid device_id)
+        let res_get_missing = server.call_tool("aios.hardware.get", &json!({
+            "device_id": "pci:nonexistent",
+            "sysfs_path": sys_str,
+            "procfs_path": proc_str
+        }));
+        assert_eq!(res_get_missing.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        let res_get_empty = server.call_tool("aios.hardware.get", &json!({
+            "device_id": "   "
+        }));
+        assert_eq!(res_get_empty.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 7. aios.hardware.summary
+        let res_summary = server.call_tool("aios.hardware.summary", &json!({
+            "sysfs_path": sys_str,
+            "procfs_path": proc_str
+        }));
+        assert_eq!(res_summary.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_summary.pointer("/data/total").and_then(|v| v.as_u64()), Some(1));
+        assert_eq!(res_summary.pointer("/data/summary/gpu").and_then(|v| v.as_u64()), Some(1));
+
+        // 8. aios.hardware.verify (live scan)
+        let res_verify_live = server.call_tool("aios.hardware.verify", &json!({
+            "sysfs_path": sys_str,
+            "procfs_path": proc_str
+        }));
+        assert_eq!(res_verify_live.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_verify_live.pointer("/data/valid").and_then(|v| v.as_bool()), Some(true));
+
+        // 9. aios.hardware.verify (file-based)
+        let inv_file = tmp_dir.join("valid_inv.json");
+        let valid_json = json!({
+            "timestamp": "2026-09-20T07:00:00Z",
+            "hostname": "test-node",
+            "architecture": "x86_64",
+            "kernel_version": "6.6.13",
+            "devices": [],
+            "summary": {}
+        });
+        std::fs::write(&inv_file, serde_json::to_string(&valid_json).unwrap()).unwrap();
+        let res_verify_file = server.call_tool("aios.hardware.verify", &json!({
+            "file_path": inv_file.to_string_lossy().to_string()
+        }));
+        assert_eq!(res_verify_file.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_verify_file.pointer("/data/valid").and_then(|v| v.as_bool()), Some(true));
+
+        // 10. aios.hardware.verify (corrupted file)
+        let corrupt_file = tmp_dir.join("corrupt_inv.json");
+        std::fs::write(&corrupt_file, "{ corrupted json").unwrap();
+        let res_verify_corrupt = server.call_tool("aios.hardware.verify", &json!({
+            "file_path": corrupt_file.to_string_lossy().to_string()
+        }));
+        assert_eq!(res_verify_corrupt.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 11. Path hygiene validation (HM4)
+        let long_path = "a".repeat(1025);
+        let res_long_sys = server.call_tool("aios.hardware.scan", &json!({
+            "sysfs_path": long_path
+        }));
+        assert_eq!(res_long_sys.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        let res_ctrl_proc = server.call_tool("aios.hardware.scan", &json!({
+            "procfs_path": "bad\x07proc"
+        }));
+        assert_eq!(res_ctrl_proc.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        let res_bad_class = server.call_tool("aios.hardware.scan", &json!({
+            "classes": ["invalid_class_xyz"]
+        }));
+        assert_eq!(res_bad_class.get("ok").and_then(|v| v.as_bool()), Some(false));
 
         let _ = std::fs::remove_dir_all(&tmp_dir);
     }

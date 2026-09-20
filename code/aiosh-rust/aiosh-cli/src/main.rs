@@ -11044,7 +11044,7 @@ fn cmd_hardware(args: &[String]) -> i32 {
                     } else {
                         println!("Hardware scan complete ({} devices found):", inv.devices.len());
                         for (c, count) in &inv.summary {
-                            println!("  {:10}: {}", c, count);
+                            println!("  {:10}: {}", sanitize_terminal(c), count);
                         }
                     }
                     0
@@ -11079,7 +11079,13 @@ fn cmd_hardware(args: &[String]) -> i32 {
                         println!("{}", "-".repeat(80));
                         for d in &inv.devices {
                             let driver = d.driver.as_deref().unwrap_or("-");
-                            println!("{:<24} {:<10?} {:<8?} {:<16} {}", d.id, d.class, d.bus, driver, d.name);
+                            println!("{:<24} {:<10?} {:<8?} {:<16} {}",
+                                sanitize_terminal(&d.id),
+                                d.class,
+                                d.bus,
+                                sanitize_terminal(driver),
+                                sanitize_terminal(&d.name)
+                            );
                         }
                     }
                     0
@@ -11102,8 +11108,8 @@ fn cmd_hardware(args: &[String]) -> i32 {
         Some("show") => {
             let target_id_opt = rest.iter().find(|a| !a.starts_with("--"));
             let target_id = match target_id_opt {
-                Some(id) => id,
-                None => {
+                Some(id) if !id.trim().is_empty() => id.trim(),
+                _ => {
                     let msg = "missing required device ID for show";
                     classify_and_emit(
                         &mut ctx, "hardware", "show", json!({ "error": msg }),
@@ -11118,6 +11124,34 @@ fn cmd_hardware(args: &[String]) -> i32 {
                 }
             };
 
+            if target_id.len() > 256 {
+                let msg = "device ID cannot exceed 256 characters";
+                classify_and_emit(
+                    &mut ctx, "hardware", "show", json!({ "error": msg }),
+                    "failure", None, Some("Device ID too long"), "operator", None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "DEVICE_ID_TOO_LONG", "message": msg } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(msg));
+                }
+                return 2;
+            }
+
+            if target_id.chars().any(|c| c.is_control()) {
+                let msg = "device ID cannot contain control characters";
+                classify_and_emit(
+                    &mut ctx, "hardware", "show", json!({ "error": msg }),
+                    "failure", None, Some("Device ID contains control character"), "operator", None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "DEVICE_ID_CONTAINS_CONTROL_CHAR", "message": msg } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(msg));
+                }
+                return 2;
+            }
+
             match service.scan(&HardwareScanOptions::default()) {
                 Ok(inv) => {
                     if let Some(dev) = inv.devices.iter().find(|d| &d.id == target_id) {
@@ -11129,20 +11163,20 @@ fn cmd_hardware(args: &[String]) -> i32 {
                         if is_json {
                             println!("{}", json!({ "code": 0, "data": { "device": dev }, "error": serde_json::Value::Null }));
                         } else {
-                            println!("Device: {}", dev.name);
-                            println!("  ID:          {}", dev.id);
+                            println!("Device: {}", sanitize_terminal(&dev.name));
+                            println!("  ID:          {}", sanitize_terminal(&dev.id));
                             println!("  Class:       {:?}", dev.class);
                             println!("  Bus:         {:?}", dev.bus);
-                            if let Some(ref vid) = dev.vendor_id { println!("  Vendor ID:   {}", vid); }
-                            if let Some(ref did) = dev.device_id { println!("  Device ID:   {}", did); }
-                            if let Some(ref vn) = dev.vendor_name { println!("  Vendor Name: {}", vn); }
-                            if let Some(ref drv) = dev.driver { println!("  Driver:      {}", drv); }
-                            if let Some(ref p) = dev.sysfs_path { println!("  Sysfs:       {}", p); }
-                            if let Some(ref p) = dev.dev_path { println!("  Dev Path:    {}", p); }
+                            if let Some(ref vid) = dev.vendor_id { println!("  Vendor ID:   {}", sanitize_terminal(vid)); }
+                            if let Some(ref did) = dev.device_id { println!("  Device ID:   {}", sanitize_terminal(did)); }
+                            if let Some(ref vn) = dev.vendor_name { println!("  Vendor Name: {}", sanitize_terminal(vn)); }
+                            if let Some(ref drv) = dev.driver { println!("  Driver:      {}", sanitize_terminal(drv)); }
+                            if let Some(ref p) = dev.sysfs_path { println!("  Sysfs:       {}", sanitize_terminal(p)); }
+                            if let Some(ref p) = dev.dev_path { println!("  Dev Path:    {}", sanitize_terminal(p)); }
                             if !dev.attributes.is_empty() {
                                 println!("  Attributes:");
                                 for (k, v) in &dev.attributes {
-                                    println!("    {}: {}", k, v);
+                                    println!("    {}: {}", sanitize_terminal(k), sanitize_terminal(v));
                                 }
                             }
                         }
@@ -11190,7 +11224,7 @@ fn cmd_hardware(args: &[String]) -> i32 {
                     } else {
                         println!("Hardware Summary (Total: {} devices):", total);
                         for (c, count) in &inv.summary {
-                            println!("  {:10}: {}", c, count);
+                            println!("  {:10}: {}", sanitize_terminal(c), count);
                         }
                     }
                     0
@@ -12808,9 +12842,15 @@ mod task_cli_tests {
         let code_bad_class = cmd_hardware(&["scan".to_string(), "--class".to_string(), "badclass".to_string(), "--json".to_string()]);
         assert_eq!(code_bad_class, 2);
 
-        // 6. Missing device ID on show
+        // 6. Missing device ID on show (omitted, empty, whitespace, control char, too long)
         let code_no_id = cmd_hardware(&["show".to_string(), "--json".to_string()]);
         assert_eq!(code_no_id, 2);
+        let code_ws_id = cmd_hardware(&["show".to_string(), "   ".to_string(), "--json".to_string()]);
+        assert_eq!(code_ws_id, 2);
+        let code_ctrl_id = cmd_hardware(&["show".to_string(), "bad\x07dev".to_string(), "--json".to_string()]);
+        assert_eq!(code_ctrl_id, 2);
+        let code_long_id = cmd_hardware(&["show".to_string(), "x".repeat(257), "--json".to_string()]);
+        assert_eq!(code_long_id, 2);
 
         // Setup mock environment
         let tmp_dir = std::env::temp_dir().join(format!("aios_hw_cli_test_{}", std::process::id()));
@@ -12878,11 +12918,18 @@ mod task_cli_tests {
         // 12. Verify live scan
         let code_verify_live = cmd_hardware(&[
             "verify".to_string(),
-            "--sysfs".to_string(), sysfs_str,
-            "--procfs".to_string(), procfs_str,
+            "--sysfs".to_string(), sysfs_str.clone(),
+            "--procfs".to_string(), procfs_str.clone(),
             "--json".to_string(),
         ]);
         assert_eq!(code_verify_live, 0);
+
+        // 12b. Human non-json output verification
+        assert_eq!(cmd_hardware(&["scan".to_string(), "--sysfs".to_string(), sysfs_str.clone(), "--procfs".to_string(), procfs_str.clone()]), 0);
+        assert_eq!(cmd_hardware(&["list".to_string(), "--sysfs".to_string(), sysfs_str.clone(), "--procfs".to_string(), procfs_str.clone()]), 0);
+        assert_eq!(cmd_hardware(&["summary".to_string(), "--sysfs".to_string(), sysfs_str.clone(), "--procfs".to_string(), procfs_str.clone()]), 0);
+        assert_eq!(cmd_hardware(&["show".to_string(), "pci:0000:00:02.0".to_string(), "--sysfs".to_string(), sysfs_str.clone(), "--procfs".to_string(), procfs_str.clone()]), 0);
+        assert_eq!(cmd_hardware(&["verify".to_string(), "--sysfs".to_string(), sysfs_str.clone(), "--procfs".to_string(), procfs_str.clone()]), 0);
 
         // 13. Verify file ok
         let valid_file = tmp_dir.join("inventory.json");
