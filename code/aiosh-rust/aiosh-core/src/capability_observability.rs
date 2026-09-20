@@ -44,14 +44,42 @@ pub struct CapabilityObservabilityReport {
     pub generated_at: String,
 }
 
+/// Helper to compute derivation depth with memoization and cycle detection.
+fn get_memoized_depth(
+    cap_id: &str,
+    capabilities: &HashMap<String, crate::capability::Capability>,
+    cache: &mut HashMap<String, usize>,
+    visiting: &mut HashSet<String>,
+) -> usize {
+    if let Some(&d) = cache.get(cap_id) {
+        return d;
+    }
+    if !visiting.insert(cap_id.to_string()) || visiting.len() >= 256 {
+        return 0; // Cycle detected or recursion limit reached
+    }
+    let depth = match capabilities.get(cap_id) {
+        Some(cap) => match &cap.parent_id {
+            Some(parent_id) => {
+                get_memoized_depth(parent_id, capabilities, cache, visiting).saturating_add(1)
+            }
+            None => 0,
+        },
+        None => 0,
+    };
+    visiting.remove(cap_id);
+    cache.insert(cap_id.to_string(), depth);
+    depth
+}
+
 impl CapabilityObservabilityReport {
     /// Generates a comprehensive observability report from a capability service.
     pub fn generate(service: &CapabilityService, timestamp: &str) -> Self {
         let now = Utc::now();
-        let generated_at = if timestamp.trim().is_empty() {
+        let sanitized = sanitize_telemetry_text(timestamp);
+        let generated_at = if sanitized.is_empty() {
             now.to_rfc3339()
         } else {
-            sanitize_telemetry_text(timestamp)
+            sanitized
         };
 
         let mut active_capabilities = 0;
@@ -70,6 +98,8 @@ impl CapabilityObservabilityReport {
 
         let capabilities = service.capabilities();
         let total_capabilities = capabilities.len();
+        let mut depth_cache = HashMap::new();
+        let mut visiting = HashSet::new();
 
         for cap in capabilities.values() {
             if cap.revoked {
@@ -86,7 +116,7 @@ impl CapabilityObservabilityReport {
                 attenuated_capabilities += 1;
             }
 
-            let depth = service.get_derivation_depth(&cap.id);
+            let depth = get_memoized_depth(&cap.id, capabilities, &mut depth_cache, &mut visiting);
             if depth > max_derivation_depth {
                 max_derivation_depth = depth;
             }

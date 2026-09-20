@@ -162,6 +162,11 @@ impl CapabilityService {
         &self.capabilities
     }
 
+    /// Returns a mutable reference to all registered capabilities.
+    pub fn capabilities_mut(&mut self) -> &mut HashMap<String, Capability> {
+        &mut self.capabilities
+    }
+
     /// Issues a new root capability with validated inputs (CSERV2).
     pub fn issue_root_capability(
         &mut self,

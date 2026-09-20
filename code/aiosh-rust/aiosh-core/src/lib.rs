@@ -32,6 +32,8 @@ pub mod capability_config;
 pub mod capability_service;
 pub mod capability_policy;
 pub mod capability_observability;
+pub mod capability_doc;
+pub mod capability_recovery;
 pub mod ci;
 pub mod ci_config;
 pub mod classifier;

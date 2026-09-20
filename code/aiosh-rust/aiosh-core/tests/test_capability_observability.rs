@@ -278,3 +278,18 @@ fn test_observability_json_serde_and_sanitization() {
     let capped = sanitize_telemetry_text(&long_str);
     assert_eq!(capped.len(), 256);
 }
+
+#[test]
+fn test_observability_hardening_edge_cases() {
+    let service = CapabilityService::new();
+    // 1. All-control-character timestamp should fall back to valid RFC3339 now()
+    let report_control_ts = CapabilityObservabilityReport::generate(&service, "\x00\x01\x02\t\r\n");
+    assert!(!report_control_ts.generated_at.is_empty());
+    assert!(chrono::DateTime::parse_from_rfc3339(&report_control_ts.generated_at).is_ok());
+
+    // 2. Whitespace-only timestamp should also fall back
+    let report_ws_ts = CapabilityObservabilityReport::generate(&service, "   \t\n   ");
+    assert!(!report_ws_ts.generated_at.is_empty());
+    assert!(chrono::DateTime::parse_from_rfc3339(&report_ws_ts.generated_at).is_ok());
+}
+

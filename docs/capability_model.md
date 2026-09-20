@@ -479,6 +479,201 @@ The **Capability Security Policy** subsystem governs capability issuance and mon
 1. **Static Prefix Rules**: Prohibited paths use normalized prefix matching; symlink resolution at capability issuance time requires filesystem access and is enforced at execution/PEP dispatch time.
 2. **In-Memory Cycle Guard**: Cycles are detected dynamically during depth calculation; structural parent-child acyclicity is guaranteed by monotonic UUID generation during issuance.
 
+---
+
+## 13. Capability Observability Subsystem (`CAPOBS1..CAPOBS6`)
+
+The **Capability Observability Subsystem** provides point-in-time state aggregation, lineage depth analysis, quota consumption tracking, distribution metrics, and health evaluation for the AIOS Capability Registry.
+
+### 13.1 Observability Invariants (`CAPOBS1..CAPOBS6`)
+
+| Invariant | Name | Formal Rule |
+|---|---|---|
+| **`CAPOBS1`** | **Complete State Aggregation** | The report must accurately partition the total capability count into active, revoked, expired, root, and attenuated sets. |
+| **`CAPOBS2`** | **Derivation Lineage Depth** | Lineage depths are computed across all active and attenuated capabilities with memoized $O(N)$ evaluation and cycle bounds. |
+| **`CAPOBS3`** | **Quota Consumption Aggregation** | Invocations and bytes consumed across all capabilities are aggregated using saturating 64-bit arithmetic to prevent integer overflow. |
+| **`CAPOBS4`** | **Distribution Metrics** | The subsystem aggregates scope types (`filesystem`, `network`, `tool`, `process`, `ipc`, `system`), rights distribution, and counts of unique subjects and issuers. |
+| **`CAPOBS5`** | **Health Evaluation** | System health evaluates to `true` if and only if registry capacity utilization is below 95% and maximum derivation depth does not exceed the policy's `max_attenuation_depth`. |
+| **`CAPOBS6`** | **High-Fidelity Serialization & Sanitization** | Telemetry strings (timestamps and labels) are sanitized to eliminate control characters and bounded to 256 characters. Serialized outputs adhere to deterministic JSON schema. |
+
+### 13.2 Architecture & Data Structures
+
+The primary data structure is `CapabilityObservabilityReport`:
+
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CapabilityObservabilityReport {
+    pub total_capabilities: usize,
+    pub active_capabilities: usize,
+    pub revoked_capabilities: usize,
+    pub expired_capabilities: usize,
+    pub root_capabilities: usize,
+    pub attenuated_capabilities: usize,
+    pub max_derivation_depth: usize,
+    pub unique_subjects_count: usize,
+    pub unique_issuers_count: usize,
+    pub total_invocations_consumed: u64,
+    pub total_bytes_consumed: u64,
+    pub capabilities_by_scope_type: HashMap<String, usize>,
+    pub capabilities_by_right: HashMap<String, usize>,
+    pub policy_mode: CapabilityPolicyMode,
+    pub max_capabilities_capacity: usize,
+    pub capacity_utilization_percent: u8,
+    pub is_healthy: bool,
+    pub generated_at: String,
+}
+```
+
+### 13.3 MCP Integration (`aios.capability.observability`)
+
+The capability observability report is exposed via MCP tool `aios.capability.observability`.
+
+#### Request Example
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "aios.capability.observability",
+    "arguments": {
+      "timestamp": "2026-09-20T18:30:00Z"
+    }
+  }
+}
+```
+
+#### Response Example
+```json
+{
+  "total_capabilities": 4,
+  "active_capabilities": 3,
+  "revoked_capabilities": 1,
+  "expired_capabilities": 0,
+  "root_capabilities": 2,
+  "attenuated_capabilities": 2,
+  "max_derivation_depth": 2,
+  "unique_subjects_count": 3,
+  "unique_issuers_count": 2,
+  "total_invocations_consumed": 20,
+  "total_bytes_consumed": 3000,
+  "capabilities_by_scope_type": {
+    "filesystem": 3,
+    "network": 1
+  },
+  "capabilities_by_right": {
+    "read": 4,
+    "write": 1,
+    "delegate": 2
+  },
+  "policy_mode": "enforcing",
+  "max_capabilities_capacity": 10000,
+  "capacity_utilization_percent": 0,
+  "is_healthy": true,
+  "generated_at": "2026-09-20T18:30:00Z"
+}
+```
+
+### 13.4 Security & Operational Guarantees
+
+1. **DoS & Algorithmic Complexity Protection**:
+   - `get_memoized_depth` caches intermediate capability depths in $O(N)$ time, avoiding $O(N \times D)$ repeated traversals.
+   - Cycle detection via `visiting: HashSet<String>` breaks recursion safely if corrupted or circular delegation chains are encountered.
+2. **Telemetry Sanitization**:
+   - Input timestamps are passed through `sanitize_telemetry_text()`, stripping control characters (`\0`, `\r`, `\n`, `\t`, ANSI escapes) and clamping string length to 256 characters.
+   - Empty or all-control-character inputs fall back safely to valid RFC 3339 UTC timestamps.
+3. **Overflow Protection**:
+   - All consumption counters use saturating arithmetic (`saturating_add`), eliminating integer wrap-around vulnerabilities.
+
+---
+
+## 14. Capability Documentation Subsystem (`CAPDOC1..CAPDOC6`)
+
+The **Capability Documentation Subsystem** provides an offline, self-contained reference repository covering zero ambient authority architecture, rights and scopes, monotonic attenuation, constraints, cascade revocation, security policy, observability, and MCP tools.
+
+### 14.1 Documentation Invariants (`CAPDOC1..CAPDOC6`)
+
+| Invariant | Name | Formal Rule |
+|---|---|---|
+| **`CAPDOC1`** | **Canonical Coverage** | The index must contain comprehensive canonical topics covering all capability model components: Overview, Rights & Scopes, Monotonic Attenuation, Constraints & Quotas, Cascade Revocation, Security Policy, Observability, and MCP Tools. |
+| **`CAPDOC2`** | **Deterministic Lookup** | Topics are retrieved by unique identifier (`get_topic`) using trimmed, case-insensitive matching in $O(1)$ or $O(N)$ time. |
+| **`CAPDOC3`** | **Relevance-Scored Search** | Search queries score topics based on weighted field matches: ID = 100/40, Tags = 50/20, Title = 25, Summary = 15, Section Content = 10. Results are sorted descending by score. |
+| **`CAPDOC4`** | **UTF-8 Snippet Safety** | Contextual snippet extraction around matching query terms must strictly align to UTF-8 character boundaries (`char_indices`), completely preventing multi-byte slicing panics (guarding against N-21 class bugs). Max snippet length is 160 characters. |
+| **`CAPDOC5`** | **Defensive Bounds** | Query strings are capped at 256 characters (`MAX_DOC_QUERY_LEN`), topic IDs at 64 characters (`MAX_TOPIC_ID_LEN`), and search results at 50 (`MAX_DOC_SEARCH_RESULTS`). Control characters in inputs are rejected. |
+| **`CAPDOC6`** | **Serialization Fidelity** | All topic and search result structures derive `Serialize` and `Deserialize` with deterministic snake_case JSON schemas. |
+
+### 14.2 Architecture & Topic Hierarchy
+
+Topics are grouped into five distinct categories:
+- **`architecture`**: `cap-overview`, `cap-rights-scopes`
+- **`lifecycle`**: `cap-attenuation`, `cap-constraints`, `cap-revocation`
+- **`security`**: `cap-policy`
+- **`observability`**: `cap-observability`
+- **`reference`**: `cap-mcp-tools`
+
+```rust
+pub struct CapabilityDocTopic {
+    pub id: String,
+    pub title: String,
+    pub category: CapabilityDocCategory,
+    pub summary: String,
+    pub sections: Vec<CapabilityDocSection>,
+    pub tags: Vec<String>,
+    pub references: Vec<String>,
+    pub examples: Vec<String>,
+}
+```
+
+### 14.3 Search Engine & UTF-8 Safe Snippets
+
+The search engine inspects topic identifiers, tags, titles, summaries, and section contents with weighted relevance scoring. To prevent multi-byte UTF-8 character slicing panics (N-21 / H-6 class bugs), snippet extraction uses `extract_utf8_snippet`:
+
+```rust
+pub fn extract_utf8_snippet(content: &str, byte_idx: usize, query_char_len: usize) -> String {
+    let char_indices: Vec<(usize, char)> = content.char_indices().collect();
+    // Aligns start and end byte offsets strictly to valid character boundaries
+    // ...
+}
+```
+
+### 14.4 MCP Interface (`aios.capability.doc`)
+
+Exposes capability documentation over JSON-RPC via `aios.capability.doc`.
+
+#### Example: Search Documentation
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "aios.capability.doc",
+    "arguments": {
+      "action": "search",
+      "query": "attenuation"
+    }
+  }
+}
+```
+
+#### Example: Get Topic Details
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "tools/call",
+  "params": {
+    "name": "aios.capability.doc",
+    "arguments": {
+      "action": "get",
+      "topic_id": "cap-overview"
+    }
+  }
+}
+```
+
+
+
 
 
 

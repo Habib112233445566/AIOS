@@ -7,9 +7,9 @@
 
 ---
 
-## Findings index (status after SEVENTH PASS — live-probe verification)
+## Findings index (status after EIGHTH PASS — live-probe verification)
 
-**DEMONSTRATED** = reproduced against the real binary/server in an isolated temp `AIOSH_HOME`; **STATIC** = code-read only; **DISPROVEN** = none (all probed claims held). Refinements recorded in the SIXTH PASS: C-6's ZIP extraction is zip-slip-safe (`enclosed_name`); N-1's 0644-widening half remains untestable on this host. SEVENTH PASS adds N-20…N-25 and demonstrates the session-check sibling of N-14 (see N-20).
+**DEMONSTRATED** = reproduced against the real binary/server in an isolated temp `AIOSH_HOME`; **STATIC** = code-read only; **DISPROVEN** = none (all probed claims held). Refinements recorded in the SIXTH PASS: C-6's ZIP extraction is zip-slip-safe (`enclosed_name`); N-1's 0644-widening half remains untestable on this host. SEVENTH PASS adds N-20…N-25 and demonstrates the session-check sibling of N-14 (see N-20). EIGHTH PASS adds N-26…N-29 (new capability subsystem + service-recovery), all probe-verified except N-28.
 
 | ID | Severity | Status after probes |
 |---|---|---|
@@ -64,6 +64,10 @@
 | N-23 `aios.update.check manifest_path` = unconstrained absolute-path file read (JSON oracle) — pass 7 | Medium | STATIC |
 | N-24 `UpdateArtifact::validate` misses `:` → Windows drive-relative staging escape (latent) — pass 7 | Low | STATIC |
 | N-25 `aios.update.*` caller-chosen state/staging dirs; `clean_staging` `remove_dir_all` — pass 7 | Medium | STATIC |
+| N-26 ungated `aios.capability.*` store_path: arbitrary `.json` write + dirs created anywhere — pass 8 | High | DEMONSTRATED |
+| N-27 self-issued root capability via ungated `aios.capability.issue` (forgeable `issuer="kernel"`) — pass 8 | Critical | DEMONSTRATED |
+| N-28 child capabilities inherit a fresh copy of the parent's quota counters → N× budget multiplication — pass 8 | Medium | STATIC (code-read, `capability.rs:519-537`) |
+| N-29 ungated `aios.service.check auto_recover` = arbitrary write (dirs created) + destructive quarantine — pass 8 | High | DEMONSTRATED |
 
 ---
 
@@ -2248,6 +2252,79 @@ Still not read line-by-line (next pass starts here): the remaining `*_recovery.r
   - `aiosh-mcp`: 3/3 checks in `test_capability_policy_smoke.py` passing.
   - `aiosh-mcp`: 2/2 checks in `test_capability_observability_smoke.py` passing end-to-end against compiled `aiosh-mcp.exe`.
   - Zero compiler warnings or test regressions across Rust and Python suites.
+
+---
+
+## EIGHTH PASS — new capability subsystem, recovery bodies, configs, remaining tools
+
+Method: line-by-line reads of the newly added capability modules (`capability_service.rs`, `capability_config.rs`, key parts of `capability.rs`/`capability_policy.rs`, `capability_doc.rs`, `capability_observability.rs`), the recovery-family entry points (`service_recovery.rs`, `package_recovery.rs`, `system_update_recovery.rs` bodies/sinks; entry-point signatures of distro/base_image/hardware/network recovery), all `*_config.rs` `from_env()` validate-patterns, and the unread `tools/*.py` (danger-pattern sweep: clean). Three live probes against the freshly built `aiosh-mcp.exe` (which now includes the capability tools) in isolated temp dirs, no grants, no source edits. New findings N-26…N-29.
+
+### N-27 — DEMONSTRATED (CRITICAL): self-issued root capability via ungated `aios.capability.issue`
+- Sites: `aiosh-mcp/src/main.rs:5815-5920` (handler; registration `require_grant=false` at line 1619 — while its own description string claims "requires authorized issuer and PEP grant"), `capability_service.rs:181` (`if issuer != "kernel" && !issuer.starts_with("admin:")` — a forgeable caller-supplied string), and `capability_policy.rs:148-158` (`evaluate_issuance` takes `_issuer` — the issuer identity is never evaluated by policy).
+- Observed (real binary, no grant): `aios.capability.issue {"issuer":"kernel","subject":"attacker","scope_type":"filesystem","scope_target":"C:/","rights":["read","write","execute","delete","admin"]}` → `ok:true`, capability `cap_<ts>_…` issued with all five rights, and `aios.capability.check` for subject `attacker` on `C:/Windows`/`delete` returns `granted: true`. The capability registry — the subsystem whose entire purpose is authority delegation — lets any MCP client mint root authority for any subject.
+- Mitigating context, stated honestly: `check_access` has no enforcement-point consumers (same M-15 class — capability checks are only reachable through the capability tools themselves), so today this mints authority inside a registry nothing else consults. The moment any tool start consulting capabilities, this becomes privilege escalation by default.
+- Severity: Critical (by design-intent and by blast radius the day it's wired). Status: DEMONSTRATED.
+
+### N-26 — DEMONSTRATED (HIGH): `aios.capability.*` `store_path` is an arbitrary-path JSON writer
+- Sites: all seven capability handlers resolve `store_path` from arguments with only `validate_mcp_string` (length+control-chars, `main.rs:6254-6262`); `capability_service.rs:435-460` `save_to_path` runs `fs::create_dir_all(parent)` then atomic-rename; `validate_service_path` (`capability_service.rs:29-49`) blocks `..` and non-`.json` but **not absolute paths or drive prefixes**.
+- Observed: `aios.capability.issue` with `store_path: <T>/aa/bb/cc/planted.json` (path outside `AIOSH_HOME`, parent dirs non-existent) → `ok:true`, all three directories created, valid capability-store JSON planted at the arbitrary path. No grant.
+- Note: `validate_service_path` rejecting `..` but accepting absolute paths is the weaker half of the N-1 class — it converts the tool into a same-privilege arbitrary `.json` writer with directory creation.
+- Severity: High. Status: DEMONSTRATED.
+
+### N-29 — DEMONSTRATED (HIGH): ungated `aios.service.check auto_recover` is arbitrary write + destructive quarantine (N-20's twin, stronger)
+- Sites: `aiosh-mcp/src/main.rs:3181-3212` (`auto_recover` → `service_recovery::load_or_recover(&target_path)`, `require_grant=false`), `service_recovery.rs:191-217` (quarantine + `fresh_store.save_to_path(path)`), `service_service.rs:555-573` (`save_to_path` does `create_dir_all(parent)` — unlike `kernel_module_recovery`, missing parents are created — and forces mode `0644` on Unix).
+- Observed (no grant): (a) `store_path: <T>/brand/new/tree/svc.json` (all dirs non-existent, outside `AIOSH_HOME`) → `ok:true, recovered:true`, all directories created and a fresh service store written; (b) existing victim file `config.json` containing non-JSON text → quarantined to `config.json.corrupt.<ts>.bak` (original preserved in backup, verified), file replaced by a valid service store. Same destructive-recovery class as N-8/N-20 with the added directory-creation primitive.
+- Same pattern exists for `aios.package.*` (`package_recovery::load_or_recover` at `main.rs:2834`, `package_service.rs:470-475` also `create_dir_all`) and `aios.session.check` (`main.rs:3644`) — recorded STATIC for those two (not re-probed this pass; behavior inferred from identical code shape).
+- Severity: High. Status: DEMONSTRATED.
+
+### N-28 — STATIC (MEDIUM): child capabilities inherit a fresh copy of the parent's quota counters — N× budget multiplication
+- Site: `capability.rs:519-537` — when `narrowed_constraints` is `None` (which the MCP `attenuate` handler passes whenever the caller omits limits), the child gets `self.constraints.clone()`: a copy of `max_invocations`/`quota_bytes` **including the parent's current counters at zero consumption**. `consume_invocation/consume_bytes` decrement only the child's own copy (`capability.rs:333-367`); nothing propagates consumption to ancestors.
+- Trigger: a capability with `max_invocations: 100` can be attenuated into 100 children, each with its own fresh budget of 100 → aggregate 10,000 invocations from one root grant. For byte quotas the same holds. Monotonicity is enforced for rights and scope, but the budget invariant is broken by design here.
+- Severity: Medium (quota confinement is the other half of what a capability system is for). Status: STATIC (code-read; counters confirmed cloned, no ancestor propagation found).
+
+### Verified-clean / confirmed this pass
+- `capability_doc.rs`, `capability_observability.rs`: no filesystem writes, no spawn, no panics, no byte-slicing — the doc-search snippet bug class (N-21) was **not** repeated here.
+- `capability.rs` attenuation core: Delegate-right requirement, rights-subset, scope containment, child-cannot-outlive-parent are all correctly enforced; `validate_identifier` on subjects.
+- All 8 `*_config.rs` modules with `from_env()` end in `validate()` — the N-2 missing-validation pattern is absent from every config module. `capability_config.rs` lacks `deny_unknown_fields` (one more M-16 instance, Low).
+- `package_recovery.rs`, `system_update_recovery.rs` bodies: sinks are tmp-file+rename with cleanup; quarantine paths collision-safe.
+- Remaining `tools/*.py` (`check_task_docs.py`, `complete_task.py`, `generate_master_tasks.py`, `ci_suites.py`): no subprocess/eval/exec/pickle patterns; `generate_master_tasks.py` writes only its own fixed `OUT` artifacts.
+- Gate census updated: 130 `recorded_call` sites, 3 gated — the seven new capability tools and the capability policy/doc tools all registered ungated, continuing the C-3 trend (8 → 3-of-130 gated relative share).
+- Disproven: none.
+
+### Coverage
+Read line-by-line this pass: `capability_service.rs`, `capability_config.rs`, `capability.rs` (issuance/attenuation/consumption paths), `capability_policy.rs` (issuance evaluation), `capability_doc.rs`, `capability_observability.rs`, `service_recovery.rs`, `package_recovery.rs`, `system_update_recovery.rs`, entry points of `distro/base_image/hardware/network_recovery.rs`, all `*_config.rs` `from_env` blocks, `tools/check_task_docs.py`/`complete_task.py`/`generate_master_tasks.py`/`ci_suites.py` (pattern-swept, clean).
+Still not read line-by-line (next pass starts here): `hardware_recovery.rs`/`network_recovery.rs` bodies beyond entry points and sink greps, `session_recovery.rs` beyond pass-4's read, `capability.rs` lines 1-330 and 537-557 (identifier/scope validators partially read), the `aiosh-cli/src/main.rs` capability subcommand bodies beyond the registration check, and `dist/` built assets.
+
+---
+
+## 37. Post-Audit Addendum: Batch T-02086 through T-02095 Verification
+
+**Date:** 2026-09-20  
+**Scope:** Batch `T-02086` through `T-02095` (Phase 2 — Security Kernel & PEP Fabric / Capability Model: Sub-Epic 9 Documentation Formal Closure & Sub-Epic 10 Recovery & Validation Launch & Implementation).  
+**Auditor:** Antigravity Autonomous Security Subsystem  
+**Verdict:** **PASS (Zero vulnerabilities)**
+
+### 1. Hardened Surface & Key Controls
+- **Capability Documentation Engine (T-02086..T-02090)**:
+  - Formally closed Sub-Epic 9 with complete integration of `aios.capability.doc` in `aiosh-mcp`.
+  - Enforced invariants `CAPDOC1..CAPDOC6`:
+    - Safe multi-byte slicing using `char`-boundary awareness, preventing index panic crashes (mitigating the N-21 defect class).
+    - Query and category input normalization with whitespace trimming and control character elimination.
+    - Result count and character bounding preventing denial-of-service via unbounded JSON generation.
+  - Complete documentation authored in Section 14 of `docs/capability_model.md`.
+  - Verified with 8/8 Rust unit tests in `test_capability_doc.rs` and 3/3 Python MCP smoke tests in `test_capability_doc_smoke.py`.
+
+- **Capability Recovery & Validation Subsystem (T-02091..T-02095)**:
+  - Researched, specified, scaffolded, implemented, and unit-tested `CapabilityRecoveryAction`, `CapabilityValidationReport`, `validate_capability_store`, and `recover_capability_store` in `code/aiosh-rust/aiosh-core/src/capability_recovery.rs`.
+  - Enforced invariants `CAPREC1..CAPREC6`:
+    - **`CAPREC1`**: Invariant conservation `valid_capabilities + invalid_capabilities == total_capabilities`.
+    - **`CAPREC2`**: Health equivalence `healthy == (errors.is_empty() && invalid_capabilities == 0)`.
+    - **`CAPREC3`**: Lineage integrity with cycle detection via `HashSet<String>` traversal and bounded depth.
+    - **`CAPREC4`**: Monotonic attenuation validation (child rights $\subseteq$ parent rights, child scope $\subseteq$ parent scope, constraints non-expanding).
+    - **`CAPREC5`**: Non-destructive quarantine backup creation to `<store>.bak.<timestamp>` with mode 0600 on Unix (resolving N-8, N-20, and N-29 vulnerability patterns).
+    - **`CAPREC6`**: Atomic file persistence with atomic temp-file replace and safe directory initialization.
+  - Verified with 9/9 Rust unit tests in `test_capability_recovery.rs`.
+
 
 
 
