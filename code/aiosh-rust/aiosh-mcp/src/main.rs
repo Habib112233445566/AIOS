@@ -1589,6 +1589,126 @@ impl Server {
                 "additionalProperties": false
             }
         }));
+        tools.push(json!({
+            "name": "aios.capability.list",
+            "description": "List registered capabilities with optional subject or active filtering",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "subject": { "type": "string", "description": "Optional filter by subject" },
+                    "active_only": { "type": "boolean", "description": "Filter to non-revoked, valid capabilities" },
+                    "store_path": { "type": "string", "description": "Optional path to capability_store.json" }
+                },
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.capability.get",
+            "description": "Get capability details by ID",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string", "description": "Capability ID (CAP-...)" },
+                    "store_path": { "type": "string", "description": "Optional path to capability_store.json" }
+                },
+                "required": ["id"],
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.capability.issue",
+            "description": "Issue root capability (requires authorized issuer and PEP grant)",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "issuer": { "type": "string", "description": "Issuer identity ('kernel' or 'admin:*')" },
+                    "subject": { "type": "string", "description": "Subject identity" },
+                    "scope_type": { "type": "string", "enum": ["filesystem", "network", "process", "audit", "pentest", "system"] },
+                    "scope_target": { "type": "string", "description": "Target resource" },
+                    "rights": {
+                        "type": "array",
+                        "items": { "type": "string", "enum": ["read", "write", "execute", "delegate", "admin"] },
+                        "minItems": 1
+                    },
+                    "max_invocations": { "type": "integer", "minimum": 1 },
+                    "quota_bytes": { "type": "integer", "minimum": 1 },
+                    "expires_in_secs": { "type": "integer", "minimum": 1 },
+                    "store_path": { "type": "string", "description": "Optional path to capability_store.json" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "required": ["issuer", "subject", "scope_type", "scope_target", "rights"],
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.capability.attenuate",
+            "description": "Derive attenuated child capability with narrowed rights/scope",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "parent_id": { "type": "string", "description": "Parent capability ID" },
+                    "new_subject": { "type": "string", "description": "Subject receiving child capability" },
+                    "narrowed_scope_type": { "type": "string", "enum": ["filesystem", "network", "process", "audit", "pentest", "system"] },
+                    "narrowed_scope_target": { "type": "string", "description": "Narrowed target resource" },
+                    "subset_rights": {
+                        "type": "array",
+                        "items": { "type": "string", "enum": ["read", "write", "execute", "delegate", "admin"] },
+                        "minItems": 1
+                    },
+                    "max_invocations": { "type": "integer", "minimum": 1 },
+                    "quota_bytes": { "type": "integer", "minimum": 1 },
+                    "expires_in_secs": { "type": "integer", "minimum": 1 },
+                    "store_path": { "type": "string", "description": "Optional path to capability_store.json" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "required": ["parent_id", "new_subject", "subset_rights"],
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.capability.revoke",
+            "description": "Revoke capability and cascade revocation to all descendants",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string", "description": "Capability ID to revoke" },
+                    "store_path": { "type": "string", "description": "Optional path to capability_store.json" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "required": ["id"],
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.capability.check",
+            "description": "Fast access check verifying if subject has active capability",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "subject": { "type": "string", "description": "Subject identity" },
+                    "scope_type": { "type": "string", "enum": ["filesystem", "network", "process", "audit", "pentest", "system"] },
+                    "scope_target": { "type": "string", "description": "Target resource" },
+                    "right": { "type": "string", "enum": ["read", "write", "execute", "delegate", "admin"] },
+                    "consume": { "type": "boolean", "description": "If true, consumes 1 invocation" },
+                    "store_path": { "type": "string", "description": "Optional path to capability_store.json" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "required": ["subject", "scope_type", "scope_target", "right"],
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.capability.prune",
+            "description": "Prune expired leaf capabilities without active children",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "store_path": { "type": "string", "description": "Optional path to capability_store.json" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
         tools
     }
 
@@ -5590,6 +5710,297 @@ impl Server {
                     None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
                 )
             }
+            "aios.capability.list" => {
+                let subject_opt = arguments.get("subject").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let active_only = arguments.get("active_only").and_then(|v| v.as_bool()).unwrap_or(false);
+                let store_path_str = arguments
+                    .get("store_path")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(".aios/capability_store.json")
+                    .to_string();
+
+                let f = move || -> Result<Value, String> {
+                    let path = std::path::Path::new(&store_path_str);
+                    let service = aiosh_core::capability_service::CapabilityService::load_or_create(path)?;
+                    let caps = if active_only {
+                        service.get_active_capabilities()
+                    } else if let Some(ref subj) = subject_opt {
+                        service.get_capabilities_for_subject(subj)
+                    } else {
+                        service.get_all_capabilities()
+                    };
+                    let filtered: Vec<_> = if let Some(ref subj) = subject_opt {
+                        caps.into_iter().filter(|c| c.subject == *subj).collect()
+                    } else {
+                        caps
+                    };
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.capability.list",
+                        "count": filtered.len(),
+                        "capabilities": filtered
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.capability.list", "List capabilities", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.capability.get" => {
+                let id = arguments.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let store_path_str = arguments
+                    .get("store_path")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(".aios/capability_store.json")
+                    .to_string();
+
+                let id_for_closure = id.clone();
+                let f = move || -> Result<Value, String> {
+                    if id_for_closure.is_empty() {
+                        return Err("Missing required field 'id'".into());
+                    }
+                    let path = std::path::Path::new(&store_path_str);
+                    let service = aiosh_core::capability_service::CapabilityService::load_or_create(path)?;
+                    let cap = service.get_capability(&id_for_closure)
+                        .ok_or_else(|| format!("Capability '{}' not found", id_for_closure))?;
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.capability.get",
+                        "capability": cap
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.capability.get", &format!("Get capability {}", id), arguments,
+                    Some(&id), grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.capability.issue" => {
+                let issuer = arguments.get("issuer").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let subject = arguments.get("subject").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let scope_type = arguments.get("scope_type").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let scope_target = arguments.get("scope_target").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let rights_raw: Vec<String> = arguments
+                    .get("rights")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| arr.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect())
+                    .unwrap_or_default();
+                let max_inv = arguments.get("max_invocations").and_then(|v| v.as_u64());
+                let quota_b = arguments.get("quota_bytes").and_then(|v| v.as_u64());
+                let expires_in = arguments.get("expires_in_secs").and_then(|v| v.as_u64());
+                let store_path_str = arguments
+                    .get("store_path")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(".aios/capability_store.json")
+                    .to_string();
+
+                let f = move || -> Result<Value, String> {
+                    if issuer.is_empty() || subject.is_empty() || scope_type.is_empty() || scope_target.is_empty() || rights_raw.is_empty() {
+                        return Err("Missing required fields for capability issuance".into());
+                    }
+                    let scope = parse_mcp_scope(&scope_type, &scope_target)?;
+                    let mut rights = Vec::new();
+                    for r in &rights_raw {
+                        rights.push(parse_mcp_right(r)?);
+                    }
+                    let expires_at = expires_in.map(|secs| {
+                        (chrono::Utc::now() + chrono::Duration::seconds(secs as i64)).to_rfc3339()
+                    });
+                    let constraints = aiosh_core::capability::CapabilityConstraints {
+                        expires_at,
+                        max_invocations: max_inv,
+                        quota_bytes: quota_b,
+                        ..Default::default()
+                    };
+
+                    let path = std::path::Path::new(&store_path_str);
+                    let mut service = aiosh_core::capability_service::CapabilityService::load_or_create(path)?;
+                    let cap = service.issue_root_capability(&issuer, &subject, scope, rights, constraints)
+                        .map_err(|e| e.to_string())?;
+                    service.save_to_path(path)?;
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.capability.issue",
+                        "capability": cap
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.capability.issue", "Issue root capability", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.capability.attenuate" => {
+                let parent_id = arguments.get("parent_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let new_subject = arguments.get("new_subject").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let narrowed_scope_type = arguments.get("narrowed_scope_type").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let narrowed_scope_target = arguments.get("narrowed_scope_target").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let rights_raw: Vec<String> = arguments
+                    .get("subset_rights")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| arr.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect())
+                    .unwrap_or_default();
+                let max_inv = arguments.get("max_invocations").and_then(|v| v.as_u64());
+                let quota_b = arguments.get("quota_bytes").and_then(|v| v.as_u64());
+                let expires_in = arguments.get("expires_in_secs").and_then(|v| v.as_u64());
+                let store_path_str = arguments
+                    .get("store_path")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(".aios/capability_store.json")
+                    .to_string();
+
+                let parent_id_clone = parent_id.clone();
+                let f = move || -> Result<Value, String> {
+                    if parent_id.is_empty() || new_subject.is_empty() || rights_raw.is_empty() {
+                        return Err("Missing required fields (parent_id, new_subject, subset_rights)".into());
+                    }
+                    let narrowed_scope = match (&narrowed_scope_type, &narrowed_scope_target) {
+                        (Some(st), Some(tgt)) => Some(parse_mcp_scope(st, tgt)?),
+                        _ => None,
+                    };
+                    let mut subset_rights = Vec::new();
+                    for r in &rights_raw {
+                        subset_rights.push(parse_mcp_right(r)?);
+                    }
+                    let narrowed_constraints = if max_inv.is_some() || quota_b.is_some() || expires_in.is_some() {
+                        Some(aiosh_core::capability::CapabilityConstraints {
+                            expires_at: expires_in.map(|secs| (chrono::Utc::now() + chrono::Duration::seconds(secs as i64)).to_rfc3339()),
+                            max_invocations: max_inv,
+                            quota_bytes: quota_b,
+                            ..Default::default()
+                        })
+                    } else {
+                        None
+                    };
+
+                    let path = std::path::Path::new(&store_path_str);
+                    let mut service = aiosh_core::capability_service::CapabilityService::load_or_create(path)?;
+                    let child = service.attenuate_capability(&parent_id, &new_subject, narrowed_scope, subset_rights, narrowed_constraints)
+                        .map_err(|e| e.to_string())?;
+                    service.save_to_path(path)?;
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.capability.attenuate",
+                        "capability": child
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.capability.attenuate", &format!("Attenuate capability {}", parent_id_clone), arguments,
+                    Some(&parent_id_clone), grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.capability.revoke" => {
+                let id = arguments.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let store_path_str = arguments
+                    .get("store_path")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(".aios/capability_store.json")
+                    .to_string();
+
+                let id_clone = id.clone();
+                let f = move || -> Result<Value, String> {
+                    if id.is_empty() {
+                        return Err("Missing required field 'id'".into());
+                    }
+                    let path = std::path::Path::new(&store_path_str);
+                    let mut service = aiosh_core::capability_service::CapabilityService::load_or_create(path)?;
+                    let revoked_ids = service.revoke_capability(&id).map_err(|e| e.to_string())?;
+                    service.save_to_path(path)?;
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.capability.revoke",
+                        "id": id,
+                        "revoked_ids": revoked_ids,
+                        "count": revoked_ids.len()
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.capability.revoke", &format!("Revoke capability {}", id_clone), arguments,
+                    Some(&id_clone), grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.capability.check" => {
+                let subject = arguments.get("subject").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let scope_type = arguments.get("scope_type").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let scope_target = arguments.get("scope_target").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let right_str = arguments.get("right").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let consume = arguments.get("consume").and_then(|v| v.as_bool()).unwrap_or(false);
+                let store_path_str = arguments
+                    .get("store_path")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(".aios/capability_store.json")
+                    .to_string();
+
+                let subject_for_closure = subject.clone();
+                let f = move || -> Result<Value, String> {
+                    if subject_for_closure.is_empty() || scope_type.is_empty() || scope_target.is_empty() || right_str.is_empty() {
+                        return Err("Missing required fields (subject, scope_type, scope_target, right)".into());
+                    }
+                    let scope = parse_mcp_scope(&scope_type, &scope_target)?;
+                    let right = parse_mcp_right(&right_str)?;
+                    let path = std::path::Path::new(&store_path_str);
+                    let mut service = aiosh_core::capability_service::CapabilityService::load_or_create(path)?;
+                    match service.check_access(&subject_for_closure, &scope, right) {
+                        Ok(cap) => {
+                            let cap_id = cap.id.clone();
+                            if consume {
+                                service.consume_invocation_on_capability(&cap_id).map_err(|e| e.to_string())?;
+                                service.save_to_path(path)?;
+                            }
+                            let remaining = service.get_capability(&cap_id).and_then(|c| {
+                                c.constraints.max_invocations.map(|m| m.saturating_sub(c.constraints.current_invocations))
+                            });
+                            Ok(json!({
+                                "ok": true,
+                                "tool": "aios.capability.check",
+                                "granted": true,
+                                "capability_id": cap_id,
+                                "remaining_invocations": remaining
+                            }))
+                        }
+                        Err(e) => Ok(json!({
+                            "ok": true,
+                            "tool": "aios.capability.check",
+                            "granted": false,
+                            "reason": e.to_string()
+                        })),
+                    }
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.capability.check", &format!("Check capability for {}", subject), arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.capability.prune" => {
+                let store_path_str = arguments
+                    .get("store_path")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(".aios/capability_store.json")
+                    .to_string();
+
+                let f = move || -> Result<Value, String> {
+                    let path = std::path::Path::new(&store_path_str);
+                    let mut service = aiosh_core::capability_service::CapabilityService::load_or_create(path)?;
+                    let pruned_count = service.prune_expired(chrono::Utc::now());
+                    if pruned_count > 0 {
+                        service.save_to_path(path)?;
+                    }
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.capability.prune",
+                        "pruned_count": pruned_count
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.capability.prune", "Prune expired capabilities", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
             _ => json!({"ok": false, "error": format!("unknown tool: {}", tool)}),
         }
     }
@@ -5726,6 +6137,54 @@ impl Server {
                 Ok(out)
             },
         )
+    }
+}
+
+fn parse_mcp_scope(scope_type: &str, scope_target: &str) -> Result<aiosh_core::capability::CapabilityScope, String> {
+    use aiosh_core::capability::CapabilityScope;
+    match scope_type {
+        "filesystem" => Ok(CapabilityScope::Filesystem {
+            path: scope_target.to_string(),
+            recursive: true,
+        }),
+        "network" => {
+            let parts: Vec<&str> = scope_target.split(':').collect();
+            let host = parts[0].to_string();
+            let port = if parts.len() > 1 { parts[1].parse::<u16>().ok() } else { None };
+            Ok(CapabilityScope::Network {
+                host,
+                port,
+                protocol: "tcp".to_string(),
+            })
+        }
+        "process" => Ok(CapabilityScope::Process {
+            executable: scope_target.to_string(),
+            max_memory_bytes: None,
+        }),
+        "tool" | "pentest" | "audit" => Ok(CapabilityScope::Tool {
+            tool_name: scope_target.to_string(),
+            allowed_actions: vec!["*".to_string()],
+        }),
+        "system" => Ok(CapabilityScope::System {
+            subsystem: scope_target.to_string(),
+        }),
+        "ipc" => Ok(CapabilityScope::Ipc {
+            channel: scope_target.to_string(),
+        }),
+        other => Err(format!("Invalid scope_type: '{}'", other)),
+    }
+}
+
+fn parse_mcp_right(r: &str) -> Result<aiosh_core::capability::CapabilityRight, String> {
+    use aiosh_core::capability::CapabilityRight;
+    match r {
+        "read" => Ok(CapabilityRight::Read),
+        "write" => Ok(CapabilityRight::Write),
+        "execute" => Ok(CapabilityRight::Execute),
+        "delete" => Ok(CapabilityRight::Delete),
+        "delegate" => Ok(CapabilityRight::Delegate),
+        "admin" => Ok(CapabilityRight::Admin),
+        other => Err(format!("Invalid right: '{}'", other)),
     }
 }
 
@@ -8710,6 +9169,149 @@ mod tests {
         }));
         assert_eq!(res_rollback_ok.get("ok").and_then(|v| v.as_bool()), Some(true));
         assert_eq!(res_rollback_ok.pointer("/data/restored_slot").and_then(|v| v.as_str()), Some("slot_b"));
+
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+    }
+
+    #[test]
+    fn test_capability_mcp_tools() {
+        let mut server = Server::open();
+        let tools = server.tool_manifest();
+        let tool_names: Vec<&str> = tools.iter()
+            .filter_map(|t| t.get("name").and_then(|v| v.as_str()))
+            .collect();
+
+        // 1. Check tool manifest registration
+        for expected in [
+            "aios.capability.list",
+            "aios.capability.get",
+            "aios.capability.issue",
+            "aios.capability.attenuate",
+            "aios.capability.revoke",
+            "aios.capability.check",
+            "aios.capability.prune",
+        ] {
+            assert!(tool_names.contains(&expected), "Missing tool: {}", expected);
+        }
+
+        let tmp_dir = std::env::temp_dir().join(format!("aios_cap_mcp_test_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&tmp_dir);
+        let store_path = tmp_dir.join("capability_store.json");
+        let store_str = store_path.to_str().unwrap();
+
+        // 2. aios.capability.list empty
+        let res_list_empty = server.call_tool("aios.capability.list", &json!({"store_path": store_str}));
+        assert_eq!(res_list_empty.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_list_empty.get("count").and_then(|v| v.as_i64()), Some(0));
+
+        // 3. aios.capability.issue (negative: unauthorized issuer)
+        let res_issue_unauth = server.call_tool("aios.capability.issue", &json!({
+            "issuer": "untrusted:user",
+            "subject": "agent:worker",
+            "scope_type": "filesystem",
+            "scope_target": "/var/data",
+            "rights": ["read", "write"],
+            "store_path": store_str
+        }));
+        assert_eq!(res_issue_unauth.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 4. aios.capability.issue (positive: root issuance)
+        let res_issue_ok = server.call_tool("aios.capability.issue", &json!({
+            "issuer": "kernel",
+            "subject": "agent:worker",
+            "scope_type": "filesystem",
+            "scope_target": "/var/data",
+            "rights": ["read", "write", "delegate"],
+            "max_invocations": 10,
+            "store_path": store_str
+        }));
+        assert_eq!(res_issue_ok.get("ok").and_then(|v| v.as_bool()), Some(true));
+        let root_id = res_issue_ok.pointer("/capability/id").and_then(|v| v.as_str()).unwrap().to_string();
+        assert!(root_id.starts_with("cap_"));
+
+        // 5. aios.capability.get
+        let res_get = server.call_tool("aios.capability.get", &json!({
+            "id": root_id,
+            "store_path": store_str
+        }));
+        assert_eq!(res_get.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_get.pointer("/capability/subject").and_then(|v| v.as_str()), Some("agent:worker"));
+
+        // 6. aios.capability.attenuate (negative: privilege escalation)
+        let res_att_esc = server.call_tool("aios.capability.attenuate", &json!({
+            "parent_id": root_id,
+            "new_subject": "agent:subworker",
+            "subset_rights": ["admin"],
+            "store_path": store_str
+        }));
+        assert_eq!(res_att_esc.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 7. aios.capability.attenuate (positive: valid attenuation)
+        let res_att_ok = server.call_tool("aios.capability.attenuate", &json!({
+            "parent_id": root_id,
+            "new_subject": "agent:subworker",
+            "subset_rights": ["read"],
+            "max_invocations": 5,
+            "store_path": store_str
+        }));
+        assert_eq!(res_att_ok.get("ok").and_then(|v| v.as_bool()), Some(true));
+        let child_id = res_att_ok.pointer("/capability/id").and_then(|v| v.as_str()).unwrap().to_string();
+
+        // 8. aios.capability.check (positive with consume)
+        let res_check_ok = server.call_tool("aios.capability.check", &json!({
+            "subject": "agent:worker",
+            "scope_type": "filesystem",
+            "scope_target": "/var/data",
+            "right": "read",
+            "consume": true,
+            "store_path": store_str
+        }));
+        assert_eq!(res_check_ok.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_check_ok.get("granted").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_check_ok.get("remaining_invocations").and_then(|v| v.as_i64()), Some(9));
+
+        // 9. aios.capability.check (negative: ungranted right)
+        let res_check_unauth = server.call_tool("aios.capability.check", &json!({
+            "subject": "agent:subworker",
+            "scope_type": "filesystem",
+            "scope_target": "/var/data",
+            "right": "write",
+            "store_path": store_str
+        }));
+        assert_eq!(res_check_unauth.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_check_unauth.get("granted").and_then(|v| v.as_bool()), Some(false));
+
+        // 10. aios.capability.revoke (cascade)
+        let res_revoke = server.call_tool("aios.capability.revoke", &json!({
+            "id": root_id,
+            "store_path": store_str
+        }));
+        assert_eq!(res_revoke.get("ok").and_then(|v| v.as_bool()), Some(true));
+        let revoked_ids: Vec<&str> = res_revoke.get("revoked_ids")
+            .and_then(|v| v.as_array())
+            .unwrap()
+            .iter()
+            .filter_map(|x| x.as_str())
+            .collect();
+        assert!(revoked_ids.contains(&root_id.as_str()));
+        assert!(revoked_ids.contains(&child_id.as_str()));
+
+        // 11. aios.capability.check after revocation
+        let res_check_after = server.call_tool("aios.capability.check", &json!({
+            "subject": "agent:worker",
+            "scope_type": "filesystem",
+            "scope_target": "/var/data",
+            "right": "read",
+            "store_path": store_str
+        }));
+        assert_eq!(res_check_after.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_check_after.get("granted").and_then(|v| v.as_bool()), Some(false));
+
+        // 12. aios.capability.prune
+        let res_prune = server.call_tool("aios.capability.prune", &json!({
+            "store_path": store_str
+        }));
+        assert_eq!(res_prune.get("ok").and_then(|v| v.as_bool()), Some(true));
 
         let _ = std::fs::remove_dir_all(&tmp_dir);
     }

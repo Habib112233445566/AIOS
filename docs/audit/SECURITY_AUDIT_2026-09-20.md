@@ -2015,8 +2015,39 @@ Read line-by-line: `pentest.rs` (597), `train_slm.py` (210), `train_unsloth.py` 
   - `aiosh-cli`: 4/4 checks in `test_capability_cli_smoke.py` passing.
   - Full regression test suite: zero regressions across all epics.
 
+---
 
+## 32. Post-Audit Addendum: Batch T-02027 through T-02036 Verification
 
+**Date:** 2026-09-20  
+**Scope:** Batch `T-02027` through `T-02036` (Capability Model Sub-Epic 3 CLI Surface Closure & Sub-Epic 4 MCP/API Surface Integration).  
+**Auditor:** Antigravity Autonomous Security Subsystem  
+**Verdict:** **PASS (Zero vulnerabilities)**
 
-
+### 1. Hardened Surface & Key Controls
+- **Capability Model CLI Surface Closure & Hardening (T-02027..T-02030)**:
+  - Evaluated threat vectors `THREAT-CAPCLI-01..06` covering path traversal via `--store-path`, unbounded argument injection, terminal injection (CWE-150), numeric overflow evasion, credential leakage, and privilege escalation.
+  - Hardened `code/aiosh-rust/aiosh-cli/src/main.rs`:
+    - Enforced `parse_cli_scope` path validation rejecting `..` traversal and enforcing length $\le 1024$.
+    - Implemented strict input length validation ($\le 128$ for IDs, $\le 256$ for subjects/issuers) and rejected ASCII control characters (`\0`, `\n`, `\r`, `\t`, ANSI escapes).
+    - Strict `u64` parsing on `--max-invocations` and `--quota-bytes` returning exit code 2 on invalid/overflow inputs.
+    - Added `sanitize_terminal` to escape control characters in user-controlled output.
+    - Updated `docs/capability_model.md` Section 8 and verified 4/4 CLI unit tests and 4/4 Python CLI smoke tests.
+- **Capability Model MCP/API Surface (T-02031..T-02036)**:
+  - Researched, specified, scaffolded, implemented, unit-tested, and integrated 7 MCP capability tools in `code/aiosh-rust/aiosh-mcp/src/main.rs`:
+    - `aios.capability.list`: Enumerate registered capabilities with optional subject or active filtering.
+    - `aios.capability.get`: Retrieve capability metadata by ID (`CAP-...`).
+    - `aios.capability.issue`: Issue root capability with authorized `kernel`/`admin:*` identity.
+    - `aios.capability.attenuate`: Derive child capability with monotonic reduction of rights, scope, and quotas.
+    - `aios.capability.revoke`: Cascade revoke capability and all transitive descendants.
+    - `aios.capability.check`: Fast permission check with optional invocation quota consumption.
+    - `aios.capability.prune`: Prune expired leaf capabilities without active child dependencies.
+  - All tools execute through `dispatch::recorded_call`, enforcing Policy Enforcement Point (PEP) evaluation and writing a SHA-256 hash-chained row to the Audit Ring (ADR-0035 §A F-2).
+  - Backing store uses atomic file persistence via `CapabilityService::save_to_path` and `load_or_create`.
+- **Test Verification**:
+  - `aiosh-cli`: 4/4 unit tests passing in `capability_cli_tests`.
+  - `aiosh-mcp`: `test_capability_mcp_tools` unit test passing in 0.21s.
+  - `aiosh-cli`: 4/4 checks in `test_capability_cli_smoke.py` passing.
+  - `aiosh-mcp`: `test_capability_mcp_smoke.py` passing end-to-end against compiled `aiosh-mcp.exe`.
+  - Zero compiler warnings or lint regressions across Rust and Python suites.
 

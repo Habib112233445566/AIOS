@@ -166,6 +166,16 @@ python code/aiosh-mcp/tests/test_capability_smoke.py
 - Service Hardening: [`docs/tasks/evidence/T-02018-capability-service-hardening.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02018-capability-service-hardening.md)
 - Service Documentation: [`docs/tasks/evidence/T-02019-capability-service-documentation.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02019-capability-service-documentation.md)
 - Service Formal Closure: [`docs/tasks/evidence/T-02020-capability-service-verification-evidenc.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02020-capability-service-verification-evidenc.md)
+- CLI Research: [`docs/tasks/evidence/T-02021-capability-cli-research.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02021-capability-cli-research.md)
+- CLI Specification: [`docs/tasks/evidence/T-02022-capability-cli-specification.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02022-capability-cli-specification.md)
+- CLI Scaffold: [`docs/tasks/evidence/T-02023-capability-cli-scaffold.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02023-capability-cli-scaffold.md)
+- CLI Implementation: [`docs/tasks/evidence/T-02024-capability-cli-implementation.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02024-capability-cli-implementation.md)
+- CLI Unit Test: [`docs/tasks/evidence/T-02025-capability-cli-unit-test.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02025-capability-cli-unit-test.md)
+- CLI Integration: [`docs/tasks/evidence/T-02026-capability-cli-integration.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02026-capability-cli-integration.md)
+- CLI Security Review: [`docs/tasks/evidence/T-02027-cli-surface-security-review.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02027-cli-surface-security-review.md)
+- CLI Hardening: [`docs/tasks/evidence/T-02028-cli-surface-hardening.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02028-cli-surface-hardening.md)
+- CLI Documentation: [`docs/tasks/evidence/T-02029-cli-surface-documentation.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02029-cli-surface-documentation.md)
+- CLI Formal Closure: [`docs/tasks/evidence/T-02030-cli-surface-verification-evidenc.md`](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02030-cli-surface-verification-evidenc.md)
 
 ---
 
@@ -192,4 +202,37 @@ cargo test --manifest-path code/aiosh-rust/Cargo.toml -p aiosh-core --test test_
 # Run Python CapabilityService smoke test
 python code/aiosh-mcp/tests/test_capability_service_smoke.py
 ```
+
+---
+
+## 8. CLI Surface Reference (`aiosh capability` / `aiosh cap`)
+
+The `aiosh capability` CLI provides an administrative and operator interface to the AIOS Capability Model and Security Kernel.
+
+### 8.1 Command Overview
+
+```bash
+aiosh capability <list|show|issue|attenuate|revoke|check|prune> [options]
+```
+
+| Subcommand | Purpose | Example Invocations |
+|---|---|---|
+| `list` | Enumerate capabilities | `aiosh cap list`<br>`aiosh cap list --subject agent:worker --active-only` |
+| `show` | Inspect capability attributes | `aiosh cap show cap_1726848000_a1b2c3` |
+| `issue` | Issue root capability (kernel/admin) | `aiosh cap issue --issuer kernel --subject agent:admin --scope-type fs --scope-target /var/data --rights read,write,delegate` |
+| `attenuate` | Derive child capability | `aiosh cap attenuate --parent cap_root --subject agent:sub --rights read` |
+| `revoke` | Revoke capability and cascade | `aiosh cap revoke cap_root` |
+| `check` | Verify subject authorization | `aiosh cap check --subject agent:sub --scope-type fs --scope-target /var/data --right read` |
+| `prune` | Cleanse expired capabilities | `aiosh cap prune` |
+
+### 8.2 Common Flags
+- `--store <PATH>`: Custom capabilities store path (must have `.json` extension, $\le 1024$ chars, no `..`). Defaults to `$AIOSH_HOME/capabilities.json`.
+- `--json`: Format output as a structured JSON envelope: `{ "code": 0/1/2, "data": ..., "error": ... }`.
+- `-h, --help`: Display usage and subcommand help.
+
+### 8.3 Exit Codes
+- `0`: Success
+- `1`: Operational error (not found, unauthorized issuer, access denied)
+- `2`: Argument / syntax error (invalid flag value, path traversal, control characters)
+
 

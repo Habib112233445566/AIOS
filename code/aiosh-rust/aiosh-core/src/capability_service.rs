@@ -246,6 +246,11 @@ impl CapabilityService {
             .collect()
     }
 
+    /// Returns all capabilities in the store regardless of revocation or expiration status.
+    pub fn get_all_capabilities(&self) -> Vec<Capability> {
+        self.capabilities.values().cloned().collect()
+    }
+
     /// Helper to register and index a capability into internal collections.
     fn register_capability(&mut self, cap: Capability) {
         let id = cap.id.clone();
@@ -382,5 +387,14 @@ impl CapabilityService {
 
         service.storage_path = Some(path.to_path_buf());
         Ok(service)
+    }
+
+    /// Loads registry from disk or initializes a new registry if the file does not exist yet.
+    pub fn load_or_create(path: &Path) -> Result<Self, String> {
+        validate_service_path(path)?;
+        if !path.exists() {
+            return Ok(Self::new().with_storage_path(path.to_path_buf()));
+        }
+        Self::load_from_path(path)
     }
 }

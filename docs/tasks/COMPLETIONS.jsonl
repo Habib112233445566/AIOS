@@ -2024,3 +2024,13 @@
 {"seq":2024,"ts":"2026-09-20T10:19:06Z","event":"completed","task_id":2024,"note":"Capability Model / CLI surface: Implementation completed","evidence":[]}
 {"seq":2025,"ts":"2026-09-20T10:20:25Z","event":"completed","task_id":2025,"note":"Capability Model / CLI surface: Unit Test completed","evidence":[]}
 {"seq":2026,"ts":"2026-09-20T10:21:37Z","event":"completed","task_id":2026,"note":"Capability Model / CLI surface: Integration completed","evidence":[]}
+{"seq":2027,"ts":"2026-09-20T10:24:20Z","event":"completed","task_id":2027,"note":"Capability Model / CLI surface: Security Review completed","evidence":[]}
+{"seq":2028,"ts":"2026-09-20T10:26:33Z","event":"completed","task_id":2028,"note":"Capability Model / CLI surface: Hardening completed","evidence":[]}
+{"seq":2029,"ts":"2026-09-20T10:27:05Z","event":"completed","task_id":2029,"note":"Capability Model / CLI surface: Documentation completed","evidence":[]}
+{"seq":2030,"ts":"2026-09-20T10:27:31Z","event":"completed","task_id":2030,"note":"Capability Model / CLI surface: Verification & Evidence completed. Sub-Epic 3 Formally Closed.","evidence":[]}
+{"seq":2031,"ts":"2026-09-20T10:30:40Z","event":"completed","task_id":2031,"note":"Capability Model / MCP/API surface: Research completed","evidence":[]}
+{"seq":2032,"ts":"2026-09-20T10:31:09Z","event":"completed","task_id":2032,"note":"Capability Model / MCP/API surface: Specification completed","evidence":[]}
+{"seq":2033,"ts":"2026-09-20T10:33:00Z","event":"completed","task_id":2033,"note":"Capability Model / MCP/API surface: Scaffold completed","evidence":[]}
+{"seq":2034,"ts":"2026-09-20T10:36:37Z","event":"completed","task_id":2034,"note":"Capability Model / MCP/API surface: Implementation completed","evidence":[]}
+{"seq":2035,"ts":"2026-09-20T10:38:12Z","event":"completed","task_id":2035,"note":"Capability Model / MCP/API surface: Unit Test completed","evidence":[]}
+{"seq":2036,"ts":"2026-09-20T10:41:56Z","event":"completed","task_id":2036,"note":"Capability Model / MCP/API surface: Integration completed","evidence":[]}

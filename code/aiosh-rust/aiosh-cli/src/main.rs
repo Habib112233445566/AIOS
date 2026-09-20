@@ -13973,11 +13973,29 @@ fn cmd_update(args: &[String]) -> i32 {
 }
 
 fn parse_cli_scope(scope_type: &str, target: &str, recursive: bool) -> Result<aiosh_core::capability::CapabilityScope, String> {
+    if target.trim().is_empty() {
+        return Err("scope target cannot be empty".to_string());
+    }
+    if target.len() > 1024 {
+        return Err("scope target length exceeds 1024 characters".to_string());
+    }
+    if target.chars().any(|c| c.is_control()) {
+        return Err("scope target contains control characters".to_string());
+    }
+
     match scope_type.to_lowercase().as_str() {
-        "filesystem" | "fs" => Ok(aiosh_core::capability::CapabilityScope::Filesystem {
-            path: target.to_string(),
-            recursive,
-        }),
+        "filesystem" | "fs" => {
+            if !target.starts_with('/') && !target.contains(':') && !target.starts_with('\\') {
+                return Err(format!("filesystem scope path must be absolute, got '{}'", target));
+            }
+            if target.contains("..") {
+                return Err("filesystem scope path cannot contain '..' traversal".to_string());
+            }
+            Ok(aiosh_core::capability::CapabilityScope::Filesystem {
+                path: target.to_string(),
+                recursive,
+            })
+        }
         "network" | "net" => {
             let parts: Vec<&str> = target.split(':').collect();
             let host = parts[0].to_string();
@@ -14135,6 +14153,20 @@ fn cmd_capability(args: &[String]) -> i32 {
                 }
             };
 
+            if id.is_empty() || id.len() > 128 || id.chars().any(|c| c.is_control()) {
+                let msg = "invalid capability id: must be non-empty, <= 128 chars, and contain no control characters";
+                classify_and_emit(
+                    &mut ctx, "capability", "show", json!({ "error": msg }),
+                    "failure", None, Some("Invalid ID"), "operator", None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ID", "message": msg } }));
+                } else {
+                    eprintln!("{}", msg);
+                }
+                return 2;
+            }
+
             match service.get_capability(id) {
                 Some(cap) => {
                     classify_and_emit(
@@ -14188,6 +14220,16 @@ fn cmd_capability(args: &[String]) -> i32 {
                     return 2;
                 }
             };
+            if issuer.is_empty() || issuer.len() > 256 || issuer.chars().any(|c| c.is_control()) {
+                let msg = "invalid --issuer: must be non-empty, <= 256 chars, and contain no control characters";
+                if is_json {
+                    println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_FLAG_VALUE", "message": msg } }));
+                } else {
+                    eprintln!("{}", msg);
+                }
+                return 2;
+            }
+
             let subject = match parse_flag(rest, "--subject") {
                 Some(s) => s,
                 None => {
@@ -14200,6 +14242,16 @@ fn cmd_capability(args: &[String]) -> i32 {
                     return 2;
                 }
             };
+            if subject.is_empty() || subject.len() > 256 || subject.chars().any(|c| c.is_control()) {
+                let msg = "invalid --subject: must be non-empty, <= 256 chars, and contain no control characters";
+                if is_json {
+                    println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_FLAG_VALUE", "message": msg } }));
+                } else {
+                    eprintln!("{}", msg);
+                }
+                return 2;
+            }
+
             let scope_type = match parse_flag(rest, "--scope-type") {
                 Some(t) => t,
                 None => {
@@ -14253,12 +14305,44 @@ fn cmd_capability(args: &[String]) -> i32 {
                 None => vec![aiosh_core::capability::CapabilityRight::Read],
             };
 
+            let max_invocations = match parse_flag(rest, "--max-invocations") {
+                Some(s) => match s.parse::<u64>() {
+                    Ok(n) => Some(n),
+                    Err(_) => {
+                        let msg = format!("invalid --max-invocations value '{}': must be a positive integer", s);
+                        if is_json {
+                            println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_FLAG_VALUE", "message": msg } }));
+                        } else {
+                            eprintln!("{}", msg);
+                        }
+                        return 2;
+                    }
+                },
+                None => None,
+            };
+
+            let quota_bytes = match parse_flag(rest, "--quota-bytes") {
+                Some(s) => match s.parse::<u64>() {
+                    Ok(n) => Some(n),
+                    Err(_) => {
+                        let msg = format!("invalid --quota-bytes value '{}': must be a positive integer", s);
+                        if is_json {
+                            println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_FLAG_VALUE", "message": msg } }));
+                        } else {
+                            eprintln!("{}", msg);
+                        }
+                        return 2;
+                    }
+                },
+                None => None,
+            };
+
             let constraints = aiosh_core::capability::CapabilityConstraints {
                 not_before: parse_flag(rest, "--not-before"),
                 expires_at: parse_flag(rest, "--expires"),
-                max_invocations: parse_flag(rest, "--max-invocations").and_then(|s| s.parse().ok()),
+                max_invocations,
                 current_invocations: 0,
-                quota_bytes: parse_flag(rest, "--quota-bytes").and_then(|s| s.parse().ok()),
+                quota_bytes,
                 consumed_bytes: 0,
             };
 
@@ -14317,6 +14401,16 @@ fn cmd_capability(args: &[String]) -> i32 {
                     return 2;
                 }
             };
+            if parent_id.is_empty() || parent_id.len() > 128 || parent_id.chars().any(|c| c.is_control()) {
+                let msg = "invalid --parent: must be non-empty, <= 128 chars, and contain no control characters";
+                if is_json {
+                    println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_FLAG_VALUE", "message": msg } }));
+                } else {
+                    eprintln!("{}", msg);
+                }
+                return 2;
+            }
+
             let subject = match parse_flag(rest, "--subject") {
                 Some(s) => s,
                 None => {
@@ -14329,6 +14423,16 @@ fn cmd_capability(args: &[String]) -> i32 {
                     return 2;
                 }
             };
+            if subject.is_empty() || subject.len() > 256 || subject.chars().any(|c| c.is_control()) {
+                let msg = "invalid --subject: must be non-empty, <= 256 chars, and contain no control characters";
+                if is_json {
+                    println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_FLAG_VALUE", "message": msg } }));
+                } else {
+                    eprintln!("{}", msg);
+                }
+                return 2;
+            }
+
             let rights = match parse_flag(rest, "--rights") {
                 Some(ref r) => match parse_cli_rights(r) {
                     Ok(rights) => rights,
@@ -14369,16 +14473,48 @@ fn cmd_capability(args: &[String]) -> i32 {
                 None
             };
 
+            let max_invocations = match parse_flag(rest, "--max-invocations") {
+                Some(s) => match s.parse::<u64>() {
+                    Ok(n) => Some(n),
+                    Err(_) => {
+                        let msg = format!("invalid --max-invocations value '{}': must be a positive integer", s);
+                        if is_json {
+                            println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_FLAG_VALUE", "message": msg } }));
+                        } else {
+                            eprintln!("{}", msg);
+                        }
+                        return 2;
+                    }
+                },
+                None => None,
+            };
+
+            let quota_bytes = match parse_flag(rest, "--quota-bytes") {
+                Some(s) => match s.parse::<u64>() {
+                    Ok(n) => Some(n),
+                    Err(_) => {
+                        let msg = format!("invalid --quota-bytes value '{}': must be a positive integer", s);
+                        if is_json {
+                            println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_FLAG_VALUE", "message": msg } }));
+                        } else {
+                            eprintln!("{}", msg);
+                        }
+                        return 2;
+                    }
+                },
+                None => None,
+            };
+
             let narrowed_constraints = if parse_flag(rest, "--expires").is_some()
-                || parse_flag(rest, "--max-invocations").is_some()
-                || parse_flag(rest, "--quota-bytes").is_some()
+                || max_invocations.is_some()
+                || quota_bytes.is_some()
             {
                 Some(aiosh_core::capability::CapabilityConstraints {
                     not_before: parse_flag(rest, "--not-before"),
                     expires_at: parse_flag(rest, "--expires"),
-                    max_invocations: parse_flag(rest, "--max-invocations").and_then(|s| s.parse().ok()),
+                    max_invocations,
                     current_invocations: 0,
-                    quota_bytes: parse_flag(rest, "--quota-bytes").and_then(|s| s.parse().ok()),
+                    quota_bytes,
                     consumed_bytes: 0,
                 })
             } else {
@@ -14441,6 +14577,16 @@ fn cmd_capability(args: &[String]) -> i32 {
                 }
             };
 
+            if id.is_empty() || id.len() > 128 || id.chars().any(|c| c.is_control()) {
+                let msg = "invalid capability id: must be non-empty, <= 128 chars, and contain no control characters";
+                if is_json {
+                    println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ID", "message": msg } }));
+                } else {
+                    eprintln!("{}", msg);
+                }
+                return 2;
+            }
+
             match service.revoke_capability(id) {
                 Ok(revoked_ids) => {
                     if let Err(e) = service.save_to_path(store_path) {
@@ -14496,6 +14642,15 @@ fn cmd_capability(args: &[String]) -> i32 {
                     return 2;
                 }
             };
+            if subject.is_empty() || subject.len() > 256 || subject.chars().any(|c| c.is_control()) {
+                let msg = "invalid --subject: must be non-empty, <= 256 chars, and contain no control characters";
+                if is_json {
+                    println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_FLAG_VALUE", "message": msg } }));
+                } else {
+                    eprintln!("{}", msg);
+                }
+                return 2;
+            }
             let scope_type = match parse_flag(rest, "--scope-type") {
                 Some(t) => t,
                 None => {
@@ -14853,6 +15008,70 @@ mod capability_cli_tests {
 
         // 7. Prune
         assert_eq!(cmd_capability(&s(&["prune", "--store", &store])), 0);
+
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+    }
+
+    #[test]
+    fn test_capability_cli_hardening_validation() {
+        let tmp_dir = std::env::temp_dir().join(format!("aiosh_cap_cli_hard_test_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&tmp_dir);
+        let store = tmp_dir.join("caps.json").to_string_lossy().to_string();
+
+        // 1. Invalid integer quota values return code 2
+        assert_eq!(cmd_capability(&s(&[
+            "issue",
+            "--issuer", "kernel",
+            "--subject", "agent:admin",
+            "--scope-type", "filesystem",
+            "--scope-target", "/var/data",
+            "--max-invocations", "not_a_number",
+            "--store", &store,
+        ])), 2);
+
+        assert_eq!(cmd_capability(&s(&[
+            "issue",
+            "--issuer", "kernel",
+            "--subject", "agent:admin",
+            "--scope-type", "filesystem",
+            "--scope-target", "/var/data",
+            "--quota-bytes", "-100",
+            "--store", &store,
+        ])), 2);
+
+        // 2. Control characters in subject return code 2
+        assert_eq!(cmd_capability(&s(&[
+            "issue",
+            "--issuer", "kernel",
+            "--subject", "agent:\nadmin",
+            "--scope-type", "filesystem",
+            "--scope-target", "/var/data",
+            "--store", &store,
+        ])), 2);
+
+        // 3. Control characters in scope-target return code 2
+        assert_eq!(cmd_capability(&s(&[
+            "issue",
+            "--issuer", "kernel",
+            "--subject", "agent:admin",
+            "--scope-type", "filesystem",
+            "--scope-target", "/var/\0data",
+            "--store", &store,
+        ])), 2);
+
+        // 4. Relative filesystem path returns code 2
+        assert_eq!(cmd_capability(&s(&[
+            "issue",
+            "--issuer", "kernel",
+            "--subject", "agent:admin",
+            "--scope-type", "filesystem",
+            "--scope-target", "relative/path",
+            "--store", &store,
+        ])), 2);
+
+        // 5. Invalid id in show and revoke returns code 2
+        assert_eq!(cmd_capability(&s(&["show", "id\nwith\ncontrol", "--store", &store])), 2);
+        assert_eq!(cmd_capability(&s(&["revoke", "id\nwith\ncontrol", "--store", &store])), 2);
 
         let _ = std::fs::remove_dir_all(&tmp_dir);
     }

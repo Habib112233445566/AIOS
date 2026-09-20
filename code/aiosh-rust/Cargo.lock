@@ -63,6 +63,7 @@ name = "aiosh-mcp"
 version = "0.1.0"
 dependencies = [
  "aiosh-core",
+ "chrono",
  "rusqlite",
  "serde",
  "serde_json",
