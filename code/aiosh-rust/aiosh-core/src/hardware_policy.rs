@@ -68,6 +68,27 @@ pub struct HardwarePolicyReport {
     pub devices_redacted: usize,
 }
 
+/// Maximum allowed policy file size (1 MB) to prevent OOM / DoS.
+pub const MAX_POLICY_FILE_BYTES: u64 = 1_048_576;
+
+/// Validates policy file path hygiene (no traversal, no control chars, max length 1024).
+pub fn validate_policy_path(path: &std::path::Path) -> Result<(), String> {
+    let path_str = path.to_string_lossy();
+    if path_str.trim().is_empty() {
+        return Err("HSEC5 violation: policy path cannot be empty".into());
+    }
+    if path_str.len() > 1024 {
+        return Err("HSEC5 violation: policy path exceeds maximum length of 1024 characters".into());
+    }
+    if path_str.chars().any(|c| c.is_control()) {
+        return Err("HSEC5 violation: policy path cannot contain control characters".into());
+    }
+    if path.components().any(|c| c == std::path::Component::ParentDir) {
+        return Err("HSEC5 violation: policy path traversal ('..') is not permitted".into());
+    }
+    Ok(())
+}
+
 impl HardwareSecurityPolicy {
     /// Validates policy configuration invariants (HSEC5).
     pub fn validate(&self) -> Result<(), String> {
@@ -75,6 +96,12 @@ impl HardwareSecurityPolicy {
             return Err(format!(
                 "HSEC5 violation: max_devices_allowed must be between 1 and 50,000 (got {})",
                 self.max_devices_allowed
+            ));
+        }
+        if self.prohibited_device_ids.len() > 10_000 {
+            return Err(format!(
+                "HSEC5 violation: prohibited_device_ids count {} exceeds limit of 10,000",
+                self.prohibited_device_ids.len()
             ));
         }
         for id in &self.prohibited_device_ids {
@@ -86,6 +113,12 @@ impl HardwareSecurityPolicy {
             }
         }
         if let Some(ref vids) = self.allowed_vendor_ids {
+            if vids.len() > 10_000 {
+                return Err(format!(
+                    "HSEC5 violation: allowed_vendor_ids count {} exceeds limit of 10,000",
+                    vids.len()
+                ));
+            }
             for vid in vids {
                 if vid.len() != 4 || !vid.chars().all(|c| c.is_ascii_hexdigit()) {
                     return Err(format!("HSEC5 violation: invalid vendor ID '{}' in allowed_vendor_ids", vid));
@@ -97,8 +130,19 @@ impl HardwareSecurityPolicy {
 
     /// Loads security policy from a JSON file, falling back to default if file is missing (HSEC5).
     pub fn load_from_path(path: &std::path::Path) -> Result<Self, String> {
+        validate_policy_path(path)?;
         if !path.exists() {
             return Ok(Self::default());
+        }
+        let metadata = std::fs::metadata(path)
+            .map_err(|e| format!("Failed to read metadata for hardware policy from {}: {}", path.display(), e))?;
+        if metadata.len() > MAX_POLICY_FILE_BYTES {
+            return Err(format!(
+                "HSEC5 violation: policy file {} size {} bytes exceeds maximum allowed size of {} bytes",
+                path.display(),
+                metadata.len(),
+                MAX_POLICY_FILE_BYTES
+            ));
         }
         let content = std::fs::read_to_string(path)
             .map_err(|e| format!("Failed to read hardware policy from {}: {}", path.display(), e))?;
@@ -110,6 +154,7 @@ impl HardwareSecurityPolicy {
 
     /// Saves security policy to a JSON file atomically (HSEC5).
     pub fn save_to_path(&self, path: &std::path::Path) -> Result<(), String> {
+        validate_policy_path(path)?;
         self.validate()?;
         let parent = path.parent().unwrap_or_else(|| std::path::Path::new(""));
         if !parent.as_os_str().is_empty() && !parent.exists() {
@@ -192,7 +237,7 @@ impl HardwareSecurityPolicy {
             // Check vendor allowlist if configured
             if let Some(ref allowed_vids) = self.allowed_vendor_ids {
                 if let Some(ref vid) = dev.vendor_id {
-                    if !allowed_vids.contains(vid) {
+                    if !allowed_vids.iter().any(|v| v.eq_ignore_ascii_case(vid)) {
                         violations.push(HardwarePolicyViolation {
                             rule_id: "HPOL-VENDOR".into(),
                             device_id: dev.id.clone(),

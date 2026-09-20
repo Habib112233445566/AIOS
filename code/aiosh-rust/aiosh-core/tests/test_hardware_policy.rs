@@ -199,3 +199,50 @@ fn test_hsec5_load_save_and_missing_fallback() {
     let reloaded = HardwareSecurityPolicy::load_from_path(&save_path).expect("reload");
     assert_eq!(policy, reloaded);
 }
+
+#[test]
+fn test_hardening_path_traversal_rejected() {
+    let dir = tempdir().expect("tempdir");
+    let traversal_path = dir.path().join("..").join("evil_policy.json");
+    assert!(HardwareSecurityPolicy::load_from_path(&traversal_path).is_err());
+
+    let policy = HardwareSecurityPolicy::default();
+    assert!(policy.save_to_path(&traversal_path).is_err());
+}
+
+#[test]
+fn test_hardening_oversized_policy_file_rejected() {
+    let dir = tempdir().expect("tempdir");
+    let huge_path = dir.path().join("huge_policy.json");
+    // Write 1.5 MB of data
+    let huge_data = vec![b' '; 1_500_000];
+    std::fs::write(&huge_path, &huge_data).expect("write huge file");
+
+    let res = HardwareSecurityPolicy::load_from_path(&huge_path);
+    assert!(res.is_err());
+    assert!(res.unwrap_err().contains("exceeds maximum allowed size"));
+}
+
+#[test]
+fn test_hardening_case_insensitive_vendor_matching() {
+    let inventory = create_sample_inventory();
+
+    let mut policy = HardwareSecurityPolicy::default();
+    // Allow uppercase "8086" while dev has lowercase "8086"
+    policy.allowed_vendor_ids = Some(vec!["8086".into()]);
+
+    let report = policy.evaluate(&inventory);
+    assert!(!report.violations.iter().any(|v| v.rule_id == "HPOL-VENDOR"));
+}
+
+#[test]
+fn test_hardening_list_bound_limits() {
+    let mut policy = HardwareSecurityPolicy::default();
+    policy.prohibited_device_ids = (0..10_001).map(|i| format!("dev_{}", i)).collect();
+    assert!(policy.validate().is_err());
+
+    let mut policy = HardwareSecurityPolicy::default();
+    policy.allowed_vendor_ids = Some((0..10_001).map(|_| "8086".into()).collect());
+    assert!(policy.validate().is_err());
+}
+

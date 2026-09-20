@@ -429,6 +429,98 @@ impl MockSysfsBuilder {
 - Documentation: `docs/tasks/evidence/T-01759-automated-tests-documentation.md`.
 - Verification & Evidence: `docs/tasks/evidence/T-01760-automated-tests-verification-evidenc.md`.
 
+---
+
+## 13. Hardware Detection Security Policy Subsystem (Sub-Epic 7)
+
+### 13.1 Overview & Architecture
+The Hardware Detection Security Policy Subsystem (`aiosh-core::hardware_policy`) provides declarative gatekeeping, compliance reporting, and sensitive attribute sanitization over discovered hardware inventories.
+
+It ensures that hostile or unauthorized hardware (e.g., untrusted USB devices, disallowed network interfaces, unknown buses) is blocked or reported, and that privacy-sensitive device telemetry (MAC addresses, UUIDs, serial numbers) is sanitized before entering audit records or user responses.
+
+### 13.2 Policy Contract & Data Schema
+```rust
+pub enum HardwarePolicyMode {
+    Enforcing,   // Fatal violations yield "deny" and strip violating devices
+    Audit,       // Violations recorded in report, inventory remains intact
+    Permissive,  // All devices allowed; violations not fatal
+}
+
+pub struct HardwareSecurityPolicy {
+    pub mode: HardwarePolicyMode,
+    pub disallowed_classes: Vec<DeviceClass>,
+    pub disallowed_buses: Vec<DeviceBus>,
+    pub prohibited_device_ids: Vec<String>,
+    pub allowed_vendor_ids: Option<Vec<String>>,
+    pub redact_sensitive_attributes: bool,
+    pub max_devices_allowed: usize,
+}
+
+pub struct HardwarePolicyReport {
+    pub verdict: String, // "allow", "deny", "audit"
+    pub mode: HardwarePolicyMode,
+    pub violations: Vec<HardwarePolicyViolation>,
+    pub devices_evaluated: usize,
+    pub devices_redacted: usize,
+}
+```
+
+### 13.3 Security Invariants (HSEC1..HSEC5)
+- **HSEC1 (Policy Precedence & Filtering)**: Prohibited device IDs and disallowed classes take precedence over allowlists. In `Enforcing` mode, fatal violations produce a `"deny"` verdict and filter offending devices out of the inventory.
+- **HSEC2 (Attribute Redaction)**: Sensitive attributes matching keys `address`, `mac`, `serial`, `uuid`, `wwid` are automatically masked to `"<REDACTED>"` when `redact_sensitive_attributes` is true.
+- **HSEC3 (Class & Bus Gatekeeping)**: Disallowed device classes and buses generate fatal violations (`HPOL-CLASS`, `HPOL-BUS`).
+- **HSEC4 (Deterministic Reports)**: Policy evaluation is side-effect-free and deterministically sorted by `rule_id` and `device_id`.
+- **HSEC5 (Fail-Safe Defaults & Hardening)**:
+  - Default policy is `Enforcing` with redaction enabled and a 10,000 device ceiling.
+  - Policy files are capped at `MAX_POLICY_FILE_BYTES = 1,048,576` (1 MB) to prevent OOM/DoS.
+  - Policy file paths are validated against control characters, length $> 1024$, and traversal (`..`).
+  - List entries are capped at $\le 10,000$ to prevent linear scan DoS.
+  - Persistence executes via atomic sibling write (`.{name}.tmp.{pid}`) and rename.
+
+### 13.4 CLI & MCP Usage Examples
+
+#### Rust API Example
+```rust
+use aiosh_core::hardware_service::HardwareService;
+use aiosh_core::hardware_policy::HardwareSecurityPolicy;
+
+let service = HardwareService::new();
+let policy = HardwareSecurityPolicy::default();
+
+// Discovers hardware and applies security policy sanitization in one step
+let (inventory, report) = service.scan_with_policy(None, true, None, None, &policy)?;
+assert_eq!(report.verdict, "allow");
+```
+
+#### MCP Tool Example
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "aios.hardware.scan",
+    "arguments": {
+      "classes": ["gpu", "network", "block"],
+      "include_attributes": true
+    }
+  }
+}
+```
+
+### 13.5 Sub-Epic 7 Verification Evidence
+- Research: `docs/tasks/evidence/T-01761-security-policy-research.md`.
+- Specification: `docs/tasks/evidence/T-01762-security-policy-specification.md`.
+- Scaffold: `docs/tasks/evidence/T-01763-security-policy-scaffold.md`.
+- Implementation: `docs/tasks/evidence/T-01764-security-policy-implementation.md`.
+- Unit Test: `docs/tasks/evidence/T-01765-security-policy-unit-test.md`.
+- Integration: `docs/tasks/evidence/T-01766-security-policy-integration.md`.
+- Security Review: `docs/tasks/evidence/T-01767-security-policy-security-review.md`.
+- Hardening: `docs/tasks/evidence/T-01768-security-policy-hardening.md`.
+- Documentation: `docs/tasks/evidence/T-01769-security-policy-documentation.md`.
+- Verification & Evidence: `docs/tasks/evidence/T-01770-security-policy-verification-evidenc.md`.
+
+
 
 
 

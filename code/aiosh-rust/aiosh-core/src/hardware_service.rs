@@ -149,6 +149,16 @@ impl HardwareService {
         Ok((inventory, report))
     }
 
+    /// Discovers host hardware and generates a comprehensive observability report (HO1..HO6).
+    pub fn generate_observability_report(
+        &self,
+        options: &HardwareScanOptions,
+        policy_opt: Option<&crate::hardware_policy::HardwareSecurityPolicy>,
+    ) -> Result<crate::hardware_observability::HardwareObservabilityReport, String> {
+        let inventory = self.scan(options)?;
+        Ok(crate::hardware_observability::HardwareObservabilityReport::generate(&inventory, policy_opt))
+    }
+
     /// Retrieves the cached hardware inventory if present.
     pub fn get_cached_inventory(&self) -> Option<HardwareInventory> {
         self.cached_inventory.read().ok().and_then(|guard| guard.clone())
