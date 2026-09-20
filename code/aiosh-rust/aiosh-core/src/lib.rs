@@ -73,6 +73,7 @@ pub mod kernel_module_service;
 pub mod ledger;
 pub mod ledger_config;
 pub mod network;
+pub mod network_service;
 pub mod package;
 pub mod package_config;
 pub mod package_observability;
@@ -182,6 +183,7 @@ pub use network::{
     IpAddress, IpFamily, NetworkInterface, NetworkState, OperState, Route, MAX_IFACE_NAME_LEN,
     MAX_INTERFACES, MAX_MTU, MAX_ROUTES, MIN_MTU,
 };
+pub use network_service::NetworkService;
 pub use types::GENESIS_HASH;
 
 

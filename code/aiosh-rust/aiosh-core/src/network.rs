@@ -17,6 +17,14 @@ pub const MAX_MTU: u32 = 65535;
 pub const MAX_INTERFACES: usize = 1024;
 /// Maximum routes per host state.
 pub const MAX_ROUTES: usize = 4096;
+/// Maximum IP addresses per interface.
+pub const MAX_ADDRESSES_PER_IFACE: usize = 64;
+/// Maximum flags per interface.
+pub const MAX_FLAGS_PER_IFACE: usize = 32;
+/// Maximum DNS nameservers per host state.
+pub const MAX_DNS_NAMESERVERS: usize = 32;
+/// Maximum DNS search domains per host state.
+pub const MAX_DNS_SEARCH_DOMAINS: usize = 32;
 
 /// Functional classification of a network interface.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -193,6 +201,50 @@ pub struct DnsConfig {
     pub nameservers: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub search_domains: Vec<String>,
+}
+
+impl DnsConfig {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_nameserver(mut self, ns: impl Into<String>) -> Self {
+        self.nameservers.push(ns.into());
+        self
+    }
+
+    pub fn with_search_domain(mut self, domain: impl Into<String>) -> Self {
+        self.search_domains.push(domain.into());
+        self
+    }
+
+    pub fn validate(&self) -> Result<(), String> {
+        if self.nameservers.len() > MAX_DNS_NAMESERVERS {
+            return Err(format!(
+                "nameserver count {} exceeds maximum permitted limit of {}",
+                self.nameservers.len(),
+                MAX_DNS_NAMESERVERS
+            ));
+        }
+        for ns in &self.nameservers {
+            IpAddr::from_str(ns.trim())
+                .map_err(|e| format!("invalid DNS nameserver '{}': {}", ns, e))?;
+        }
+        if self.search_domains.len() > MAX_DNS_SEARCH_DOMAINS {
+            return Err(format!(
+                "search domain count {} exceeds maximum permitted limit of {}",
+                self.search_domains.len(),
+                MAX_DNS_SEARCH_DOMAINS
+            ));
+        }
+        for domain in &self.search_domains {
+            let clean = domain.trim();
+            if clean.is_empty() || clean.len() > 255 || clean.chars().any(|c| c.is_control()) {
+                return Err(format!("invalid DNS search domain '{}'", domain));
+            }
+        }
+        Ok(())
+    }
 }
 
 /// An individual network interface.
@@ -510,9 +562,36 @@ pub fn validate_network_interface(iface: &NetworkInterface) -> Result<(), String
         validate_mac_address(mac)?;
     }
     validate_mtu(iface.mtu)?;
+
+    if iface.ip_addresses.len() > MAX_ADDRESSES_PER_IFACE {
+        return Err(format!(
+            "interface '{}' IP address count {} exceeds maximum permitted limit of {}",
+            iface.name,
+            iface.ip_addresses.len(),
+            MAX_ADDRESSES_PER_IFACE
+        ));
+    }
+
+    let mut seen_ips = std::collections::HashSet::new();
     for ip in &iface.ip_addresses {
         validate_ip_address(ip)?;
+        if !seen_ips.insert(&ip.address) {
+            return Err(format!(
+                "interface '{}' contains duplicate IP address '{}'",
+                iface.name, ip.address
+            ));
+        }
     }
+
+    if iface.flags.len() > MAX_FLAGS_PER_IFACE {
+        return Err(format!(
+            "interface '{}' flag count {} exceeds maximum permitted limit of {}",
+            iface.name,
+            iface.flags.len(),
+            MAX_FLAGS_PER_IFACE
+        ));
+    }
+
     for flag in &iface.flags {
         if flag.trim().is_empty() || flag.len() > 32 || flag.chars().any(|c| c.is_control()) {
             return Err(format!("invalid interface flag '{}'", flag));
@@ -523,8 +602,24 @@ pub fn validate_network_interface(iface: &NetworkInterface) -> Result<(), String
 
 /// Validates complete network state invariants (NET1..NET6).
 pub fn validate_network_state(state: &NetworkState) -> Result<(), String> {
-    if state.hostname.trim().is_empty() {
-        return Err("network state hostname cannot be empty".into());
+    let clean_host = state.hostname.trim();
+    if clean_host.is_empty() || clean_host.len() > 255 {
+        return Err(format!(
+            "network state hostname '{}' must be non-empty and <= 255 characters",
+            clean_host
+        ));
+    }
+    if !clean_host.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-') {
+        return Err(format!(
+            "network state hostname '{}' contains invalid characters (must be ASCII alphanumeric, '.', or '-')",
+            clean_host
+        ));
+    }
+    if clean_host.starts_with('.') || clean_host.starts_with('-') || clean_host.ends_with('.') || clean_host.ends_with('-') {
+        return Err(format!(
+            "network state hostname '{}' cannot start or end with '.' or '-'",
+            clean_host
+        ));
     }
 
     if state.interfaces.len() > MAX_INTERFACES {
@@ -543,6 +638,16 @@ pub fn validate_network_state(state: &NetworkState) -> Result<(), String> {
         }
     }
 
+    // Enforce deterministic sorting (NET6)
+    for w in state.interfaces.windows(2) {
+        if w[0].name >= w[1].name {
+            return Err(format!(
+                "interfaces are not deterministically sorted: '{}' must precede '{}'",
+                w[1].name, w[0].name
+            ));
+        }
+    }
+
     if state.routes.len() > MAX_ROUTES {
         return Err(format!(
             "route count {} exceeds maximum permitted limit of {}",
@@ -555,17 +660,17 @@ pub fn validate_network_state(state: &NetworkState) -> Result<(), String> {
         route.validate()?;
     }
 
-    for ns in &state.dns.nameservers {
-        IpAddr::from_str(ns.trim())
-            .map_err(|e| format!("invalid DNS nameserver '{}': {}", ns, e))?;
-    }
-
-    for domain in &state.dns.search_domains {
-        let clean = domain.trim();
-        if clean.is_empty() || clean.len() > 255 || clean.chars().any(|c| c.is_control()) {
-            return Err(format!("invalid DNS search domain '{}'", domain));
+    // Enforce deterministic sorting of routes (NET6)
+    for w in state.routes.windows(2) {
+        let key0 = (w[0].metric, &w[0].destination);
+        let key1 = (w[1].metric, &w[1].destination);
+        if key0 > key1 {
+            return Err("routes are not deterministically sorted by metric and destination".into());
         }
     }
 
+    state.dns.validate()?;
+
     Ok(())
 }
+

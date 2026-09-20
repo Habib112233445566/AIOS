@@ -1,8 +1,7 @@
 //! Unit tests for Network Bootstrap Data Model (NET1..NET6).
 
 use aiosh_core::network::{
-    validate_interface_name, validate_ip_address, validate_mac_address, validate_mtu,
-    validate_network_interface, validate_network_state, validate_route, DnsConfig, InterfaceType,
+    validate_interface_name, validate_mac_address, validate_mtu, DnsConfig, InterfaceType,
     IpAddress, IpFamily, NetworkInterface, NetworkState, OperState, Route, MAX_IFACE_NAME_LEN,
     MAX_MTU, MIN_MTU,
 };
@@ -200,4 +199,58 @@ fn test_net6_network_state_deterministic_ordering_and_queries() {
     assert_eq!(restored.hostname, "test-gateway");
     assert_eq!(restored.interfaces.len(), 3);
     assert_eq!(restored.routes.len(), 3);
+}
+
+#[test]
+fn test_network_hardening_caps() {
+    use aiosh_core::network::{
+        MAX_ADDRESSES_PER_IFACE, MAX_DNS_NAMESERVERS, MAX_FLAGS_PER_IFACE,
+    };
+
+    // 1. IP address count cap and duplicate IP detection
+    let mut iface = NetworkInterface::new("eth0", InterfaceType::Ethernet);
+    for i in 0..MAX_ADDRESSES_PER_IFACE {
+        let ip = IpAddress::new_v4(format!("10.0.{}.1", i), 24);
+        iface = iface.with_ip(ip);
+    }
+    assert!(iface.validate().is_ok());
+
+    // Exceed MAX_ADDRESSES_PER_IFACE
+    let mut iface_over = iface.clone();
+    iface_over = iface_over.with_ip(IpAddress::new_v4("10.1.0.1", 24));
+    assert!(iface_over.validate().is_err());
+
+    // Duplicate IP detection
+    let iface_dup = NetworkInterface::new("eth1", InterfaceType::Ethernet)
+        .with_ip(IpAddress::new_v4("192.168.1.1", 24))
+        .with_ip(IpAddress::new_v4("192.168.1.1", 24));
+    assert!(iface_dup.validate().is_err());
+
+    // 2. Flags cap
+    let mut iface_flags = NetworkInterface::new("eth2", InterfaceType::Ethernet);
+    for i in 0..MAX_FLAGS_PER_IFACE + 1 {
+        iface_flags = iface_flags.with_flag(format!("flag_{}", i));
+    }
+    assert!(iface_flags.validate().is_err());
+
+    // 3. DNS nameserver cap
+    let mut dns = DnsConfig::new();
+    for i in 0..MAX_DNS_NAMESERVERS {
+        dns = dns.with_nameserver(format!("1.1.1.{}", i % 250));
+    }
+    assert!(dns.validate().is_ok());
+
+    let mut dns_over = dns.clone();
+    dns_over = dns_over.with_nameserver("8.8.8.8");
+    assert!(dns_over.validate().is_err());
+
+    // 4. Hostname validation
+    let state_bad_host = NetworkState::new("-invalid-host");
+    assert!(state_bad_host.validate_invariants().is_err());
+
+    let state_bad_host2 = NetworkState::new("invalid host with space");
+    assert!(state_bad_host2.validate_invariants().is_err());
+
+    let state_good_host = NetworkState::new("valid-host.aios.local");
+    assert!(state_good_host.validate_invariants().is_ok());
 }

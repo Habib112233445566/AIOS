@@ -1266,6 +1266,36 @@ Read line-by-line: `pentest.rs` (597), `train_slm.py` (210), `train_unsloth.py` 
   - `aiosh-cli`: 6/6 network smoke tests in `test_network_smoke.py` passed in 0.20s.
   - Zero compiler warnings or lint errors across Rust and Python suites.
 
+---
+
+## 10. Post-Audit Addendum: Batch T-01807 through T-01816 Verification
+
+**Date:** 2026-09-20  
+**Scope:** Batch `T-01807` through `T-01816` (Network Bootstrap Data Model Sub-Epic 1 Closure & Network Bootstrap Core Service Sub-Epic 2).  
+**Auditor:** Antigravity Autonomous Agent  
+**Verdict:** **PASS (Zero vulnerabilities)**
+
+### 1. Hardened Surface & Key Controls
+- **Network Bootstrap Data Model Closure (T-01807..T-01810)**:
+  - Analyzed threat vectors `THREAT-NET-01..06` (interface name path traversal, MAC spoofing, IP prefix manipulation, MTU bounds, route loops, and collection memory exhaustion).
+  - Hardened `network.rs` with strict DoS caps (`MAX_INTERFACES = 1024`, `MAX_ROUTES = 4096`, `MAX_ADDRESSES_PER_IFACE = 64`, `MAX_FLAGS_PER_IFACE = 32`, `MAX_DNS_NAMESERVERS = 32`, `MAX_DNS_SEARCH_DOMAINS = 32`).
+  - Added duplicate IP detection and RFC 1123 hostname validation.
+  - Authored comprehensive documentation in `docs/network_bootstrap.md`.
+  - Formally closed Sub-Epic 1 with 7/7 Rust unit tests and 6/6 Python integration smoke tests passing.
+- **Network Bootstrap Core Service (T-01811..T-01816)**:
+  - Researched Linux network discovery via sysfs (`/sys/class/net/`), procfs (`/proc/net/route`), and resolvconf (`/etc/resolv.conf`).
+  - Formulated invariants `NSERV1..NSERV6`.
+  - Formally specified `NetworkService` with custom path injection for offline hermetic testing (`NSERV1`).
+  - Scaffolded and implemented `NetworkService` in `code/aiosh-rust/aiosh-core/src/network_service.rs` and re-exported in `lib.rs`.
+  - Implemented `scan_interfaces`, `get_interface`, `scan_routes`, `get_dns_config`, `get_network_state`, `bring_up`, and `bring_down`.
+  - Verified 6/6 Rust unit tests in `test_network_service.rs` and 6/6 Python integration smoke tests in `test_network_service_smoke.py`.
+- **Test Verification**:
+  - `aiosh-core`: 7/7 network unit tests in `test_network.rs` passed in 0.03s.
+  - `aiosh-core`: 6/6 network service unit tests in `test_network_service.rs` passed in 0.16s.
+  - `aiosh-cli`: 6/6 network smoke tests in `test_network_smoke.py` passed in 0.20s.
+  - `aiosh-cli`: 6/6 network service smoke tests in `test_network_service_smoke.py` passed in 0.26s.
+  - Zero compiler warnings or lint errors across Rust and Python suites.
+
 
 
 
