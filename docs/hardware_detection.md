@@ -650,6 +650,54 @@ for res in results {
 - Documentation: `docs/tasks/evidence/T-01789-documentation-documentation.md`.
 - Verification & Evidence: `docs/tasks/evidence/T-01790-documentation-verification-evidenc.md`.
 
+---
+
+## 16. Hardware Detection Recovery & Validation Subsystem (Sub-Epic 10)
+
+### 16.1 Overview & Architecture
+The Hardware Detection Recovery & Validation Subsystem (`aiosh-core::hardware_recovery`) provides non-destructive automated self-healing, corruption quarantine, sysfs path drift detection, and data invariant enforcement for host hardware inventories and persistent store files.
+
+### 16.2 Invariants (HVAL1..HVAL6)
+- **HVAL1 (Device Accounting Parity)**: The total device count equals valid devices plus invalid devices (`valid_devices + invalid_devices == total_devices`).
+- **HVAL2 (Summary Reconciliation)**: Functional class summary counts are strictly verified against valid devices. The recovery engine automatically reconciles and recalculates summaries.
+- **HVAL3 (Health State Consistency)**: An inventory is reported as `healthy` if and only if zero validation errors exist, zero invalid devices exist, no sysfs drift is detected, and no summary mismatches exist.
+- **HVAL4 (Non-Destructive Quarantine)**: Corrupted, truncated, or unparseable store files are safely copied to a timestamped backup (`<filename>.bak.<timestamp>`) prior to re-initialization or surgical repair.
+- **HVAL5 (Bounded Resource Limits & Path Hygiene)**: Store file sizes are strictly capped at `MAX_STORE_FILE_SIZE = 10 MB`. Store paths must be valid `.json` files free from parent directory traversal (`..`) or control characters.
+- **HVAL6 (Sysfs Path Drift Detection)**: Supports live validation against host `/sys` paths. Devices referencing non-existent sysfs or `/dev` entries are flagged as drift (`drift_detected = true`).
+
+### 16.3 API Usage Example
+
+```rust
+use std::path::Path;
+use aiosh_core::hardware_service::HardwareService;
+
+let service = HardwareService::new();
+let store_path = Path::new("/etc/aios/hardware_inventory.json");
+
+// 1. Inspect store health and sysfs drift
+let val_report = service.validate_store(store_path, true)?;
+if !val_report.healthy {
+    println!("Store is unhealthy (drift: {}): {:?}", val_report.drift_detected, val_report.errors);
+
+    // 2. Perform non-destructive automated recovery
+    let rec_report = service.recover_store(store_path)?;
+    println!("Store recovered: {}, backup at: {:?}", rec_report.recovered, rec_report.backup_path);
+}
+```
+
+### 16.4 Sub-Epic 10 Verification Evidence
+- Research: `docs/tasks/evidence/T-01791-recovery-research.md`.
+- Specification: `docs/tasks/evidence/T-01792-recovery-specification.md`.
+- Scaffold: `docs/tasks/evidence/T-01793-recovery-scaffold.md`.
+- Implementation: `docs/tasks/evidence/T-01794-recovery-implementation.md`.
+- Unit Test: `docs/tasks/evidence/T-01795-recovery-unit-test.md`.
+- Integration: `docs/tasks/evidence/T-01796-recovery-integration.md`.
+- Security Review: `docs/tasks/evidence/T-01797-recovery-validation-security-review.md`.
+- Hardening: `docs/tasks/evidence/T-01798-recovery-validation-hardening.md`.
+- Documentation: `docs/tasks/evidence/T-01799-recovery-validation-documentation.md`.
+- Verification & Evidence: `docs/tasks/evidence/T-01800-recovery-validation-verification-evidenc.md`.
+
+
 
 
 

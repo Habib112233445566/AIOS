@@ -7,6 +7,60 @@
 
 ---
 
+## Findings index (status after SIXTH PASS — live-probe verification)
+
+**DEMONSTRATED** = reproduced against the real binary/server in an isolated temp `AIOSH_HOME`; **STATIC** = code-read only; **DISPROVEN** = none (all probed claims held). Refinements recorded in the SIXTH PASS: C-6's ZIP extraction is zip-slip-safe (`enclosed_name`); N-1's 0644-widening half remains untestable on this host.
+
+| ID | Severity | Status after probes |
+|---|---|---|
+| C-1 sandbox is a no-op (AT_FDCWD → EBADF; child execs; `sandbox_applied` emitted with FAIL components) | Critical | **DEMONSTRATED** (live: all-FAIL components + child ran, pass 6) |
+| C-2 unauthenticated arbitrary command execution (`process.run` / `aiosh run`) | Critical | **DEMONSTRATED** (`aiosh run` deleted a file, no grant/confirmation, pass 6) |
+| C-3 90/98 MCP tools ungated | Critical | STATIC |
+| C-4 grant checks accept any non-empty string | Critical | STATIC (basis of C-6 probe) |
+| C-5 cross-substrate hash parity broken for non-ASCII | Critical | **DEMONSTRATED** (byte-level, pass 5) |
+| C-6 `aios.backup.restore` gated only by `check_release_policy` | Critical | **DEMONSTRATED** (`grant_id:"x"` extracted attacker ZIP; row omits classifier provenance; zip-slip defended — pass 6) |
+| C-7 Rust CLI has no enforcement point; caller `--grant` recorded verbatim | Critical | **DEMONSTRATED** (irreversible `del` executed + forged grant in refusal row — pass 6) |
+| H-1 expectation-only grant checks / weak irreversible set | High | **DEMONSTRATED** (grant_check probe, pass 5) |
+| H-2 path-scope deny bypass (raw prefix compare) | High | **DEMONSTRATED + STRENGTHENED** (deny list inert on Windows, pass 5) |
+| H-3 zip-bomb bound per-file not cumulative | High | STATIC (zip-slip guard separately proven live, pass 6) |
+| H-4 attacker-controlled release artifact path → traversal + whole-CWD packaging | High | STATIC (H-10 probe is its Python twin) |
+| H-5 unauthenticated handoff state tampering | High | STATIC |
+| H-6 reachable panics on multibyte input | High | STATIC |
+| H-7 secrets-scanner symlink recursion + partial secret disclosure | High | STATIC |
+| H-8 audit durability/anchoring weaknesses (incl. `/tmp` fallbacks, unbounded forks) | High | STATIC |
+| H-9 handoff/triage records unvalidated on load | High | STATIC |
+| H-10 Python MCP ungated release/backup writers | High | **DEMONSTRATED** (zip of caller dir + ISO artifact, no grant — pass 5) |
+| H-11 evidence verification trusts the manifest it is handed | High | STATIC |
+| H-12 Python classifier nested-arg prompt-injection blind spot | High | STATIC (re-confirmed by read, pass 5) |
+| M-1–M-14 first-pass mediums | Medium | STATIC |
+| M-15 validation is a library property, not a service property | Medium | STATIC (systemic root cause) |
+| M-16 `deny_unknown_fields` on 7/47 structs | Medium | STATIC |
+| M-17 audit verifier panics on tampered segment row | Medium | STATIC |
+| M-18 Rust port regressions (PATH re-hijack, unquoted command, ignored mode) | Medium | STATIC |
+| M-19 argument injection into pentest binaries | Medium | STATIC |
+| M-20 `--yes` is decorative | Medium | STATIC |
+| N-1 `store_path` is a caller-chosen write target (traversal/absolute, create_dir_all) | High | **DEMONSTRATED** (traversal store created outside any root + greeter seeded; 0644-widening half STATIC — pass 6) |
+| N-2 caller chooses its own enforcement level (`policy_path` + `mode:"audit"`) | High | STATIC |
+| N-3 kernel-module export writes root-executed modprobe content unvalidated | High | **DEMONSTRATED** (store-crafted `install … && rm -rf /etc` written verbatim — pass 6) |
+| N-4 grants are self-service | High | STATIC |
+| N-5 predictable non-exclusive temp siblings in six store writers | Medium | STATIC |
+| N-6 `aiosh-sandbox` parses `--policy` anywhere in argv | Medium | **DEMONSTRATED** (policy swallowed from inside wrapped command → usage error — pass 6) |
+| N-7 write-to-execute: MCP imports `tools/task_ledger.py` from the working tree | High | **DEMONSTRATED** (payload exec'd inside server pid 3660 — pass 5) |
+| N-8 `aios.session.check` auto_recover overwrites live store with seeded greeter | Medium | **DEMONSTRATED** (store sha changed; only `greeter-seat0` remained — pass 5) |
+| N-9 session "Audit" mode enforces and records nothing | Medium | STATIC |
+| N-10 distro security controls decorative | Medium | STATIC |
+| N-11 base-image build plan is a command-injection carrier | Medium | STATIC |
+| N-12 no single "active policy"; server env is an unauthenticated policy input | Medium | STATIC |
+| N-13 `tools/check_evidence.py` E3/E4 cannot fail | Medium | STATIC (window claim confirmed by probe, pass 4/5) |
+| N-14 needle-based ledger lookup can bind wrong task record | Low | STATIC |
+| N-15 audit provenance caller-asserted at Python commit boundary | Low | STATIC |
+| N-16 sandbox-status consumer never reads component outcomes (`parseSandboxApplied`) | Medium | **DEMONSTRATED (output shape)** / STATIC (consumer logic) |
+| N-17 SLM mock benchmark is a self-comparison oracle (cannot fail) — pass 6 | Low | STATIC (code-read; same class as N-13) |
+| N-18 `trust_remote_code=True` in SLM training — HF supply-chain execution — pass 6 | Low | STATIC |
+| N-19 pentest `run_subprocess` pipe-buffer deadlock → false timeout + lost output — pass 6 | Low | STATIC |
+
+---
+
 ## Executive summary
 
 The platform's *architecture* is defensible: classifier → PEP grant → single audit row, hash-chained audit ring with segments/archives, bounded file reads, exclusive temp + fsync + rename for stores, zip-slip guards, and a real attempt at cross-substrate hash parity. The problems are at the **seams and the gates**:
@@ -1101,6 +1155,117 @@ Still not read line-by-line (next pass starts here): `aiosh_mcp/pentest.py` body
   - `aiosh-cli`: 5/5 documentation smoke tests in `test_hardware_doc_smoke.py` passed in 0.18s.
   - `aiosh-cli`: 5/5 recovery smoke tests in `test_hardware_recovery_smoke.py` passed in 0.18s.
   - Zero compiler warnings or lint errors.
+
+# SIXTH PASS — 2026-09-20 (live-probe verification of C-6, C-7, N-1, N-3, N-6 + remaining reads)
+
+Method: fresh `cargo build` (dev profile, all four crates, 27.8 s, zero warnings), then each probe driven against the freshly built binaries in isolated temp `AIOSH_HOME` directories. No source edits. New findings N-17…N-19 below; statuses for every earlier finding are in the index at the top of this report.
+
+## Probes run and observed
+
+### C-6 — DEMONSTRATED (real `aiosh-mcp.exe`, forged grant)
+Attacker ZIP with one normal entry + one `../escape.txt` zip-slip entry, driven over line-delimited JSON-RPC:
+```
+tools/call aios.backup.restore {backup_path: evil.zip, target_dir: <T>/target, grant_id: "x"}
+reply: {"message": "Restored …evil.zip to …target", "ok": true}
+extracted: ['payload.txt']   payload content: ATTACKER-PAYLOAD
+escaped outside target (should be False): False
+audit row: {'tool':'aios.backup.restore','outcome':'success','grant_token':'x',
+            'c1':0,'c2':0,'c3':0,'c4':0,'policy_revision':None,
+            'classify_rule_ids_json':None,'classify_overall_verdict':None}
+```
+`grant_id "x"` (nonexistent, never PEP-checked — `check_release_policy` only tests non-None at `release.rs:312`) authorized the extraction; the hand-rolled row records the forged grant verbatim with **all** classifier provenance NULL and every C-flag false. Two refinements: (a) **zip-slip is defended** — `enclosed_name()` skipped `../escape.txt`, so C-6 is arbitrary-extraction-with-forged-grant, not traversal; (b) the row's `outcome` is the non-standard string `"success"` (elsewhere the vocabulary is `ok`), so SQL filters on `outcome='ok'` miss it.
+
+### C-7 — DEMONSTRATED (real `aiosh.exe` CLI, no gate)
+(a) Irreversible mutation: `aiosh run cmd /c del <victim>` executed with **no grant, no confirmation, no PEP call** — `victim exists after run: NO`. (b) Caller-supplied grant provenance: `aiosh pentest nmap 127.0.0.1 --grant gr_forged-xyz` → refused (`unknown or revoked grant`), and the refusal row records the forged string verbatim:
+```
+{'tool': 'pentest.nmap', 'outcome': 'refused', 'grant_token': 'gr_forged-xyz'}
+```
+The probe exposed an asymmetry: `pentest.*` refuses an *unknown* grant (real `pep.check`), while `aios.backup.restore` (C-6) accepts any non-empty one — two grant semantics in one binary. Also observed live (supporting C-1/N-16): `aiosh-sandbox --policy … -- cmd /c echo RAN-OK` printed `RAN-OK` while stderr carried `sandbox_applied` with all three components `FAIL: … unsupported on non-Linux` — the child runs, the event still says "applied".
+
+### N-1 — DEMONSTRATED (store_path traversal; mode-widening half stays STATIC)
+Real `aiosh-mcp.exe`, ungated, no grant:
+```
+tools/call aios.session.check {store_path: "<T>/outer/deep/nested/../elsewhere/store.json", auto_recover: true}
+reply: ok:true, recovered:true, total:1
+file created at traversal-resolved path: True   sessions seeded: ['greeter-seat0']
+```
+`save_to_path` (`session.rs:397-403`) `create_dir_all`s the parent, so the caller-chosen path — absolute, relative, or `..`-laden — is honored verbatim and a synthetic store materializes wherever the caller points. The 0644-forced-mode half of N-1 cannot be exercised on this Windows host (no POSIX modes) and stays STATIC.
+
+### N-3 — DEMONSTRATED (store-crafted command reaches the written conf verbatim)
+Attacker-crafted store (any writer that can place JSON can produce it — see N-1) fed to the real CLI:
+```
+aiosh mod export --store km.json --modprobe aios.conf
+→ aios.conf contains:
+install cramfs echo PWNED-BY-AUDIT > /tmp/pwned && rm -rf /etc
+```
+The `&` shell metacharacter passes `validate_config` (which only requires a non-empty command, `kernel_module.rs:250`); `validate_module_name` correctly blocks name injection but the **command** field is emitted raw (`kernel_module.rs:304`). With the documented `--modprobe /etc/modprobe.d/aios.conf` destination, root's `modprobe cramfs` executes the payload as root. The chain ungated store write → verbatim emission → operator-run file is confirmed end-to-end up to the operator's sudo.
+
+### N-6 — DEMONSTRATED (real `aiosh-sandbox.exe`)
+```
+aiosh-sandbox -- cmd /c echo RAN2 --policy EVIL-JSON
+stderr: usage: aiosh-sandbox --policy <json> -- <bin> <args...>   rc=2
+```
+The binary scanned past the `--` separator, matched `--policy` **inside the wrapped command's arguments**, consumed `EVIL-JSON` as the policy, and errored out — the wrapped command lost its trailing arguments. N-6 stands exactly as recorded (the Python shim's `_main` has the identical argv scan, `sandbox.py:595-601`).
+
+## Reads this pass
+* `aiosh-core/src/pentest.rs` (597 lines, fully read): wrapper design is sound — classifier→PEP gate order, argv-vector spawns (no shell), **char-based** output truncation (immune to the H-6 multibyte panic class), timeout+kill. New finding N-19 below; two notes: `pentest.sqlmap` hardcodes `--output-dir=/tmp` (shared-directory class, H-8 adjacent), and `host_has` skips the exec-bit check on non-Unix (correct for Windows).
+* `AIOS-model/` — `train_slm.py`, `train_unsloth.py`, `evaluate_slm.py` fully read; `generate_dataset.py` read at the generator/verifier/entry sections plus pattern sweep (no subprocess/eval/pickle/network in the file; it writes only its own `data/` dir). New findings N-17, N-18.
+* `tools/` — production scripts read (`check_security_policy.py`, `ci_config.py`; `generate_master_tasks.py`/`check_task_docs.py`/`ci_suites.py` via pattern sweep; `task_ledger.py`, `ci_run.py`, `ci_service.py`, `check_evidence.py` were read in passes 4–5). No dangerous patterns found; `ci_config.py`'s `AIOSH_CI_RESULTS` default `/tmp/aiosh-ci-results.json` repeats the H-8 `/tmp` class (new location, not counted as new). The `test_*.py` files were pattern-swept only (stated honestly: not line-read).
+
+## New findings
+
+### N-17 — NEW (LOW): the SLM mock benchmark is a self-comparison oracle that cannot fail
+`AIOS-model/evaluate_slm.py:44-77 evaluate_mock` — "Tool Selection Accuracy" is computed by assigning `pred_name = exp["name"]` and then checking `pred_name == exp["name"]`; `pred_args = exp["arguments"]` likewise. The reported metrics (100% accuracy, valid-args 100%) compare ground truth to ground truth — the mock mode advertised for "local offline CI verification" is structurally incapable of detecting a regression, the same false-assurance shape as N-13. **CWE-1204.** *Fix:* mock mode should report that no model was exercised, or score a fixed adversarial fixture.
+
+### N-18 — NEW (LOW): `trust_remote_code=True` on tokenizer and model load
+`AIOS-model/train_slm.py:100,111` — `AutoTokenizer.from_pretrained(args.model_id, trust_remote_code=True)` and the same flag on `AutoModelForCausalLM.from_pretrained` execute arbitrary Python from the Hugging Face repo named by `--model-id` (default pinned to `Qwen/Qwen2.5-1.5B-Instruct`, but the flag makes any override a code-execution vector). The training data and resulting GGUF then inherit whatever that code produced — a supply-chain path into the platform's future tool-calling model. **CWE-494.** *Fix:* pin a commit hash, drop the flag for Qwen (whose modeling code ships in `transformers`), or vendor the file.
+
+### N-19 — NEW (LOW): pentest `run_subprocess` deadlocks on large output and reports a false timeout
+`aiosh-core/src/pentest.rs:104-146 run_subprocess` polls `child.try_wait()` while the child's stdout/stderr pipes are **never drained**; a child that writes more than the OS pipe buffer (~64 KiB — routine for verbose scans) blocks on write, the parent spins until the deadline, kills it, and returns `timeout after Ns` with **empty stdout** — the scan's output is silently lost and the caller sees a timeout instead of results. The unit tests only exercise small outputs, so CI cannot catch it. **CWE-1109/400.** *Fix:* drain pipes on a thread (or `wait_with_output` with a watchdog) before polling.
+
+## Verified clean this pass
+* `restore_backup` zip-slip guard (`enclosed_name`) and the empty-target-dir requirement both hold under a hostile archive (C-6 probe).
+* `pentest.rs` gate ordering and audit provenance (full classifier fields on every row, including refusals) match the documented ADR-0035 §D-4 contract.
+* `tools/check_security_policy.py`, `ci_config.py`: no security-relevant defects found (pure text/config checkers with validated env parsing).
+* Rust CLI top-level dispatch (`main.rs:194-217`) never panics on non-UTF-8 argv (lossy conversion, T-00038).
+
+## Disproven / downgraded this pass
+**None.** All five probed claims (C-6, C-7, N-1, N-3, N-6) reproduced. Two refinements, recorded above and in the index: C-6's extraction is zip-slip-safe (the H-3 cumulative-bounds concern remains the open issue), and N-1's POSIX-mode-widening half is untestable on this host and stays STATIC.
+
+## Coverage note for this pass
+Read line-by-line: `pentest.rs` (597), `train_slm.py` (210), `train_unsloth.py` (134), `evaluate_slm.py` (190), `generate_dataset.py` (generator/verifier/entry + pattern sweep over the template bulk), `check_security_policy.py` (79), `ci_config.py` (64). Pattern-swept only: `generate_master_tasks.py`, `check_task_docs.py`, `ci_suites.py`, all `tools/test_*.py`. Previously read (passes 1–5): every `aiosh_mcp/*.py`, `cli.ts`, `task_ledger.py`, `ci_run.py`, `ci_service.py`, `check_evidence.py`. The named reading backlog from the fifth pass is now clear; the remaining never-line-read surface is the long tail of `aiosh-core/src/*_service.rs` bodies beyond what passes 1–4 covered.
+
+---
+
+## 9. Post-Audit Addendum: Batch T-01797 through T-01806 Verification
+
+**Date:** 2026-09-20  
+**Scope:** Batch `T-01797` through `T-01806` (Hardware Detection Recovery & Validation Sub-Epic 10 Closure / Milestone Closure & Network Bootstrap Data Model Sub-Epic 1).  
+**Auditor:** Antigravity Autonomous Agent  
+**Verdict:** **PASS (Zero vulnerabilities)**
+
+### 1. Hardened Surface & Key Controls
+- **Hardware Recovery & Validation Closure (T-01797..T-01800)**:
+  - Security review evaluated threat scenarios THREAT-HVAL-01..05 (path traversal, symlink hijacking, corrupted store persistence, integer overflow, drift desynchronization).
+  - Hardened `hardware_recovery.rs` with `validate_store_path` (rejection of `..`, control characters, non-json files) and atomic process-isolated write/rename (`<path>.tmp.<pid>`).
+  - Authored Section 16 in `docs/hardware_detection.md` detailing architecture, operational procedures, error codes, and validation invariants.
+  - Formally closed Sub-Epic 10 and the entire Hardware Detection Epic (`T-01701..T-01800`) with 7/7 Rust unit tests and 5/5 Python integration smoke tests passing.
+- **Network Bootstrap Data Model (T-01801..T-01806)**:
+  - Formally specified and implemented `IpAddress`, `NetworkInterface`, `Route`, `DnsConfig`, and `NetworkState` in `code/aiosh-rust/aiosh-core/src/network.rs`.
+  - Enforced invariants `NET1..NET6`:
+    - `NET1`: Interface name validation ($\le 15$ characters matching Linux `IFNAMSIZ - 1`, regex `^[a-zA-Z0-9_.-]+$`, non-empty, path traversal / null character rejection).
+    - `NET2`: MAC address format validation (6 colon-delimited hex octets or empty/None).
+    - `NET3`: IP address prefix bounds and family validation (IPv4 $\le 32$, IPv6 $\le 128$).
+    - `NET4`: MTU bounded in range $[68, 65535]$.
+    - `NET5`: Route validity (non-empty destination CIDR, non-negative metric, presence of gateway or interface).
+    - `NET6`: Deterministic ordering (interfaces alphabetically by name, routes by metric then destination) and JSON schema roundtrip parity.
+- **Test Verification**:
+  - `aiosh-core`: 7/7 recovery unit tests in `test_hardware_recovery.rs` passed in 0.06s.
+  - `aiosh-core`: 6/6 network unit tests in `test_network.rs` passed in 0.01s.
+  - `aiosh-cli`: 5/5 recovery smoke tests in `test_hardware_recovery_smoke.py` passed in 0.18s.
+  - `aiosh-cli`: 6/6 network smoke tests in `test_network_smoke.py` passed in 0.20s.
+  - Zero compiler warnings or lint errors across Rust and Python suites.
+
 
 
 

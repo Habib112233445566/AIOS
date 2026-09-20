@@ -187,3 +187,31 @@ fn test_hardware_service_validate_and_recover_store() {
     let check_healed = service.validate_store(&store_path, false).expect("validate healed");
     assert!(check_healed.healthy);
 }
+
+#[test]
+fn test_hval_hardening() {
+    let dir = tempdir().expect("tempdir");
+
+    // 1. Path traversal rejected
+    let traversal_path = dir.path().join("../evil.json");
+    let rep = check_inventory_file(&traversal_path, false).expect("check traversal");
+    assert!(!rep.healthy);
+    assert!(rep.errors.iter().any(|e| e.contains("parent directory traversal")));
+
+    let rec_err = recover_inventory_file(&traversal_path, None);
+    assert!(rec_err.is_err());
+    assert!(rec_err.unwrap_err().contains("parent directory traversal"));
+
+    // 2. Control characters rejected
+    let ctrl_path = dir.path().join("evil\x00store.json");
+    let rep_ctrl = check_inventory_file(&ctrl_path, false).expect("check ctrl");
+    assert!(!rep_ctrl.healthy);
+    assert!(rep_ctrl.errors.iter().any(|e| e.contains("control characters")));
+
+    // 3. Non-json extension rejected
+    let txt_path = dir.path().join("hardware.txt");
+    let rep_txt = check_inventory_file(&txt_path, false).expect("check txt");
+    assert!(!rep_txt.healthy);
+    assert!(rep_txt.errors.iter().any(|e| e.contains(".json")));
+}
+

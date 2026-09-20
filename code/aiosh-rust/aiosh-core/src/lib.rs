@@ -72,6 +72,7 @@ pub mod kernel_module_recovery;
 pub mod kernel_module_service;
 pub mod ledger;
 pub mod ledger_config;
+pub mod network;
 pub mod package;
 pub mod package_config;
 pub mod package_observability;
@@ -175,6 +176,12 @@ pub use hardware_recovery::{
     HardwareRecoveryAction, HardwareRecoveryReport, HardwareValidationReport,
 };
 pub use hardware_service::{HardwareScanOptions, HardwareService};
+pub use network::{
+    validate_interface_name, validate_ip_address, validate_mac_address, validate_mtu,
+    validate_network_interface, validate_network_state, validate_route, DnsConfig, InterfaceType,
+    IpAddress, IpFamily, NetworkInterface, NetworkState, OperState, Route, MAX_IFACE_NAME_LEN,
+    MAX_INTERFACES, MAX_MTU, MAX_ROUTES, MIN_MTU,
+};
 pub use types::GENESIS_HASH;
 
 

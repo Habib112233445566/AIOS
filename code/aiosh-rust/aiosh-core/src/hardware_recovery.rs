@@ -16,6 +16,36 @@ use crate::hardware::{
 /// Maximum permissible size for a hardware store/inventory file on disk (10 MB).
 pub const MAX_STORE_FILE_SIZE: u64 = 10 * 1024 * 1024;
 
+/// Validates that a store path is safe, bounded, free from directory traversal, and ends with .json.
+pub fn validate_store_path(path: &Path) -> Result<(), String> {
+    let path_str = path.to_string_lossy();
+    if path_str.trim().is_empty() {
+        return Err("store path cannot be empty".into());
+    }
+    if path_str.len() > 1024 {
+        return Err(format!(
+            "store path exceeds maximum permitted length of 1024 characters (got {})",
+            path_str.len()
+        ));
+    }
+    if path_str.chars().any(|c| c.is_control()) {
+        return Err("store path contains control characters".into());
+    }
+
+    // Check for directory traversal in path components
+    for comp in path.components() {
+        if let std::path::Component::ParentDir = comp {
+            return Err("store path must not contain parent directory traversal ('..')".into());
+        }
+    }
+
+    // Must have .json extension
+    match path.extension().and_then(|ext| ext.to_str()) {
+        Some(ext) if ext.eq_ignore_ascii_case("json") => Ok(()),
+        _ => Err("store path must have a '.json' extension".into()),
+    }
+}
+
 /// Validation report detailing the integrity of a hardware inventory or store file.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct HardwareValidationReport {
@@ -194,6 +224,21 @@ pub fn validate_inventory(
 
 /// Checks an existing hardware inventory file on disk in read-only mode.
 pub fn check_inventory_file(path: &Path, check_paths: bool) -> Result<HardwareValidationReport, String> {
+    if let Err(e) = validate_store_path(path) {
+        return Ok(HardwareValidationReport {
+            store_path: path.to_string_lossy().to_string(),
+            total_devices: 0,
+            valid_devices: 0,
+            invalid_devices: 0,
+            stale_paths: Vec::new(),
+            drift_detected: false,
+            summary_mismatches: Vec::new(),
+            errors: vec![e],
+            healthy: false,
+            evaluated_at: Utc::now().to_rfc3339(),
+        });
+    }
+
     if !path.exists() {
         return Ok(HardwareValidationReport {
             store_path: path.to_string_lossy().to_string(),
@@ -342,6 +387,8 @@ pub fn recover_inventory_file(
     path: &Path,
     sysfs_path: Option<&Path>,
 ) -> Result<HardwareRecoveryReport, String> {
+    validate_store_path(path)?;
+
     let initial_validation = check_inventory_file(path, false)?;
     let mut actions_taken = Vec::new();
     let mut backup_path = None;
@@ -425,8 +472,11 @@ pub fn recover_inventory_file(
 
     let json_bytes = serde_json::to_string_pretty(&final_inv)
         .map_err(|e| format!("failed to serialize recovered inventory: {}", e))?;
-    fs::write(path, json_bytes)
-        .map_err(|e| format!("failed to write recovered inventory: {}", e))?;
+    let tmp_path = path.with_extension(format!("tmp.{}", std::process::id()));
+    fs::write(&tmp_path, json_bytes)
+        .map_err(|e| format!("failed to write recovered inventory temp file: {}", e))?;
+    fs::rename(&tmp_path, path)
+        .map_err(|e| format!("failed to atomically replace recovered inventory: {}", e))?;
 
     let final_validation = check_inventory_file(path, false)?;
 
