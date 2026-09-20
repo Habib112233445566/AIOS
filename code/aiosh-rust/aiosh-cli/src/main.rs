@@ -216,8 +216,9 @@ fn main() {
         Some("layout") | Some("fs-layout") => cmd_fs_layout(&args[1..]),
         Some("mod") | Some("module") => cmd_kernel_module(&args[1..]),
         Some("hw") | Some("hardware") => cmd_hardware(&args[1..]),
+        Some("net") | Some("network") => cmd_network(&args[1..]),
         Some("--help") | Some("-h") | None => {
-            println!("aiosh — AIOS shell CLI (Rust)\n\nUsage: aiosh <status|run|agent|audit|grant|pentest|classify|task|ci|release|backup|toolchain|doc|evidence|repo|secrets|triage|handoff|distro|image|package|service|session|layout|mod|hw> ...\n\n  aiosh task <status|done|block|unblock|skip|rebuild|check>  Task ledger control\n  aiosh ci <show|failures|check|config|metrics> [--file PATH]  CI smoke reports\n  aiosh release generate  Create bootable ISO\n  aiosh backup create  Create system snapshot zip\n  aiosh toolchain check [--config <path>]  Verify host environment against ToolchainManifest\n  aiosh toolchain show [--config <path>]   Display the resolved ToolchainManifest\n  aiosh doc <show|check|search>  Documentation Index Control\n  aiosh evidence <verify|hash|scan>   Evidence & Audit Trail Control\n  aiosh repo <health|check>  Repository Health Diagnostics\n  aiosh secrets <scan|check> [--config <path>]  Secrets & Access Hygiene Scanner\n  aiosh triage <list|show|record|resolve|ingest|check>  Regression Triage Manager\n  aiosh handoff <list|show|initiate|accept|reject|complete|cancel>  Agent Handoff Protocol Manager\n  aiosh distro <list|show|evaluate|recommend|policy|stats|check>  Linux Distro Selection & Justification Manager\n  aiosh image <list|show|plan|filter>  Linux Base Image Build & Packaging Manager\n  aiosh package <list|show|search|plan|apply|validate>  Linux Package Management & Store Control\n  aiosh service <validate|list|show|status|action|start|stop|restart|reload|order>  Init & Service Supervision Control\n  aiosh session <validate|list|show|status|create|action|activate|lock|unlock|terminate|config>  User Session Bootstrap Control\n  aiosh layout <list|show|validate|check|probe|diff|fstab|register|set-active|remove|import-fstab>  Filesystem Layout & Target Partitioning Manager\n  aiosh mod <list|show|blacklist|unblacklist|options|autoload|unautoload|preset|export>  Kernel Module Management\n  aiosh hw <scan|list|show|summary|verify>  Hardware Detection & Inventory Control");
+            println!("aiosh — AIOS shell CLI (Rust)\n\nUsage: aiosh <status|run|agent|audit|grant|pentest|classify|task|ci|release|backup|toolchain|doc|evidence|repo|secrets|triage|handoff|distro|image|package|service|session|layout|mod|hw|net> ...\n\n  aiosh task <status|done|block|unblock|skip|rebuild|check>  Task ledger control\n  aiosh ci <show|failures|check|config|metrics> [--file PATH]  CI smoke reports\n  aiosh release generate  Create bootable ISO\n  aiosh backup create  Create system snapshot zip\n  aiosh toolchain check [--config <path>]  Verify host environment against ToolchainManifest\n  aiosh toolchain show [--config <path>]   Display the resolved ToolchainManifest\n  aiosh doc <show|check|search>  Documentation Index Control\n  aiosh evidence <verify|hash|scan>   Evidence & Audit Trail Control\n  aiosh repo <health|check>  Repository Health Diagnostics\n  aiosh secrets <scan|check> [--config <path>]  Secrets & Access Hygiene Scanner\n  aiosh triage <list|show|record|resolve|ingest|check>  Regression Triage Manager\n  aiosh handoff <list|show|initiate|accept|reject|complete|cancel>  Agent Handoff Protocol Manager\n  aiosh distro <list|show|evaluate|recommend|policy|stats|check>  Linux Distro Selection & Justification Manager\n  aiosh image <list|show|plan|filter>  Linux Base Image Build & Packaging Manager\n  aiosh package <list|show|search|plan|apply|validate>  Linux Package Management & Store Control\n  aiosh service <validate|list|show|status|action|start|stop|restart|reload|order>  Init & Service Supervision Control\n  aiosh session <validate|list|show|status|create|action|activate|lock|unlock|terminate|config>  User Session Bootstrap Control\n  aiosh layout <list|show|validate|check|probe|diff|fstab|register|set-active|remove|import-fstab>  Filesystem Layout & Target Partitioning Manager\n  aiosh mod <list|show|blacklist|unblacklist|options|autoload|unautoload|preset|export>  Kernel Module Management\n  aiosh hw <scan|list|show|summary|verify>  Hardware Detection & Inventory Control\n  aiosh net <list|show|routes|dns|state|up|down>  Network Bootstrap & Interface Control");
             0
         }
         Some(other) => {
@@ -11341,7 +11342,478 @@ fn cmd_hardware(args: &[String]) -> i32 {
     }
 }
 
+fn cmd_network(args: &[String]) -> i32 {
+    use aiosh_core::network::validate_interface_name;
+    use aiosh_core::network_service::NetworkService;
+
+    let mut ctx = open_context();
+    let sub = args.first().map(|s| s.as_str());
+    let rest = if args.len() > 1 { &args[1..] } else { &[] };
+    let is_json = has_flag(rest, "--json");
+
+    // Path hygiene checks
+    let sysfs_opt = parse_flag(rest, "--sysfs");
+    if let Some(ref p) = sysfs_opt {
+        if p.len() > 1024 {
+            let msg = "sysfs path cannot exceed 1024 characters";
+            classify_and_emit(
+                &mut ctx, "network", sub.unwrap_or("unknown"), json!({ "error": msg }),
+                "failure", None, Some(msg), "operator", None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "PATH_TOO_LONG", "message": msg } }));
+            } else {
+                eprintln!("{}", sanitize_terminal(msg));
+            }
+            return 2;
+        }
+        if p.chars().any(|c| c.is_control()) {
+            let msg = "sysfs path cannot contain control characters";
+            classify_and_emit(
+                &mut ctx, "network", sub.unwrap_or("unknown"), json!({ "error": msg }),
+                "failure", None, Some(msg), "operator", None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "PATH_CONTAINS_CONTROL_CHAR", "message": msg } }));
+            } else {
+                eprintln!("{}", sanitize_terminal(msg));
+            }
+            return 2;
+        }
+    }
+
+    let procfs_opt = parse_flag(rest, "--procfs");
+    if let Some(ref p) = procfs_opt {
+        if p.len() > 1024 {
+            let msg = "procfs path cannot exceed 1024 characters";
+            classify_and_emit(
+                &mut ctx, "network", sub.unwrap_or("unknown"), json!({ "error": msg }),
+                "failure", None, Some(msg), "operator", None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "PATH_TOO_LONG", "message": msg } }));
+            } else {
+                eprintln!("{}", sanitize_terminal(msg));
+            }
+            return 2;
+        }
+        if p.chars().any(|c| c.is_control()) {
+            let msg = "procfs path cannot contain control characters";
+            classify_and_emit(
+                &mut ctx, "network", sub.unwrap_or("unknown"), json!({ "error": msg }),
+                "failure", None, Some(msg), "operator", None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "PATH_CONTAINS_CONTROL_CHAR", "message": msg } }));
+            } else {
+                eprintln!("{}", sanitize_terminal(msg));
+            }
+            return 2;
+        }
+    }
+
+    let resolv_opt = parse_flag(rest, "--resolv");
+    if let Some(ref p) = resolv_opt {
+        if p.len() > 1024 {
+            let msg = "resolv path cannot exceed 1024 characters";
+            classify_and_emit(
+                &mut ctx, "network", sub.unwrap_or("unknown"), json!({ "error": msg }),
+                "failure", None, Some(msg), "operator", None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "PATH_TOO_LONG", "message": msg } }));
+            } else {
+                eprintln!("{}", sanitize_terminal(msg));
+            }
+            return 2;
+        }
+        if p.chars().any(|c| c.is_control()) {
+            let msg = "resolv path cannot contain control characters";
+            classify_and_emit(
+                &mut ctx, "network", sub.unwrap_or("unknown"), json!({ "error": msg }),
+                "failure", None, Some(msg), "operator", None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "PATH_CONTAINS_CONTROL_CHAR", "message": msg } }));
+            } else {
+                eprintln!("{}", sanitize_terminal(msg));
+            }
+            return 2;
+        }
+    }
+
+    let sysfs_path = sysfs_opt.unwrap_or_else(|| "/sys/class/net".to_string());
+    let procfs_path = procfs_opt.unwrap_or_else(|| "/proc/net".to_string());
+    let resolv_path = resolv_opt.unwrap_or_else(|| "/etc/resolv.conf".to_string());
+
+    let service = NetworkService::with_paths(sysfs_path, procfs_path, resolv_path);
+
+    match sub {
+        Some("list") => {
+            match service.scan_interfaces() {
+                Ok(ifaces) => {
+                    let count = ifaces.len();
+                    classify_and_emit(
+                        &mut ctx, "network", "list", json!({ "count": count }),
+                        "success", None, Some("Listed network interfaces"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 0, "data": { "interfaces": ifaces, "count": count }, "error": serde_json::Value::Null }));
+                    } else {
+                        println!("Network Interfaces ({} discovered):", count);
+                        for i in ifaces {
+                            println!(
+                                "  {:10} {:10} {:8} MTU:{:5} MAC:{}",
+                                sanitize_terminal(&i.name),
+                                i.iftype.as_str(),
+                                i.operstate.as_str(),
+                                i.mtu,
+                                i.mac_address.as_deref().unwrap_or("none")
+                            );
+                        }
+                    }
+                    0
+                }
+                Err(e) => {
+                    let msg = format!("failed to list network interfaces: {}", e);
+                    classify_and_emit(
+                        &mut ctx, "network", "list", json!({ "error": &msg }),
+                        "failure", None, Some("List failed"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "LIST_FAILED", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    1
+                }
+            }
+        }
+        Some("show") => {
+            let target_name = rest.iter().find(|arg| !arg.starts_with('-')).map(|s| s.as_str());
+            let name = match target_name {
+                Some(n) if !n.trim().is_empty() => n.trim(),
+                _ => {
+                    let msg = "interface name is required for 'show'";
+                    classify_and_emit(
+                        &mut ctx, "network", "show", json!({ "error": msg }),
+                        "failure", None, Some(msg), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_INTERFACE_NAME", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(msg));
+                    }
+                    return 2;
+                }
+            };
+
+            if let Err(e) = validate_interface_name(name) {
+                let msg = format!("invalid interface name '{}': {}", name, e);
+                classify_and_emit(
+                    &mut ctx, "network", "show", json!({ "error": &msg }),
+                    "failure", Some(name), Some("Invalid interface name"), "operator", None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_INTERFACE_NAME", "message": msg } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(&msg));
+                }
+                return 2;
+            }
+
+            match service.get_interface(name) {
+                Ok(Some(iface)) => {
+                    classify_and_emit(
+                        &mut ctx, "network", "show", json!({ "interface": &iface }),
+                        "success", Some(name), Some("Show interface"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 0, "data": { "interface": iface }, "error": serde_json::Value::Null }));
+                    } else {
+                        println!("Interface: {}", sanitize_terminal(&iface.name));
+                        println!("  Type:      {}", iface.iftype.as_str());
+                        println!("  State:     {}", iface.operstate.as_str());
+                        println!("  MAC:       {}", iface.mac_address.as_deref().unwrap_or("none"));
+                        println!("  MTU:       {}", iface.mtu);
+                        println!("  Flags:     {}", iface.flags.join(", "));
+                    }
+                    0
+                }
+                Ok(None) => {
+                    let msg = format!("interface '{}' not found", name);
+                    classify_and_emit(
+                        &mut ctx, "network", "show", json!({ "error": &msg }),
+                        "failure", Some(name), Some("Interface not found"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "INTERFACE_NOT_FOUND", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    1
+                }
+                Err(e) => {
+                    let msg = format!("failed to show interface '{}': {}", name, e);
+                    classify_and_emit(
+                        &mut ctx, "network", "show", json!({ "error": &msg }),
+                        "failure", Some(name), Some("Show failed"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "SHOW_FAILED", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    1
+                }
+            }
+        }
+        Some("routes") => {
+            match service.scan_routes() {
+                Ok(routes) => {
+                    let count = routes.len();
+                    classify_and_emit(
+                        &mut ctx, "network", "routes", json!({ "count": count }),
+                        "success", None, Some("Listed routes"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 0, "data": { "routes": routes, "count": count }, "error": serde_json::Value::Null }));
+                    } else {
+                        println!("Routing Table ({} routes):", count);
+                        for r in routes {
+                            println!(
+                                "  {:18} via {:15} dev {:8} metric {}",
+                                sanitize_terminal(&r.destination),
+                                r.gateway.as_deref().unwrap_or("direct"),
+                                r.interface.as_deref().unwrap_or("none"),
+                                r.metric
+                            );
+                        }
+                    }
+                    0
+                }
+                Err(e) => {
+                    let msg = format!("failed to scan routes: {}", e);
+                    classify_and_emit(
+                        &mut ctx, "network", "routes", json!({ "error": &msg }),
+                        "failure", None, Some("Routes scan failed"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "ROUTES_FAILED", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    1
+                }
+            }
+        }
+        Some("dns") => {
+            match service.get_dns_config() {
+                Ok(dns) => {
+                    classify_and_emit(
+                        &mut ctx, "network", "dns", json!({ "dns": &dns }),
+                        "success", None, Some("Queried DNS config"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 0, "data": { "dns": dns }, "error": serde_json::Value::Null }));
+                    } else {
+                        println!("DNS Configuration:");
+                        println!("  Nameservers:    {}", if dns.nameservers.is_empty() { "none".into() } else { dns.nameservers.join(", ") });
+                        println!("  Search Domains: {}", if dns.search_domains.is_empty() { "none".into() } else { dns.search_domains.join(", ") });
+                    }
+                    0
+                }
+                Err(e) => {
+                    let msg = format!("failed to get DNS config: {}", e);
+                    classify_and_emit(
+                        &mut ctx, "network", "dns", json!({ "error": &msg }),
+                        "failure", None, Some("DNS query failed"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "DNS_FAILED", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    1
+                }
+            }
+        }
+        Some("state") => {
+            match service.get_network_state() {
+                Ok(state) => {
+                    classify_and_emit(
+                        &mut ctx, "network", "state", json!({ "hostname": &state.hostname }),
+                        "success", None, Some("Retrieved network state"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 0, "data": { "state": state }, "error": serde_json::Value::Null }));
+                    } else {
+                        println!("Network State (Host: {}):", sanitize_terminal(&state.hostname));
+                        println!("  Interfaces: {}", state.interfaces.len());
+                        println!("  Routes:     {}", state.routes.len());
+                        println!("  DNS:        {} servers", state.dns.nameservers.len());
+                    }
+                    0
+                }
+                Err(e) => {
+                    let msg = format!("failed to get network state: {}", e);
+                    classify_and_emit(
+                        &mut ctx, "network", "state", json!({ "error": &msg }),
+                        "failure", None, Some("Network state failed"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "STATE_FAILED", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    1
+                }
+            }
+        }
+        Some("up") => {
+            let target_name = rest.iter().find(|arg| !arg.starts_with('-')).map(|s| s.as_str());
+            let name = match target_name {
+                Some(n) if !n.trim().is_empty() => n.trim(),
+                _ => {
+                    let msg = "interface name is required for 'up'";
+                    classify_and_emit(
+                        &mut ctx, "network", "up", json!({ "error": msg }),
+                        "failure", None, Some(msg), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_INTERFACE_NAME", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(msg));
+                    }
+                    return 2;
+                }
+            };
+
+            if let Err(e) = validate_interface_name(name) {
+                let msg = format!("invalid interface name '{}': {}", name, e);
+                classify_and_emit(
+                    &mut ctx, "network", "up", json!({ "error": &msg }),
+                    "failure", Some(name), Some("Invalid interface name"), "operator", None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_INTERFACE_NAME", "message": msg } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(&msg));
+                }
+                return 2;
+            }
+
+            match service.bring_up(name) {
+                Ok(()) => {
+                    classify_and_emit(
+                        &mut ctx, "network", "up", json!({ "interface": name }),
+                        "success", Some(name), Some("Brought interface up"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 0, "data": { "interface": name, "status": "up" }, "error": serde_json::Value::Null }));
+                    } else {
+                        println!("Interface '{}' brought up", sanitize_terminal(name));
+                    }
+                    0
+                }
+                Err(e) => {
+                    let msg = format!("failed to bring up interface '{}': {}", name, e);
+                    classify_and_emit(
+                        &mut ctx, "network", "up", json!({ "error": &msg }),
+                        "failure", Some(name), Some("Bring up failed"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "OPERATION_FAILED", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    1
+                }
+            }
+        }
+        Some("down") => {
+            let target_name = rest.iter().find(|arg| !arg.starts_with('-')).map(|s| s.as_str());
+            let name = match target_name {
+                Some(n) if !n.trim().is_empty() => n.trim(),
+                _ => {
+                    let msg = "interface name is required for 'down'";
+                    classify_and_emit(
+                        &mut ctx, "network", "down", json!({ "error": msg }),
+                        "failure", None, Some(msg), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_INTERFACE_NAME", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(msg));
+                    }
+                    return 2;
+                }
+            };
+
+            if let Err(e) = validate_interface_name(name) {
+                let msg = format!("invalid interface name '{}': {}", name, e);
+                classify_and_emit(
+                    &mut ctx, "network", "down", json!({ "error": &msg }),
+                    "failure", Some(name), Some("Invalid interface name"), "operator", None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_INTERFACE_NAME", "message": msg } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(&msg));
+                }
+                return 2;
+            }
+
+            match service.bring_down(name) {
+                Ok(()) => {
+                    classify_and_emit(
+                        &mut ctx, "network", "down", json!({ "interface": name }),
+                        "success", Some(name), Some("Brought interface down"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 0, "data": { "interface": name, "status": "down" }, "error": serde_json::Value::Null }));
+                    } else {
+                        println!("Interface '{}' brought down", sanitize_terminal(name));
+                    }
+                    0
+                }
+                Err(e) => {
+                    let msg = format!("failed to bring down interface '{}': {}", name, e);
+                    classify_and_emit(
+                        &mut ctx, "network", "down", json!({ "error": &msg }),
+                        "failure", Some(name), Some("Bring down failed"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "OPERATION_FAILED", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    1
+                }
+            }
+        }
+        Some("--help") | Some("-h") | None => {
+            println!("Usage: aiosh net <list|show|routes|dns|state|up|down> [OPTIONS]\n\nSubcommands:\n  list     List discovered network interfaces\n  show     Show details for a specific interface\n  routes   Display IPv4 routing table\n  dns      Display DNS nameservers and search domains\n  state    Output complete host network state snapshot\n  up       Bring interface up\n  down     Bring interface down\n\nOptions:\n  --sysfs <path>   Custom sysfs root path\n  --procfs <path>  Custom procfs root path\n  --resolv <path>  Custom resolv.conf file path\n  --json           Output standard JSON envelope");
+            0
+        }
+        Some(other) => {
+            let msg = format!("unknown network subcommand: {}", other);
+            classify_and_emit(
+                &mut ctx, "network", other, json!({ "error": &msg }),
+                "failure", None, Some("Unknown subcommand"), "operator", None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "UNKNOWN_SUBCOMMAND", "message": msg } }));
+            } else {
+                eprintln!("{}", sanitize_terminal(&msg));
+            }
+            2
+        }
+    }
+}
+
 #[cfg(test)]
+
 mod task_cli_tests {
     use super::*;
     use aiosh_core::task_service::TaskAction;
@@ -12962,4 +13434,106 @@ mod task_cli_tests {
         let _ = std::fs::remove_dir_all(&tmp_dir);
     }
 }
+
+#[cfg(test)]
+mod network_cli_tests {
+    use super::*;
+
+    fn s(v: &[&str]) -> Vec<String> {
+        v.iter().map(|x| x.to_string()).collect()
+    }
+
+    #[test]
+    fn test_network_cli_help_and_subcommands() {
+        assert_eq!(cmd_network(&[]), 0);
+        assert_eq!(cmd_network(&s(&["--help"])), 0);
+        assert_eq!(cmd_network(&s(&["-h"])), 0);
+        assert_eq!(cmd_network(&s(&["unknown_cmd"])), 2);
+        assert_eq!(cmd_network(&s(&["unknown_cmd", "--json"])), 2);
+    }
+
+    #[test]
+    fn test_network_cli_path_hygiene() {
+        let long_path = "a/".repeat(600);
+        assert_eq!(cmd_network(&s(&["list", "--sysfs", &long_path])), 2);
+        assert_eq!(cmd_network(&s(&["list", "--procfs", &long_path])), 2);
+        assert_eq!(cmd_network(&s(&["list", "--resolv", &long_path])), 2);
+        assert_eq!(cmd_network(&s(&["list", "--sysfs", &long_path, "--json"])), 2);
+
+        assert_eq!(cmd_network(&s(&["list", "--sysfs", "path\nwith\ncontrol"])), 2);
+        assert_eq!(cmd_network(&s(&["list", "--procfs", "path\twith\tcontrol"])), 2);
+        assert_eq!(cmd_network(&s(&["list", "--resolv", "path\0with\0control"])), 2);
+    }
+
+    #[test]
+    fn test_network_cli_arg_validation() {
+        // show missing or invalid
+        assert_eq!(cmd_network(&s(&["show"])), 2);
+        assert_eq!(cmd_network(&s(&["show", "--json"])), 2);
+        assert_eq!(cmd_network(&s(&["show", "eth0;bad"])), 2);
+        assert_eq!(cmd_network(&s(&["show", "toolonginterfacename12345"])), 2);
+
+        // up missing or invalid
+        assert_eq!(cmd_network(&s(&["up"])), 2);
+        assert_eq!(cmd_network(&s(&["up", "eth0;bad"])), 2);
+
+        // down missing or invalid
+        assert_eq!(cmd_network(&s(&["down"])), 2);
+        assert_eq!(cmd_network(&s(&["down", "eth0;bad"])), 2);
+    }
+
+    #[test]
+    fn test_network_cli_with_mock_fs() {
+        let tmp_dir = std::env::temp_dir().join(format!("aiosh_net_cli_test_{}", std::process::id()));
+        let sysfs_net = tmp_dir.join("sys").join("class").join("net");
+        let procfs_net = tmp_dir.join("proc").join("net");
+        let resolv_file = tmp_dir.join("etc").join("resolv.conf");
+
+        let eth0 = sysfs_net.join("eth0");
+        std::fs::create_dir_all(&eth0).unwrap();
+        std::fs::create_dir_all(&procfs_net).unwrap();
+        std::fs::create_dir_all(resolv_file.parent().unwrap()).unwrap();
+
+        std::fs::write(eth0.join("operstate"), "up\n").unwrap();
+        std::fs::write(eth0.join("type"), "1\n").unwrap();
+        std::fs::write(eth0.join("address"), "02:42:ac:11:00:02\n").unwrap();
+        std::fs::write(eth0.join("mtu"), "1500\n").unwrap();
+        std::fs::write(eth0.join("flags"), "0x1003\n").unwrap();
+
+        let route_content = "Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU\tWindow\tIRTT\neth0\t00000000\t010011AC\t0003\t0\t0\t100\t00000000\t0\t0\t0\n";
+        std::fs::write(procfs_net.join("route"), route_content).unwrap();
+
+        let resolv_content = "nameserver 1.1.1.1\nnameserver 8.8.8.8\nsearch localdomain\n";
+        std::fs::write(&resolv_file, resolv_content).unwrap();
+
+        let sysfs_str = sysfs_net.to_string_lossy().to_string();
+        let procfs_str = procfs_net.to_string_lossy().to_string();
+        let resolv_str = resolv_file.to_string_lossy().to_string();
+
+        // 1. list
+        assert_eq!(cmd_network(&s(&["list", "--sysfs", &sysfs_str])), 0);
+        assert_eq!(cmd_network(&s(&["list", "--sysfs", &sysfs_str, "--json"])), 0);
+
+        // 2. show
+        assert_eq!(cmd_network(&s(&["show", "eth0", "--sysfs", &sysfs_str])), 0);
+        assert_eq!(cmd_network(&s(&["show", "eth0", "--sysfs", &sysfs_str, "--json"])), 0);
+        assert_eq!(cmd_network(&s(&["show", "nonexistent", "--sysfs", &sysfs_str])), 1);
+        assert_eq!(cmd_network(&s(&["show", "nonexistent", "--sysfs", &sysfs_str, "--json"])), 1);
+
+        // 3. routes
+        assert_eq!(cmd_network(&s(&["routes", "--procfs", &procfs_str])), 0);
+        assert_eq!(cmd_network(&s(&["routes", "--procfs", &procfs_str, "--json"])), 0);
+
+        // 4. dns
+        assert_eq!(cmd_network(&s(&["dns", "--resolv", &resolv_str])), 0);
+        assert_eq!(cmd_network(&s(&["dns", "--resolv", &resolv_str, "--json"])), 0);
+
+        // 5. state
+        assert_eq!(cmd_network(&s(&["state", "--sysfs", &sysfs_str, "--procfs", &procfs_str, "--resolv", &resolv_str])), 0);
+        assert_eq!(cmd_network(&s(&["state", "--sysfs", &sysfs_str, "--procfs", &procfs_str, "--resolv", &resolv_str, "--json"])), 0);
+
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+    }
+}
+
 

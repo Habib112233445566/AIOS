@@ -1296,6 +1296,34 @@ Read line-by-line: `pentest.rs` (597), `train_slm.py` (210), `train_unsloth.py` 
   - `aiosh-cli`: 6/6 network service smoke tests in `test_network_service_smoke.py` passed in 0.26s.
   - Zero compiler warnings or lint errors across Rust and Python suites.
 
+---
+
+## 11. Post-Audit Addendum: Batch T-01817 through T-01826 Verification
+
+**Date:** 2026-09-20  
+**Scope:** Batch `T-01817` through `T-01826` (Network Bootstrap Core Service Sub-Epic 2 Closure & CLI Surface Sub-Epic 3).  
+**Auditor:** Antigravity Autonomous Agent  
+**Verdict:** **PASS (Zero vulnerabilities)**
+
+### 1. Hardened Surface & Key Controls
+- **Network Bootstrap Core Service Closure (T-01817..T-01820)**:
+  - Security review evaluated threat vectors `THREAT-NSERV-01..05` (sysfs traversal, unbounded file reads, route hex decoding injection, resolv.conf injection, link mutation race conditions).
+  - Hardened `NetworkService` in `code/aiosh-rust/aiosh-core/src/network_service.rs` with `read_bounded_string` with `std::io::Read::take(max_bytes)` (`MAX_SYSFS_FILE_BYTES` = 64 KB, `MAX_ROUTE_FILE_BYTES` = 1 MB, `MAX_RESOLV_FILE_BYTES` = 64 KB).
+  - Authored Section 5 in `docs/network_bootstrap.md` detailing architecture, sysfs/procfs contracts, and invariants.
+  - Formally closed Sub-Epic 2 with 7/7 Rust unit tests and 6/6 Python integration smoke tests passing.
+- **Network Bootstrap CLI Surface (T-01821..T-01826)**:
+  - Researched CLI UX, subcommands (`list`, `show`, `routes`, `dns`, `state`, `up`, `down`), error envelopes, and invariants `NCLI1..NCLI6`.
+  - Formally specified CLI command grammar, exit codes (0, 1, 2), and JSON error codes (`UNKNOWN_SUBCOMMAND`, `PATH_TOO_LONG`, `PATH_CONTAINS_CONTROL_CHAR`, `MISSING_INTERFACE_NAME`, `INVALID_INTERFACE_NAME`, `INTERFACE_NOT_FOUND`, `OPERATION_FAILED`).
+  - Scaffolded and implemented `cmd_network` in `code/aiosh-rust/aiosh-cli/src/main.rs`.
+  - Enforced path hygiene ($\le 1024$ chars, no control characters), interface name validation ($\le 15$ chars, `^[a-zA-Z0-9_.-]+$`), ANSI terminal output sanitization via `sanitize_terminal`, and PEP classification/audit logging via `classify_and_emit` on every path.
+  - Added unit test suite `network_cli_tests` to `aiosh-cli` and integration smoke test suite `code/aiosh-cli/tests/test_network_cli_smoke.py`.
+- **Test Verification**:
+  - `aiosh-core`: 7/7 network service unit tests in `test_network_service.rs` passed.
+  - `aiosh-cli`: 4/4 network CLI unit tests in `network_cli_tests` passed.
+  - `aiosh-cli`: 4/4 network CLI smoke tests in `test_network_cli_smoke.py` passed.
+  - Zero compiler warnings or lint errors across Rust and Python suites.
+
+
 
 
 

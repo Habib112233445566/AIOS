@@ -1814,3 +1814,13 @@
 {"seq":1814,"ts":"2026-09-20T04:57:29Z","event":"completed","task_id":1814,"note":"Network Bootstrap / Core Service: Implementation completed and verified with cargo check","evidence":[]}
 {"seq":1815,"ts":"2026-09-20T04:58:23Z","event":"completed","task_id":1815,"note":"Network Bootstrap / Core Service: Unit Test completed with 6 passing tests","evidence":[]}
 {"seq":1816,"ts":"2026-09-20T04:58:49Z","event":"completed","task_id":1816,"note":"Network Bootstrap / Core Service: Integration completed with 6 passing smoke tests","evidence":[]}
+{"seq":1817,"ts":"2026-09-20T05:00:26Z","event":"completed","task_id":1817,"note":"Network Bootstrap / Core Service: Security Review completed","evidence":[]}
+{"seq":1818,"ts":"2026-09-20T05:01:53Z","event":"completed","task_id":1818,"note":"Network Bootstrap / Core Service: Hardening completed with bounded reads and 7 passing unit tests","evidence":[]}
+{"seq":1819,"ts":"2026-09-20T05:02:25Z","event":"completed","task_id":1819,"note":"Network Bootstrap / Core Service: Documentation authored in docs/network_bootstrap.md Section 5","evidence":[]}
+{"seq":1820,"ts":"2026-09-20T05:02:46Z","event":"completed","task_id":1820,"note":"Network Bootstrap / Core Service: Verification completed, Sub-Epic 2 formally closed","evidence":[]}
+{"seq":1821,"ts":"2026-09-20T05:04:34Z","event":"completed","task_id":1821,"note":"Network Bootstrap / CLI Surface: Research completed with invariants NCLI1..NCLI6","evidence":[]}
+{"seq":1822,"ts":"2026-09-20T05:04:56Z","event":"completed","task_id":1822,"note":"Network Bootstrap / CLI Surface: Specification completed with subcommands and error envelopes","evidence":[]}
+{"seq":1823,"ts":"2026-09-20T05:07:10Z","event":"completed","task_id":1823,"note":"Network Bootstrap / CLI surface: Scaffold completed","evidence":[]}
+{"seq":1824,"ts":"2026-09-20T05:07:27Z","event":"completed","task_id":1824,"note":"Network Bootstrap / CLI surface: Implementation completed","evidence":[]}
+{"seq":1825,"ts":"2026-09-20T05:08:09Z","event":"completed","task_id":1825,"note":"Network Bootstrap / CLI surface: Unit Test completed","evidence":[]}
+{"seq":1826,"ts":"2026-09-20T05:09:05Z","event":"completed","task_id":1826,"note":"Network Bootstrap / CLI surface: Integration completed","evidence":[]}

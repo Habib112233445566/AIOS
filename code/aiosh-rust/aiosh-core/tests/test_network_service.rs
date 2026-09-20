@@ -220,3 +220,19 @@ eth0\t00000000\t0101A8C0\t0003\t0\t0\t100\t00000000\t0\t0\t0\n";
     assert_eq!(state.dns.nameservers[0], "1.1.1.1");
     assert!(state.validate_invariants().is_ok());
 }
+
+#[test]
+fn test_nserv_hardening_file_bounds() {
+    use aiosh_core::network_service::{read_bounded_string, MAX_SYSFS_FILE_BYTES};
+
+    let tmp = TempDir::new().expect("create temp dir");
+    let test_file = tmp.path().join("bounded.txt");
+
+    // Write 100 KB
+    let big_data = "A".repeat(100 * 1024);
+    fs::write(&test_file, big_data).expect("write big file");
+
+    // Read bounded to MAX_SYSFS_FILE_BYTES (64 KB)
+    let bounded = read_bounded_string(&test_file, MAX_SYSFS_FILE_BYTES).expect("read bounded");
+    assert_eq!(bounded.len(), MAX_SYSFS_FILE_BYTES as usize);
+}

@@ -4,6 +4,7 @@
 //! and host network state coordination.
 
 use std::fs;
+use std::io::Read;
 use std::net::Ipv4Addr;
 use std::path::{Path, PathBuf};
 
@@ -11,6 +12,24 @@ use crate::network::{
     validate_interface_name, DnsConfig, InterfaceType, NetworkInterface, NetworkState, OperState,
     Route, MAX_DNS_NAMESERVERS, MAX_DNS_SEARCH_DOMAINS, MAX_INTERFACES, MAX_ROUTES,
 };
+
+/// Maximum bytes read from a single sysfs attribute file (64 KB).
+pub const MAX_SYSFS_FILE_BYTES: u64 = 64 * 1024;
+/// Maximum bytes read from procfs routing table (1 MB).
+pub const MAX_ROUTE_FILE_BYTES: u64 = 1024 * 1024;
+/// Maximum bytes read from resolv.conf (64 KB).
+pub const MAX_RESOLV_FILE_BYTES: u64 = 64 * 1024;
+
+/// Reads a bounded UTF-8 string from a file, preventing unbounded memory reads (NSERV6).
+pub fn read_bounded_string(path: &Path, max_bytes: u64) -> Result<String, String> {
+    let file = fs::File::open(path).map_err(|e| format!("failed to open '{:?}': {}", path, e))?;
+    let mut handle = file.take(max_bytes);
+    let mut buf = String::new();
+    handle
+        .read_to_string(&mut buf)
+        .map_err(|e| format!("failed to read '{:?}': {}", path, e))?;
+    Ok(buf)
+}
 
 /// Core network management and discovery service.
 #[derive(Debug, Clone)]
@@ -128,12 +147,12 @@ impl NetworkService {
     /// Parses an interface sysfs directory with graceful fallbacks (NSERV2).
     fn parse_interface_dir(&self, dir: &Path, name: &str) -> NetworkInterface {
         // 1. Operational state
-        let operstate = fs::read_to_string(dir.join("operstate"))
+        let operstate = read_bounded_string(&dir.join("operstate"), MAX_SYSFS_FILE_BYTES)
             .map(|s| OperState::from_str_loose(&s))
             .unwrap_or(OperState::Unknown);
 
         // 2. Hardware type
-        let iftype = fs::read_to_string(dir.join("type"))
+        let iftype = read_bounded_string(&dir.join("type"), MAX_SYSFS_FILE_BYTES)
             .ok()
             .and_then(|s| s.trim().parse::<u16>().ok())
             .map(|t| match t {
@@ -147,7 +166,7 @@ impl NetworkService {
         let mut iface = NetworkInterface::new(name, iftype).with_operstate(operstate);
 
         // 3. MAC address
-        if let Ok(addr_raw) = fs::read_to_string(dir.join("address")) {
+        if let Ok(addr_raw) = read_bounded_string(&dir.join("address"), MAX_SYSFS_FILE_BYTES) {
             let clean = addr_raw.trim().to_ascii_lowercase();
             if !clean.is_empty() && clean != "00:00:00:00:00:00" && !iface.is_loopback() {
                 iface = iface.with_mac(clean);
@@ -155,14 +174,14 @@ impl NetworkService {
         }
 
         // 4. MTU
-        if let Ok(mtu_raw) = fs::read_to_string(dir.join("mtu")) {
+        if let Ok(mtu_raw) = read_bounded_string(&dir.join("mtu"), MAX_SYSFS_FILE_BYTES) {
             if let Ok(mtu) = mtu_raw.trim().parse::<u32>() {
                 iface = iface.with_mtu(mtu);
             }
         }
 
         // 5. Flags
-        if let Ok(flags_raw) = fs::read_to_string(dir.join("flags")) {
+        if let Ok(flags_raw) = read_bounded_string(&dir.join("flags"), MAX_SYSFS_FILE_BYTES) {
             let clean = flags_raw.trim();
             let hex_str = clean.strip_prefix("0x").unwrap_or(clean);
             if let Ok(mask) = u32::from_str_radix(hex_str, 16) {
@@ -194,7 +213,7 @@ impl NetworkService {
             return Ok(Vec::new());
         }
 
-        let content = fs::read_to_string(&route_file)
+        let content = read_bounded_string(&route_file, MAX_ROUTE_FILE_BYTES)
             .map_err(|e| format!("failed to read route file '{:?}': {}", route_file, e))?;
 
         let mut routes = Vec::new();
@@ -267,7 +286,7 @@ impl NetworkService {
             return Ok(DnsConfig::default());
         }
 
-        let content = fs::read_to_string(&self.resolv_conf_path)
+        let content = read_bounded_string(&self.resolv_conf_path, MAX_RESOLV_FILE_BYTES)
             .map_err(|e| format!("failed to read resolv.conf '{:?}': {}", self.resolv_conf_path, e))?;
 
         let mut dns = DnsConfig::new();

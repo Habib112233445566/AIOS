@@ -95,3 +95,41 @@ To protect against denial-of-service and memory exhaustion attacks:
 - `MAX_DNS_NAMESERVERS`: 32 resolver IP addresses per host state.
 - `MAX_DNS_SEARCH_DOMAINS`: 32 search domains per host state.
 - `MAX_IFACE_NAME_LEN`: 15 characters.
+
+---
+
+## 5. Network Core Service Architecture & Discovery (`NetworkService`)
+
+Defined in `code/aiosh-rust/aiosh-core/src/network_service.rs`.
+
+The `NetworkService` handles the active discovery of physical and virtual network interfaces, system routing tables, and DNS configuration directly from the Linux kernel and operating system.
+
+### Core Capabilities
+
+1. **Hermetic Mockability (`NSERV1`)**:
+   - `NetworkService::with_paths(sysfs_net_root, procfs_root, resolv_conf_path)` allows callers to redirect all discovery and mutation calls to mock filesystem hierarchies.
+   - Enables 100% offline, cross-platform unit and integration testing without requiring a live Linux kernel or root privileges.
+2. **Interface Discovery & Graceful Degradation (`NSERV2`)**:
+   - Iterates through `/sys/class/net/*` (or configured mock path).
+   - Validates interface directory names against `NET1` to prevent path traversal or special character injection (`NSERV5`).
+   - Gracefully falls back to defaults when optional sysfs files are missing (`operstate=Unknown`, `mtu=1500`, `mac=None`).
+   - Decodes Linux interface flags (`IFF_UP`, `IFF_BROADCAST`, `IFF_LOOPBACK`, `IFF_RUNNING`, `IFF_MULTICAST`).
+   - Deterministically sorts discovered interfaces alphabetically by name (`NET6`).
+3. **Routing Table Parsing (`NSERV3`)**:
+   - Reads and parses `/proc/net/route`.
+   - Decodes little-endian hexadecimal IPv4 destinations, gateways, and netmasks.
+   - Calculates CIDR prefix length using `.count_ones()` on decoded netmasks.
+   - Identifies default gateway routes (`0.0.0.0/0`).
+   - Deterministically sorts routes by metric ascending, then destination ascending (`NET6`).
+4. **DNS Configuration Inspection (`NSERV4`)**:
+   - Parses `/etc/resolv.conf`, safely stripping comment lines (`#`, `;`).
+   - Validates and enforces caps on nameservers (`MAX_DNS_NAMESERVERS = 32`) and search domains (`MAX_DNS_SEARCH_DOMAINS = 32`).
+5. **Interface Link Mutations (`bring_up`, `bring_down`) (`NSERV5`)**:
+   - Validates interface names before mutation to prevent command injection or directory traversal.
+   - Updates mock operstate files in testing mode.
+6. **Bounded Resource Limits (`NSERV6`)**:
+   - All file reads are strictly bounded via `read_bounded_string`:
+     - `MAX_SYSFS_FILE_BYTES = 64 KB`
+     - `MAX_ROUTE_FILE_BYTES = 1 MB`
+     - `MAX_RESOLV_FILE_BYTES = 64 KB`
+   - Bounded collections: `MAX_INTERFACES` (1024), `MAX_ROUTES` (4096), `MAX_DNS_NAMESERVERS` (32).
