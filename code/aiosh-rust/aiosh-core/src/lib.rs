@@ -94,6 +94,7 @@ pub mod package_recovery;
 pub mod package_service;
 pub mod pentest;
 pub mod pep;
+pub mod pep_decision;
 pub mod release;
 pub mod release_config;
 pub mod repo_health;

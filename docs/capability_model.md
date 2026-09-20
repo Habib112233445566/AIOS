@@ -672,6 +672,83 @@ Exposes capability documentation over JSON-RPC via `aios.capability.doc`.
 }
 ```
 
+---
+
+## 15. Capability Store Recovery, Quarantine, and Deep Validation (`CAPREC1..CAPREC6`)
+
+The **Capability Store Recovery Subsystem** provides automated self-healing, non-destructive quarantine of damaged or corrupted stores, and deep validation reports verifying capability invariants across the security kernel.
+
+### 15.1 Recovery Invariants (`CAPREC1..CAPREC6`)
+
+| Invariant | Name | Formal Rule |
+|---|---|---|
+| **`CAPREC1`** | **Conservation of State** | `valid_capabilities + invalid_capabilities == total_capabilities`. The report must account for every capability in the registry. |
+| **`CAPREC2`** | **Health Equivalence** | `healthy == (errors.is_empty() && invalid_capabilities == 0)`. A store is deemed healthy if and only if zero validation errors were detected and zero capabilities were found invalid. |
+| **`CAPREC3`** | **Lineage Integrity & Acyclicity** | Every attenuated capability must reference an existing parent capability (`parent_id`). The delegation graph must be strictly acyclic, enforced via `HashSet<String>` cycle tracking with a recursion limit of 256. |
+| **`CAPREC4`** | **Monotonic Attenuation Confinement** | For every child capability: child rights $\subseteq$ parent rights; child scope $\subseteq$ parent scope; child expiration $\le$ parent expiration. Any violation marks the capability invalid and reports a privilege escalation. |
+| **`CAPREC5`** | **Non-Destructive Quarantine** | When a store fails validation or suffers deserialization corruption, the damaged file is never truncated or overwritten. It is backed up to `<store_path>.bak.<timestamp>` with restricted mode `0600` on Unix platforms. A fresh store is initialized in its place. |
+| **`CAPREC6`** | **Atomic Persistence & Path Hygiene** | Store paths must satisfy length $\le 1024$, have a `.json` extension, contain no `..` traversal components, and not be symlinks. State persistence is performed via temporary file rename with directory auto-creation. |
+
+### 15.2 Data Types & Architecture
+
+```rust
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CapabilityRecoveryAction {
+    LoadedExisting,
+    CreatedDefaultFresh,
+    RecoveredFromBackup { backup_path: String, reason: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CapabilityValidationReport {
+    pub store_path: String,
+    pub total_capabilities: usize,
+    pub valid_capabilities: usize,
+    pub invalid_capabilities: usize,
+    pub errors: Vec<String>,
+    pub warnings: Vec<String>,
+    pub healthy: bool,
+    pub evaluated_at: String,
+}
+```
+
+### 15.3 MCP Tools (`aios.capability.recover` & `aios.capability.validate`)
+
+#### `aios.capability.recover`
+Attempts to load the capability store. If healthy, returns `LoadedExisting`. If non-existent, creates a default store and returns `CreatedDefaultFresh`. If corrupted or invalid, quarantines the damaged file to `.bak.<timestamp>` and returns `RecoveredFromBackup`.
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "aios.capability.recover",
+    "arguments": {
+      "store_path": ".aios/capability_store.json"
+    }
+  }
+}
+```
+
+#### `aios.capability.validate`
+Performs read-only structural validation against invariants `CAPREC1..CAPREC4` without mutating files on disk.
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "tools/call",
+  "params": {
+    "name": "aios.capability.validate",
+    "arguments": {
+      "store_path": ".aios/capability_store.json"
+    }
+  }
+}
+```
+
+
 
 
 

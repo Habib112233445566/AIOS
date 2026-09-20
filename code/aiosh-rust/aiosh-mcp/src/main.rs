@@ -1751,6 +1751,36 @@ impl Server {
                 "additionalProperties": false
             }
         }));
+        tools.push(json!({
+            "name": "aios.capability.recover",
+            "description": "Validate, quarantine damaged store if corrupted, and recover capability store",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "store_path": {
+                        "type": "string",
+                        "description": "Path to capability store JSON file (optional)"
+                    },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.capability.validate",
+            "description": "Validate capability store integrity, cycle freedom, and monotonic attenuation",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "store_path": {
+                        "type": "string",
+                        "description": "Path to capability store JSON file (optional)"
+                    },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
         tools
     }
 
@@ -6200,6 +6230,65 @@ impl Server {
                 dispatch::recorded_call(
                     &mut self.ring, &self.pep,
                     "aios.capability.doc", "Query capability documentation", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.capability.recover" => {
+                let store_path_str = arguments
+                    .get("store_path")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(".aios/capability_store.json")
+                    .to_string();
+
+                let f = move || -> Result<Value, String> {
+                    validate_mcp_string(&store_path_str, "store_path", 1024)?;
+                    let path = std::path::Path::new(&store_path_str);
+                    let (_service, action, report) = aiosh_core::capability_recovery::recover_capability_store(path)?;
+                    let action_str = match action {
+                        aiosh_core::capability_recovery::CapabilityRecoveryAction::LoadedExisting => "LoadedExisting".to_string(),
+                        aiosh_core::capability_recovery::CapabilityRecoveryAction::CreatedDefaultFresh => "CreatedDefaultFresh".to_string(),
+                        aiosh_core::capability_recovery::CapabilityRecoveryAction::RecoveredFromBackup { backup_path, reason } => {
+                            format!("RecoveredFromBackup: {} ({})", backup_path, reason)
+                        }
+                    };
+                    Ok(json!({
+                        "ok": report.healthy,
+                        "tool": "aios.capability.recover",
+                        "action": action_str,
+                        "data": report,
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.capability.recover", "Recover capability store", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.capability.validate" => {
+                let store_path_str = arguments
+                    .get("store_path")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(".aios/capability_store.json")
+                    .to_string();
+
+                let f = move || -> Result<Value, String> {
+                    validate_mcp_string(&store_path_str, "store_path", 1024)?;
+                    let path = std::path::Path::new(&store_path_str);
+                    let service = if path.exists() {
+                        aiosh_core::capability_service::CapabilityService::load_from_path(path)?
+                    } else {
+                        aiosh_core::capability_service::CapabilityService::new()
+                    };
+                    let report = aiosh_core::capability_recovery::validate_capability_store(&service, path);
+                    Ok(json!({
+                        "ok": report.healthy,
+                        "tool": "aios.capability.validate",
+                        "data": report,
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.capability.validate", "Validate capability store", arguments,
                     None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
                 )
             }

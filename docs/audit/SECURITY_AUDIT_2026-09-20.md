@@ -2325,6 +2325,39 @@ Still not read line-by-line (next pass starts here): `hardware_recovery.rs`/`net
     - **`CAPREC6`**: Atomic file persistence with atomic temp-file replace and safe directory initialization.
   - Verified with 9/9 Rust unit tests in `test_capability_recovery.rs`.
 
+---
+
+## 38. Post-Audit Addendum: Batch T-02096 through T-02105 Verification
+
+**Date:** 2026-09-21  
+**Scope:** Batch `T-02096` through `T-02105` (Phase 2 — Security Kernel & PEP Fabric: Sub-Epic 10 Capability Recovery Formal Closure & Sub-Epic 1 PEP Decision Engine Data Model Launch & Implementation).  
+**Auditor:** Antigravity Autonomous Security Subsystem  
+**Verdict:** **PASS (Zero vulnerabilities)**
+
+### 1. Hardened Surface & Key Controls
+- **Capability Recovery & Validation Subsystem Formal Closure (T-02096..T-02100)**:
+  - Formally closed Sub-Epic 10 and the overall Capability Model Epic.
+  - Registered and integrated `aios.capability.recover` and `aios.capability.validate` in `aiosh-mcp`.
+  - Threat-modeled vectors `THREAT-CAPREC-01..05` covering path traversal, symlink hijacking, and quarantine permission leakage.
+  - Implemented strict hardening in `code/aiosh-rust/aiosh-core/src/capability_recovery.rs`:
+    - Enforced `validate_service_path` on all incoming store paths, rejecting `..`, control characters, non-json extensions, and lengths $> 1024$.
+    - Added `fs::symlink_metadata()` checks in `create_backup_file()` to immediately refuse copying if target is a symlink, neutralizing symlink hijacking attacks.
+    - Quarantined backups explicitly set to mode `0600` on Unix platforms.
+  - Authored Section 15 in `docs/capability_model.md`.
+  - Verified with 9/9 Rust unit tests and 2/2 Python MCP smoke tests.
+
+- **PEP Decision Engine Data Model (T-02101..T-02105)**:
+  - Researched, specified, scaffolded, implemented, and unit-tested `PepRequest`, `PepEnvironmentContext`, `PepDecision`, `PepObligation`, `PepPolicyRule`, and `PepCombiningAlgorithm` in `code/aiosh-rust/aiosh-core/src/pep_decision.rs` and re-exported in `lib.rs`.
+  - Enforced invariants `PEPDEC1..PEPDEC6`:
+    - **`PEPDEC1` (Complete Mediation & Fail-Closed Default Deny)**: Default deny: any request that does not evaluate to an explicit `Permit` evaluates to `Deny`. Ambiguities or empty rulesets fail closed.
+    - **`PEPDEC2` (Canonical Request Context)**: Validates and bounds `subject` ($\le 256$), `resource` ($\le 1024$), and `action` ($\le 64$), rejecting control characters and null bytes.
+    - **`PEPDEC3` (Deterministic Combining Algorithms)**: Implemented `DenyOverrides`, `PermitOverrides`, and `FirstApplicable`.
+    - **`PEPDEC4` (Atomic Decision Outcomes)**: Returns structured `PepDecision` with `effect`, `allowed`, `matched_rule_id`, `reason`, `obligations`, and latency.
+    - **`PEPDEC5` (Pure Evaluation)**: Rule evaluation is strictly side-effect-free with zero state mutation.
+    - **`PEPDEC6` (Audit Trail Integrity)**: Fully serializable for direct ingestion by the AIOS Audit Ring.
+  - Verified with 8/8 Rust unit tests in `test_pep_decision.rs`. Zero warnings.
+
+
 
 
 

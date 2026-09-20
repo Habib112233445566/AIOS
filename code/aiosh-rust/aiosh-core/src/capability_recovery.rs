@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::capability_service::CapabilityService;
+use crate::capability_service::{validate_service_path, CapabilityService};
 
 /// Action taken during capability store loading, validation, and corruption recovery.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -85,6 +85,11 @@ pub fn create_backup_file(path: &Path) -> PathBuf {
     }
 
     if path.exists() {
+        if let Ok(meta) = fs::symlink_metadata(path) {
+            if meta.file_type().is_symlink() {
+                return backup_path;
+            }
+        }
         let _ = fs::copy(path, &backup_path);
         #[cfg(unix)]
         {
@@ -105,6 +110,16 @@ pub fn validate_capability_store(
     let warnings = Vec::new();
     let mut valid_capabilities = 0;
     let mut invalid_capabilities = 0;
+
+    // 0. Path hygiene checks
+    if let Err(e) = validate_service_path(store_path) {
+        errors.push(e);
+    }
+    if let Ok(meta) = fs::symlink_metadata(store_path) {
+        if meta.file_type().is_symlink() {
+            errors.push(format!("store path {:?} is a symlink", store_path));
+        }
+    }
 
     let capabilities = service.capabilities();
     let total_capabilities = capabilities.len();
@@ -246,6 +261,8 @@ pub fn validate_capability_store(
 pub fn recover_capability_store(
     store_path: &Path,
 ) -> Result<(CapabilityService, CapabilityRecoveryAction, CapabilityValidationReport), String> {
+    validate_service_path(store_path)?;
+
     if !store_path.exists() {
         let service = CapabilityService::new();
         service.save_to_path(store_path)?;
