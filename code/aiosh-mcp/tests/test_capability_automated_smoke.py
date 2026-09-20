@@ -51,6 +51,10 @@ def run_mcp(payload: dict, env_overrides: dict[str, str] | None = None, timeout_
         p.wait()
         print(f"FAIL: aiosh-mcp timed out after {timeout_s}s")
         sys.exit(1)
+    finally:
+        if p.poll() is None:
+            p.kill()
+            p.wait()
     if p.returncode != 0:
         print(f"FAIL: aiosh-mcp returned {p.returncode}")
         sys.exit(1)

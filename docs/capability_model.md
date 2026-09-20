@@ -380,5 +380,42 @@ The Capability Configuration subsystem (`code/aiosh-rust/aiosh-core/src/capabili
 4. **Mandatory `.json` Extension**: Persistence file path must explicitly possess a `.json` extension.
 5. **Fail-Closed Validation**: Any out-of-range value or parsing error halts initialization with an explicit error.
 
+---
+
+## 11. Automated Test Framework & Invariants Reference
+
+The Automated Test framework for the Capability Model ensures end-to-end correctness, strict monotonic attenuation, cascade revocation completeness, quota enforcement, and cross-surface parity across the Rust core service, CLI, and MCP interfaces.
+
+### 11.1 Test Invariants (`CAPTEST1..CAPTEST6`)
+
+| Invariant | Name | Description |
+|---|---|---|
+| `CAPTEST1` | Hermetic Isolation | All test scenarios execute within isolated temporary directories via `MockCapabilityEnv`, preventing host state pollution or disk residue. |
+| `CAPTEST2` | Multi-Tier Lineage Integrity | Lineage indexes (`by_parent`, `by_subject`) maintain consistency across multi-tier capability hierarchies (Root $\rightarrow$ Tier 1 $\rightarrow$ ... $\rightarrow$ Tier $N$). |
+| `CAPTEST3` | Monotonic Attenuation Enforcement | Derived child capabilities cannot expand rights, widen filesystem or resource scopes, exceed parent quotas, or outlive parent expiration. |
+| `CAPTEST4` | Cascade Revocation Completeness | Revoking an intermediate node in a capability tree transitively revokes 100% of its descendant sub-tree while leaving ancestor and sibling branches active. |
+| `CAPTEST5` | Quota Atomicity & Bounded Enforcement | Invocation counters and byte consumption track accurately with `saturating_add`; operations fail closed with structured errors upon quota exhaustion. |
+| `CAPTEST6` | Fault Tolerance & Path Protection | Corrupted JSON store files, non-`.json` extensions, symlink targets, and path traversal (`..`) attempts fail closed with `CSERV_VALIDATION_ERROR`. |
+
+### 11.2 Rust Test Suite (`test_capability_automated.rs`)
+
+| Test Function | Invariant | Description |
+|---|---|---|
+| `test_automated_mock_env_initialization` | `CAPTEST1` | Validates `MockCapabilityEnv` tempdir creation and fixture pre-population. |
+| `test_automated_capability_lifecycle_matrix` | `CAPTEST2`, `CAPTEST4` | Validates 4-tier attenuation and cascade revocation across the hierarchy. |
+| `test_automated_capability_attenuation_invariants` | `CAPTEST3` | Validates rejection of rights expansion, scope widening, quota increases, and expiry extension. |
+| `test_automated_capability_quota_and_consumption` | `CAPTEST5` | Validates invocation limit decrement and byte quota accumulation and denial. |
+| `test_automated_capability_persistence_and_reload` | `CAPTEST1`, `CAPTEST2` | Validates atomic disk save and reload with index rebuilding. |
+| `test_automated_capability_pruning_and_temporal` | `CAPTEST4` | Validates pruning of expired leaf and child capabilities while preserving active parent nodes. |
+| `test_automated_capability_fault_injection` | `CAPTEST6` | Validates rejection of corrupted store files, bad extensions, and path traversal. |
+| `test_automated_capability_deep_hierarchy_stress` | `CAPTEST2`, `CAPTEST4` | Validates 50-level deep attenuation tree and subsequent cascade revocation without recursion failure. |
+
+### 11.3 Cross-Surface Python E2E Smoke Suite (`test_capability_automated_smoke.py`)
+- **Multi-tier Attenuation & Cascade Revocation**: Validates 4-tier lifecycle over MCP JSON-RPC (`aios.capability.issue` $\rightarrow$ `attenuate` $\rightarrow$ `check` $\rightarrow$ `revoke`).
+- **Quota Exhaustion**: Validates quota consumption over MCP JSON-RPC with `consume: true`.
+- **Fault Injection**: Validates path traversal and extension rejection over MCP JSON-RPC.
+- **Process Safety**: Enforces leak-proof child process reaping (`p.kill()` and `p.wait()` in `finally` block).
+
+
 
 

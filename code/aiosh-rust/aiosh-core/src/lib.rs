@@ -30,6 +30,7 @@ pub mod canonical;
 pub mod capability;
 pub mod capability_config;
 pub mod capability_service;
+pub mod capability_policy;
 pub mod ci;
 pub mod ci_config;
 pub mod classifier;

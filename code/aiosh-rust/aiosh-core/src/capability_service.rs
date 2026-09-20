@@ -13,6 +13,7 @@ use crate::capability::{
     Capability, CapabilityConstraints, CapabilityError, CapabilityRight, CapabilityScope,
 };
 use crate::capability_config::CapabilityConfig;
+use crate::capability_policy::CapabilitySecurityPolicy;
 
 /// Maximum permissible file size for capability registry persistence (10 MB).
 pub const MAX_CAPABILITY_STORE_SIZE: u64 = 10_485_760;
@@ -54,6 +55,8 @@ pub struct CapabilityService {
     storage_path: Option<PathBuf>,
     #[serde(skip)]
     config: CapabilityConfig,
+    #[serde(default)]
+    policy: CapabilitySecurityPolicy,
 }
 
 impl Default for CapabilityService {
@@ -64,6 +67,7 @@ impl Default for CapabilityService {
             by_parent: HashMap::new(),
             storage_path: None,
             config: CapabilityConfig::default(),
+            policy: CapabilitySecurityPolicy::default(),
         }
     }
 }
@@ -83,6 +87,37 @@ impl CapabilityService {
     /// Returns a reference to the active configuration.
     pub fn config(&self) -> &CapabilityConfig {
         &self.config
+    }
+
+    /// Configures the capability service with a custom security policy.
+    pub fn with_policy(mut self, policy: CapabilitySecurityPolicy) -> Self {
+        self.policy = policy;
+        self
+    }
+
+    /// Returns a reference to the active security policy.
+    pub fn policy(&self) -> &CapabilitySecurityPolicy {
+        &self.policy
+    }
+
+    /// Returns a mutable reference to the active security policy.
+    pub fn policy_mut(&mut self) -> &mut CapabilitySecurityPolicy {
+        &mut self.policy
+    }
+
+    /// Calculates the derivation depth of a capability in the registry.
+    pub fn get_derivation_depth(&self, cap_id: &str) -> usize {
+        let mut depth = 0;
+        let mut current_id = cap_id.to_string();
+        while let Some(cap) = self.capabilities.get(&current_id) {
+            if let Some(ref parent_id) = cap.parent_id {
+                depth += 1;
+                current_id = parent_id.clone();
+            } else {
+                break;
+            }
+        }
+        depth
     }
 
     /// Initializes a capability service from a validated configuration.
@@ -141,6 +176,20 @@ impl CapabilityService {
             )));
         }
 
+        let verdict = self.policy.evaluate_issuance(issuer, subject, &scope, &rights, &constraints);
+        if !verdict.allowed {
+            let reasons = verdict
+                .violations
+                .iter()
+                .map(|v| format!("{}: {}", v.rule_id, v.description))
+                .collect::<Vec<_>>()
+                .join("; ");
+            return Err(CapabilityError::ValidationError(format!(
+                "{}: policy violation: {}",
+                CSERV_VALIDATION_ERROR, reasons
+            )));
+        }
+
         let cap = Capability::new(issuer, subject, scope, rights, constraints)?;
         self.register_capability(cap.clone());
         Ok(cap)
@@ -189,6 +238,31 @@ impl CapabilityService {
             .capabilities
             .get(parent_id)
             .ok_or_else(|| CapabilityError::ValidationError(format!("{}: capability '{}' not found", CSERV_NOT_FOUND, parent_id)))?;
+
+        let parent_depth = self.get_derivation_depth(parent_id);
+        let child_depth = parent_depth + 1;
+        let child_scope = narrowed_scope.clone().unwrap_or_else(|| parent.scope.clone());
+        let child_constraints = narrowed_constraints.clone().unwrap_or_else(|| parent.constraints.clone());
+        let verdict = self.policy.evaluate_attenuation(
+            parent,
+            new_subject,
+            &child_scope,
+            &subset_rights,
+            &child_constraints,
+            child_depth,
+        );
+        if !verdict.allowed {
+            let reasons = verdict
+                .violations
+                .iter()
+                .map(|v| format!("{}: {}", v.rule_id, v.description))
+                .collect::<Vec<_>>()
+                .join("; ");
+            return Err(CapabilityError::ValidationError(format!(
+                "{}: policy violation: {}",
+                CSERV_VALIDATION_ERROR, reasons
+            )));
+        }
 
         let child = parent.attenuate(new_subject, narrowed_scope, subset_rights, narrowed_constraints)?;
         self.register_capability(child.clone());

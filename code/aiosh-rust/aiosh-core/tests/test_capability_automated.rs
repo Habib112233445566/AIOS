@@ -436,3 +436,62 @@ fn test_automated_capability_fault_injection() {
     assert!(err_trav.is_err());
     assert!(err_trav.unwrap_err().contains(CSERV_VALIDATION_ERROR));
 }
+
+#[test]
+fn test_automated_capability_deep_hierarchy_stress() {
+    let mock = MockCapabilityEnv::new();
+    let mut service = CapabilityService::new().with_storage_path(mock.store_path.clone());
+
+    // Root capability
+    let root = service
+        .issue_root_capability(
+            "kernel",
+            "agent:root",
+            CapabilityScope::Filesystem {
+                path: "/data".into(),
+                recursive: true,
+            },
+            vec![CapabilityRight::Read, CapabilityRight::Delegate],
+            CapabilityConstraints::default(),
+        )
+        .expect("issue root");
+
+    // Attenuate 50 levels deep
+    let mut current_id = root.id.clone();
+    let mut level1_id = String::new();
+    for i in 1..=50 {
+        let child = service
+            .attenuate_capability(
+                &current_id,
+                &format!("agent:level_{}", i),
+                None,
+                vec![CapabilityRight::Read, CapabilityRight::Delegate],
+                None,
+            )
+            .unwrap_or_else(|e| panic!("failed at level {}: {}", i, e));
+        if i == 1 {
+            level1_id = child.id.clone();
+        }
+        current_id = child.id;
+    }
+
+    assert_eq!(service.len(), 51);
+
+    // Verify access at level 50
+    let test_scope = CapabilityScope::Filesystem {
+        path: "/data/file.txt".into(),
+        recursive: false,
+    };
+    assert!(service.has_active_capability("agent:level_50", &test_scope, CapabilityRight::Read));
+
+    // Cascade revoke level 1 -> must revoke all 50 descendants
+    let revoked = service.revoke_capability(&level1_id).expect("revoke level 1");
+    assert_eq!(revoked.len(), 50);
+
+    // Level 50 must now be denied
+    assert!(!service.has_active_capability("agent:level_50", &test_scope, CapabilityRight::Read));
+
+    // Root must remain active
+    assert!(service.has_active_capability("agent:root", &test_scope, CapabilityRight::Read));
+}
+

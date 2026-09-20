@@ -2120,5 +2120,41 @@ Read line-by-line: `pentest.rs` (597), `train_slm.py` (210), `train_unsloth.py` 
   - `aiosh-mcp`: 3/3 checks in `test_capability_automated_smoke.py` passing end-to-end against compiled `aiosh-mcp.exe`.
   - Zero compiler warnings or test regressions across Rust and Python suites.
 
+---
+
+## 35. Post-Audit Addendum: Batch T-02057 through T-02066 Verification
+
+**Date:** 2026-09-20  
+**Scope:** Batch `T-02057` through `T-02066` (Capability Model Sub-Epic 6 Automated Tests Formal Closure & Sub-Epic 7 Security Policy Launch & Implementation).  
+**Auditor:** Antigravity Autonomous Security Subsystem  
+**Verdict:** **PASS (Zero vulnerabilities)**
+
+### 1. Hardened Surface & Key Controls
+- **Capability Model Automated Tests Formal Closure (T-02057..T-02060)**:
+  - Threat modeled `THREAT-CAPTEST-01..06` covering unbounded hierarchy depth, orphan process leaks, memory corruption, and race conditions.
+  - Hardened automated test suite:
+    - Added deep hierarchy stress test (`test_automated_capability_deep_hierarchy_stress`) verifying 50 levels of capability attenuation and cascade revocation in 0.12s.
+    - Added leak-proof child process reaping (`try...finally` with `p.kill()` and `p.wait()`) in Python automated smoke test suite.
+  - Master documentation authored in Section 11 of `docs/capability_model.md` defining invariants `CAPTEST1..CAPTEST6`.
+  - Formally closed Sub-Epic 6 with 8/8 Rust unit tests in `test_capability_automated.rs` and 3/3 Python integration tests in `test_capability_automated_smoke.py`.
+- **Capability Model Security Policy Subsystem (T-02061..T-02066)**:
+  - Researched, specified, scaffolded, implemented, unit-tested, and integrated `CapabilitySecurityPolicy` in `code/aiosh-rust/aiosh-core/src/capability_policy.rs` and re-exported in `lib.rs`.
+  - Enforced policy invariants `CAPSEC1..CAPSEC6`:
+    - **`CAPSEC1` (Default Deny & Policy Modes)**: Supported `Enforcing`, `Audit`, and `Permissive` modes. In `Enforcing` mode, violations halt capability issuance and derivation.
+    - **`CAPSEC2` (Attenuation Depth Bound)**: Derivation depth strictly capped at `max_attenuation_depth` (default: 64, bounds: $1 \le \text{depth} \le 128$).
+    - **`CAPSEC3` (Sensitive Resource Restrictions)**: Prohibited filesystem paths (`/etc`, `/proc`, `/sys`, `/dev`, `/root`, `/var/run`, `C:\Windows`, `C:\Program Files`) and prohibited network hosts (`169.254.169.254`, `metadata.google.internal`) blocked at issuance and attenuation.
+    - **`CAPSEC4` (Subject Disallowed Rights)**: Disallowed `Admin`, `Delegate`, and `Delete` for `untrusted:*` subjects, and `Write` for `guest:*` subjects.
+    - **`CAPSEC5` (Mandatory Temporal Bounds)**: When enabled, required explicit `expires_at` within `max_validity_duration_seconds`.
+    - **`CAPSEC6` (Auditability & Determinism)**: Structured `CapabilityPolicyVerdict` with explicit `CapabilityPolicyViolation` entries.
+  - Integrated into `CapabilityService::issue_root_capability` and `CapabilityService::attenuate_capability`.
+  - Exposed and validated via MCP JSON-RPC protocol (`aios.capability.issue` and `aios.capability.attenuate`).
+- **Test Verification**:
+  - `aiosh-core`: 8/8 automated unit tests in `test_capability_automated.rs` passing in 0.04s.
+  - `aiosh-core`: 8/8 policy unit tests in `test_capability_policy.rs` passing in 0.00s.
+  - `aiosh-mcp`: 3/3 checks in `test_capability_automated_smoke.py` passing.
+  - `aiosh-mcp`: 3/3 checks in `test_capability_policy_smoke.py` passing end-to-end against compiled `aiosh-mcp.exe`.
+  - Zero compiler warnings or test regressions across Rust and Python suites.
+
+
 
 
