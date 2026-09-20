@@ -951,3 +951,24 @@ Still not read line-by-line (next pass starts here): `aiosh_mcp/pentest.py` body
   - `aiosh-cli`: 5/5 integration smoke tests in `test_hardware_config_smoke.py` passed.
   - Zero compiler warnings or lint errors.
 
+---
+
+## 4. Post-Audit Addendum: Batch T-01747 through T-01756 Verification
+
+**Date:** 2026-09-20  
+**Scope:** Batch `T-01747` through `T-01756` (Hardware Detection Configuration Hardening & Automated Test Subsystems).  
+**Auditor:** Antigravity Autonomous Agent  
+**Verdict:** **PASS (Zero vulnerabilities)**
+
+### 1. Hardened Surface & Key Controls
+- **Path Traversal Mitigation (HCFG1)**: Added explicit rejection of `..` (parent directory traversal) across all configuration paths (`default_store_path`, `sysfs_path`, `procfs_path`).
+- **Post-Validation Environment Fallback**: Enhanced `HardwareConfig::from_env()` to run full validation after applying environment overrides, safely reverting to defaults if an invalid state is detected.
+- **Atomic Configuration Persistence (HCFG5)**: Implemented atomic temporary file write and rename semantics in `save_to_path()`.
+- **Hermetic Automated Test Harness (AT1..AT5)**: Created `MockSysfsBuilder` enabling isolated, root-free host hardware discovery testing with fault injection resilience and bounded traversal (`MAX_PROBE_ENTRIES = 1024`).
+- **Test Verification**:
+  - `aiosh-core`: 16/16 unit tests in `test_hardware_config.rs` passed in 0.10s.
+  - `aiosh-core`: 7/7 automated unit tests in `test_hardware_automated.rs` passed in 10.63s.
+  - `aiosh-cli`: 5/5 integration smoke tests in `test_hardware_automated_smoke.py` passed.
+  - Zero compiler warnings or lint errors.
+
+

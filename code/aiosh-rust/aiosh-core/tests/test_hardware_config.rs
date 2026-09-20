@@ -58,6 +58,18 @@ fn test_hcfg1_path_hygiene_max_length() {
 }
 
 #[test]
+fn test_hcfg1_path_hygiene_traversal() {
+    let mut cfg = HardwareConfig::default();
+    cfg.default_store_path = PathBuf::from("../escaped/store.json");
+    let err = cfg.validate().unwrap_err();
+    assert!(err.contains("parent directory traversal"));
+
+    let mut cfg = HardwareConfig::default();
+    cfg.sysfs_path = PathBuf::from("/sys/../etc");
+    assert!(cfg.validate().is_err());
+}
+
+#[test]
 fn test_hcfg2_class_filtering_valid() {
     let mut cfg = HardwareConfig::default();
     cfg.enabled_classes = Some(vec![DeviceClass::Cpu, DeviceClass::Gpu, DeviceClass::Block]);
@@ -170,8 +182,11 @@ fn test_hcfg5_save_and_load_roundtrip() {
     assert_eq!(cfg, loaded);
 }
 
+static ENV_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[test]
 fn test_hardware_config_from_env() {
+    let _lock = ENV_MUTEX.lock().unwrap();
     std::env::set_var("AIOSH_HARDWARE_SYSFS", "/custom/sys");
     std::env::set_var("AIOSH_HARDWARE_PROCFS", "/custom/proc");
     std::env::set_var("AIOSH_HARDWARE_STORE", "/custom/store.json");
@@ -191,4 +206,14 @@ fn test_hardware_config_from_env() {
     std::env::remove_var("AIOSH_HARDWARE_STORE");
     std::env::remove_var("AIOSH_HARDWARE_INCLUDE_ATTRS");
     std::env::remove_var("AIOSH_HARDWARE_TIMEOUT_SECS");
+}
+
+#[test]
+fn test_hardware_config_from_env_invalid_fallback() {
+    let _lock = ENV_MUTEX.lock().unwrap();
+    // Setting an invalid value (e.g. traversal path) must cause from_env to safely fall back to default
+    std::env::set_var("AIOSH_HARDWARE_SYSFS", "/sys/../etc");
+    let cfg = HardwareConfig::from_env();
+    assert_eq!(cfg, HardwareConfig::default());
+    std::env::remove_var("AIOSH_HARDWARE_SYSFS");
 }

@@ -64,6 +64,9 @@ impl HardwareConfig {
             if s.chars().any(|c| c.is_control() || c == '\0') {
                 return Err(format!("HCFG1 violation: {} cannot contain control characters", name));
             }
+            if path.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
+                return Err(format!("HCFG1 violation: {} cannot contain parent directory traversal ('..')", name));
+            }
         }
 
         // HCFG2: Class filtering & uniqueness
@@ -120,16 +123,32 @@ impl HardwareConfig {
     /// Serializes and saves configuration to a JSON file atomically (HCFG5).
     pub fn save_to_path(&self, path: &Path) -> Result<(), String> {
         self.validate()?;
-        if let Some(parent) = path.parent() {
-            if !parent.as_os_str().is_empty() && !parent.exists() {
-                fs::create_dir_all(parent)
-                    .map_err(|e| format!("Failed to create parent directory {}: {}", parent.display(), e))?;
-            }
+        let parent = path.parent().unwrap_or_else(|| Path::new(""));
+        if !parent.as_os_str().is_empty() && !parent.exists() {
+            fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create parent directory {}: {}", parent.display(), e))?;
         }
         let json = serde_json::to_string_pretty(self)
             .map_err(|e| format!("Failed to serialize hardware config: {}", e))?;
-        fs::write(path, json)
-            .map_err(|e| format!("Failed to write hardware config to {}: {}", path.display(), e))?;
+
+        // Atomic write via temporary sibling file + rename
+        let tmp_file_name = format!(
+            ".{}.tmp.{}",
+            path.file_name().map(|n| n.to_string_lossy()).unwrap_or_else(|| "cfg".into()),
+            std::process::id()
+        );
+        let tmp_path = if parent.as_os_str().is_empty() {
+            PathBuf::from(tmp_file_name)
+        } else {
+            parent.join(tmp_file_name)
+        };
+
+        fs::write(&tmp_path, &json)
+            .map_err(|e| format!("Failed to write hardware config temp file {}: {}", tmp_path.display(), e))?;
+        if let Err(e) = fs::rename(&tmp_path, path) {
+            let _ = fs::remove_file(&tmp_path);
+            return Err(format!("Failed to atomically rename {} to {}: {}", tmp_path.display(), path.display(), e));
+        }
         Ok(())
     }
 
@@ -169,6 +188,11 @@ impl HardwareConfig {
                     cfg.scan_timeout_secs = secs;
                 }
             }
+        }
+
+        // Post-validation guard: if environment variable overrides result in an invalid state, fallback to default
+        if cfg.validate().is_err() {
+            return Self::default();
         }
 
         cfg

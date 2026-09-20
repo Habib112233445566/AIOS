@@ -328,5 +328,59 @@ All tool invocations route through `dispatch::recorded_call`, enforcing Policy E
 - Documentation: `docs/tasks/evidence/T-01739-mcp-api-documentation.md`.
 - Verification & Evidence: `docs/tasks/evidence/T-01740-mcp-api-verification-evidenc.md`.
 
+---
+
+## 11. Hardware Detection Configuration Subsystem (Sub-Epic 5)
+
+### 11.1 Overview & Architecture
+The Hardware Detection configuration subsystem is implemented in `aiosh-core::hardware_config` and managed via the `HardwareConfig` structure. It provides persistent storage path configuration, scan resource limits, device filtering controls, and environment variable overrides for host introspection services.
+
+### 11.2 Configuration Contract (`HardwareConfig`)
+```rust
+pub struct HardwareConfig {
+    pub default_store_path: PathBuf,            // Path to saved inventory JSON
+    pub sysfs_path: PathBuf,                    // Root to sysfs (defaults to /sys)
+    pub procfs_path: PathBuf,                   // Root to procfs (defaults to /proc)
+    pub enabled_classes: Option<Vec<DeviceClass>>, // Whitelist of device classes (None = all)
+    pub include_attributes: bool,               // Whether to collect extended device attributes
+    pub max_devices: usize,                     // Resource cap: maximum devices per scan
+    pub max_payload_bytes: u64,                 // Resource cap: maximum inventory JSON bytes
+    pub scan_timeout_secs: u64,                 // Timeout in seconds for discovery scans
+}
+```
+
+### 11.3 Configuration Invariants (HCFG1..HCFG5)
+- **HCFG1 (Path Hygiene & Traversal Prevention)**: All paths (`default_store_path`, `sysfs_path`, `procfs_path`) must be non-empty, UTF-8 valid, $\le 1024$ characters, free of control characters/NUL bytes, and must not contain parent directory traversal components (`..`).
+- **HCFG2 (Class Filtering & Uniqueness)**: When `enabled_classes` is configured, it must contain $\le 9$ items, valid `DeviceClass` variants, and zero duplicates.
+- **HCFG3 (Resource Bounds)**: `max_devices` is bounded ($1 \le n \le 50,000$); `max_payload_bytes` is bounded ($1024 \le n \le 104,857,600$).
+- **HCFG4 (Timeout Bounds)**: `scan_timeout_secs` is bounded ($1 \le n \le 300$).
+- **HCFG5 (Lossless Serialization & Safe Fallback)**:
+  - `load_from_path()` safely falls back to default configuration when the target file does not exist.
+  - `save_to_path()` executes atomic writes via a sibling temporary file (`.<name>.tmp.<pid>`) and atomic rename.
+  - `from_env()` loads environment variable overrides and enforces post-validation, safely reverting to defaults if an invalid state is detected.
+
+### 11.4 Environment Variable Mappings
+| Variable Name | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `AIOSH_HARDWARE_CONFIG` | Path | None | Path to custom JSON configuration file |
+| `AIOSH_HARDWARE_SYSFS` | Path | `/sys` | Overrides root sysfs introspection path |
+| `AIOSH_HARDWARE_PROCFS` | Path | `/proc` | Overrides root procfs introspection path |
+| `AIOSH_HARDWARE_STORE` | Path | `.aios/hardware_inventory.json` | Overrides inventory persistence path |
+| `AIOSH_HARDWARE_INCLUDE_ATTRS` | Bool | `true` | `"1"`, `"true"`, `"0"`, `"false"` |
+| `AIOSH_HARDWARE_TIMEOUT_SECS` | Integer | `30` | Scan timeout in seconds ($1 \le n \le 300$) |
+
+### 11.5 Sub-Epic 5 Verification Evidence
+- Research: `docs/tasks/evidence/T-01741-configuration-research.md`.
+- Specification: `docs/tasks/evidence/T-01742-configuration-specification.md`.
+- Scaffold: `docs/tasks/evidence/T-01743-configuration-scaffold.md`.
+- Implementation: `docs/tasks/evidence/T-01744-configuration-implementation.md`.
+- Unit Test: `docs/tasks/evidence/T-01745-configuration-unit-test.md`.
+- Integration: `docs/tasks/evidence/T-01746-configuration-integration.md`.
+- Security Review: `docs/tasks/evidence/T-01747-configuration-security-review.md`.
+- Hardening: `docs/tasks/evidence/T-01748-configuration-hardening.md`.
+- Documentation: `docs/tasks/evidence/T-01749-configuration-documentation.md`.
+- Verification & Evidence: `docs/tasks/evidence/T-01750-configuration-verification-evidenc.md`.
+
+
 
 

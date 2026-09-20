@@ -409,7 +409,11 @@ impl HardwareService {
 
     fn probe_system(&self) -> Vec<HardwareDevice> {
         let mut devices = Vec::new();
-        let dmi_dir = self.sysfs_root.join("class/dmi/id");
+        let dmi_dir = if self.sysfs_root.join("class/dmi/id").exists() {
+            self.sysfs_root.join("class/dmi/id")
+        } else {
+            self.sysfs_root.join("devices/virtual/dmi/id")
+        };
 
         let sys_vendor = read_trimmed_file(&dmi_dir.join("sys_vendor"));
         let product_name = read_trimmed_file(&dmi_dir.join("product_name"));
