@@ -74,6 +74,7 @@ pub mod ledger;
 pub mod ledger_config;
 pub mod network;
 pub mod network_config;
+pub mod network_observability;
 pub mod network_policy;
 pub mod network_service;
 pub mod package;

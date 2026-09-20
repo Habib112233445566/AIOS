@@ -1460,3 +1460,37 @@ Read line-by-line: `pentest.rs` (597), `train_slm.py` (210), `train_unsloth.py` 
   - `aiosh-core`: 14/14 unit tests in `test_network_policy.rs` passed in 0.03s.
   - `aiosh-cli`: 5/5 integration smoke tests in `test_network_policy_smoke.py` passed in 0.12s.
   - Zero compiler warnings or lint errors across Rust and Python suites.
+
+---
+
+## 16. Post-Audit Addendum: Batch T-01867 through T-01876 Verification
+
+**Date:** 2026-09-20  
+**Scope:** Batch `T-01867` through `T-01876` (Network Bootstrap Security Policy Sub-Epic 7 Closure & Network Bootstrap Observability Sub-Epic 8).  
+**Auditor:** Antigravity Autonomous Security Subsystem  
+**Verdict:** **PASS (Zero vulnerabilities)**
+
+### 1. Hardened Surface & Key Controls
+- **Network Bootstrap Security Policy Closure (T-01867..T-01870)**:
+  - Security review evaluated threat vectors `THREAT-NPOL-01..05` (path traversal, whitespace bypass, resource DoS, temp leaks, state leaks).
+  - Hardened `network_policy.rs`:
+    - Structured error codes: `NPOL_VALIDATION_ERROR`, `NPOL_IO_ERROR`, `NPOL_PARSE_ERROR`, `NPOL_PATH_ERROR`.
+    - Added RAII `TempFileGuard` inside `save_to_path()`, preventing temporary sibling file leaks on error or panic.
+    - Added whitespace trimming to interface and DNS rule checks.
+    - Added IPv6 address masking support in `apply_and_sanitize()`.
+  - Authored Section 10 in `docs/network_bootstrap.md`.
+  - Formally closed Sub-Epic 7 with 14/14 Rust tests and 5/5 Python smoke tests.
+- **Network Bootstrap Observability Subsystem (T-01871..T-01876)**:
+  - Researched, specified, scaffolded, implemented, and tested `NetworkObservabilityService` in `aiosh-core`.
+  - Enforced invariants `NOBS1..NOBS6`:
+    - `NOBS1`: Non-blocking bounded telemetry collection (capped at 64 KB for procfs reads).
+    - `NOBS2`: Resilient fallback defaults on missing virtual procfs/sysfs nodes; carrier discovery.
+    - `NOBS3`: Diagnostic health classification (`Healthy`, `Degraded`, `Critical`) evaluating carrier, operstate, default gateway, DNS resolvers, and packet drop/error rates (> 5%).
+    - `NOBS4`: Bounded in-memory snapshot history ring buffer (`DEFAULT_HISTORY_CAPACITY = 60`) with FIFO eviction, preventing memory leaks over indefinite runtime.
+    - `NOBS5`: Cross-surface JSON schema parity and lossless serialization.
+    - `NOBS6`: Path hygiene ($\le 1024$ chars, no `..`, no control characters), bounded 1 MB snapshot file cap, and atomic persistence with RAII drop guard.
+- **Test Verification**:
+  - `aiosh-core`: 12/12 unit tests in `test_network_observability.rs` passed in 0.06s.
+  - `aiosh-cli`: 6/6 integration smoke tests in `test_network_observability_smoke.py` passed in 0.14s.
+  - Regression suite: 0 regressions across all 7 previously closed sub-epics.
+

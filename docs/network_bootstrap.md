@@ -406,5 +406,95 @@ python code/aiosh-cli/tests/test_network_config_smoke.py
 - Hermetic automated tests simulate sysfs, procfs, and resolv.conf file structures; they do not validate physical NIC firmware, real hardware packet transmission, or active BPF filters.
 - Real kernel link state toggling (`ip link set up/down`) is abstracted and tested via filesystem state mutations rather than privileged `ioctl` or Netlink calls in unprivileged CI environments.
 
+---
 
+## 10. Network Security Policy Engine
 
+The Network Bootstrap subsystem includes a deterministic, strongly-typed security policy engine (`NetworkSecurityPolicy`) defined in `code/aiosh-rust/aiosh-core/src/network_policy.rs`. It provides evaluation, gatekeeping, sanitization, and compliance auditing for host network states against defined security constraints.
+
+### Policy Modes
+
+1. **`Enforcing`** (Default): Fatal rule violations result in a `"deny"` verdict, signaling callers and PEP to halt execution or discard untrusted network configurations.
+2. **`Audit`**: Violations are detected, recorded in `violations`, and summarized in an `"audit"` verdict, but non-fatal for callers wanting passive compliance monitoring.
+3. **`Permissive`**: Rule violations are evaluated and returned, but overall verdict is unconditionally `"allow"`.
+
+### Invariants (`NPOL1..NPOL6`)
+
+| Invariant | Name | Enforcement & Rules |
+|:---|:---|:---|
+| **`NPOL1`** | Interface Governance | Validates interface type against `disallowed_interface_types`. Rejects interfaces in `prohibited_interface_names`. Enforces `allowed_interface_names` whitelist if present. Detects unauthorized promiscuous mode (`PROMISC` flag). Mandates MAC addresses on Ethernet interfaces. |
+| **`NPOL2`** | Route Governance | Verifies that all static and dynamic routes in `routes` reference existing, known interface devices, rejecting orphan routes. |
+| **`NPOL3`** | DNS Governance | Verifies nameserver addresses against `disallowed_dns_servers` blacklist and `allowed_dns_servers` whitelist. |
+| **`NPOL4`** | Capacity Quotas & Determinism | Enforces hard ceilings: `max_interfaces_allowed <= 10,000`, `max_routes_allowed <= 50,000`, `max_dns_servers_allowed <= 64`. Violations are deterministically sorted by `rule_id` then `target`. |
+| **`NPOL5`** | Address Redaction & Sanitization | When `redact_sensitive_addresses` is enabled, `apply_and_sanitize()` masks MAC addresses to `{oui}:xx:xx:xx`, IPv4 addresses to `{prefix}.xxx`, and IPv6 addresses to `{prefix}:xxxx::xxxx`. |
+| **`NPOL6`** | Path Hygiene & Atomic Persistence | Policy file path bounded to 1024 characters, UTF-8, no control characters, no traversal (`..`). File size capped at 1 MB (`MAX_POLICY_FILE_BYTES`). Saved atomically via sibling temporary file `.{name}.tmp.{pid}` with permissions `0600` on Unix and safe unlinking on error. |
+
+### Configuration Format (`net_policy.json`)
+
+```json
+{
+  "mode": "enforcing",
+  "disallowed_interface_types": [
+    "other",
+    "tun_tap"
+  ],
+  "prohibited_interface_names": [
+    "bad0",
+    "wlan0"
+  ],
+  "allowed_interface_names": [
+    "lo",
+    "eth0",
+    "eth1"
+  ],
+  "allow_promiscuous": false,
+  "require_mac_for_ethernet": true,
+  "disallowed_dns_servers": [
+    "198.51.100.1"
+  ],
+  "allowed_dns_servers": [
+    "1.1.1.1",
+    "8.8.8.8"
+  ],
+  "max_interfaces_allowed": 1024,
+  "max_routes_allowed": 4096,
+  "max_dns_servers_allowed": 32,
+  "redact_sensitive_addresses": false
+}
+```
+
+### Programmatic Usage Example (Rust)
+
+```rust
+use std::path::Path;
+use aiosh_core::network::NetworkState;
+use aiosh_core::network_policy::{NetworkSecurityPolicy, NetworkPolicyMode};
+
+// 1. Initialize policy with custom rules
+let mut policy = NetworkSecurityPolicy::default();
+policy.mode = NetworkPolicyMode::Enforcing;
+policy.disallowed_interface_types.push(InterfaceType::TunTap);
+policy.allow_promiscuous = false;
+
+// 2. Evaluate network state
+let state = NetworkState::new("node-01");
+let report = policy.evaluate(&state);
+
+if report.verdict == "deny" {
+    for violation in &report.violations {
+        eprintln!("Violation [{}]: {} ({})", violation.rule_id, violation.description, violation.target);
+    }
+}
+
+// 3. Save atomically
+policy.save_to_path(Path::new("/etc/aios/network_policy.json"))?;
+```
+
+### Limitations
+- Evaluates userspace representations of network topology and configuration; does not inspect or attach eBPF filters to live Linux kernel sockets directly.
+- Redaction transforms state snapshots in memory; physical kernel sysfs virtual attributes remain unchanged on the host system.
+
+### Evidence & Task References
+- Research & Specification: `docs/tasks/evidence/T-01861-security-policy-research.md`, `docs/tasks/evidence/T-01862-security-policy-specification.md`
+- Implementation & Testing: `docs/tasks/evidence/T-01864-security-policy-implementation.md`, `docs/tasks/evidence/T-01865-security-policy-unit-test.md`, `docs/tasks/evidence/T-01866-security-policy-integration.md`
+- Security Review & Hardening: `docs/tasks/evidence/T-01867-security-policy-security-review.md`, `docs/tasks/evidence/T-01868-security-policy-hardening.md`

@@ -86,23 +86,30 @@ pub struct NetworkPolicyReport {
 /// Maximum allowed policy file size (1 MB) to prevent OOM / DoS.
 pub const MAX_POLICY_FILE_BYTES: u64 = 1_048_576;
 
+/// Standardized error classification codes for network security policy operations.
+pub const NPOL_VALIDATION_ERROR: &str = "NPOL_VALIDATION_ERROR";
+pub const NPOL_IO_ERROR: &str = "NPOL_IO_ERROR";
+pub const NPOL_PARSE_ERROR: &str = "NPOL_PARSE_ERROR";
+pub const NPOL_PATH_ERROR: &str = "NPOL_PATH_ERROR";
+
 /// Validates policy file path hygiene (no traversal, no control chars, max length 1024).
 pub fn validate_policy_path(path: &Path) -> Result<(), String> {
-    let path_str = path.to_str().ok_or_else(|| "NPOL6 violation: policy path must be valid UTF-8".to_string())?;
+    let path_str = path.to_str().ok_or_else(|| format!("{}: policy path must be valid UTF-8", NPOL_PATH_ERROR))?;
     if path_str.trim().is_empty() {
-        return Err("NPOL6 violation: policy path cannot be empty".into());
+        return Err(format!("{}: policy path cannot be empty", NPOL_PATH_ERROR));
     }
     if path_str.len() > 1024 {
-        return Err("NPOL6 violation: policy path exceeds maximum length of 1024 characters".into());
+        return Err(format!("{}: policy path exceeds maximum length of 1024 characters", NPOL_PATH_ERROR));
     }
     if path_str.chars().any(|c| c.is_control() || c == '\0') {
-        return Err("NPOL6 violation: policy path cannot contain control characters".into());
+        return Err(format!("{}: policy path cannot contain control characters", NPOL_PATH_ERROR));
     }
     if path.components().any(|c| matches!(c, std::path::Component::ParentDir)) {
-        return Err("NPOL6 violation: policy path traversal ('..') is not permitted".into());
+        return Err(format!("{}: policy path traversal ('..') is not permitted", NPOL_PATH_ERROR));
     }
     Ok(())
 }
+
 
 impl NetworkSecurityPolicy {
     /// Validates policy configuration invariants (NPOL4, NPOL6).
@@ -220,8 +227,10 @@ impl NetworkSecurityPolicy {
                 });
             }
 
+            let iface_name = iface.name.trim();
+
             // Check prohibited names
-            if self.prohibited_interface_names.iter().any(|p| p == &iface.name) {
+            if self.prohibited_interface_names.iter().any(|p| p.trim() == iface_name) {
                 violations.push(NetworkPolicyViolation {
                     rule_id: "RULE_IFACE_PROHIBITED_NAME".into(),
                     target: iface.name.clone(),
@@ -232,7 +241,7 @@ impl NetworkSecurityPolicy {
 
             // Check allowed whitelist if configured
             if let Some(ref whitelist) = self.allowed_interface_names {
-                if !whitelist.iter().any(|w| w == &iface.name) {
+                if !whitelist.iter().any(|w| w.trim() == iface_name) {
                     violations.push(NetworkPolicyViolation {
                         rule_id: "RULE_IFACE_NOT_WHITELISTED".into(),
                         target: iface.name.clone(),
@@ -285,7 +294,8 @@ impl NetworkSecurityPolicy {
 
         // NPOL3: DNS evaluation
         for ns in &state.dns.nameservers {
-            if self.disallowed_dns_servers.iter().any(|d| d == ns) {
+            let trimmed_ns = ns.trim();
+            if self.disallowed_dns_servers.iter().any(|d| d.trim() == trimmed_ns) {
                 violations.push(NetworkPolicyViolation {
                     rule_id: "RULE_DNS_DISALLOWED_SERVER".into(),
                     target: format!("dns:{}", ns),
@@ -294,7 +304,7 @@ impl NetworkSecurityPolicy {
                 });
             }
             if let Some(ref whitelist) = self.allowed_dns_servers {
-                if !whitelist.iter().any(|w| w == ns) {
+                if !whitelist.iter().any(|w| w.trim() == trimmed_ns) {
                     violations.push(NetworkPolicyViolation {
                         rule_id: "RULE_DNS_NOT_WHITELISTED".into(),
                         target: format!("dns:{}", ns),
@@ -353,6 +363,8 @@ impl NetworkSecurityPolicy {
                 for ip in &mut iface.ip_addresses {
                     if let Some((prefix, _)) = ip.address.rsplit_once('.') {
                         ip.address = format!("{}.xxx", prefix);
+                    } else if let Some((prefix, _)) = ip.address.split_once(':') {
+                        ip.address = format!("{}:xxxx::xxxx", prefix);
                     }
                 }
             }
@@ -361,23 +373,25 @@ impl NetworkSecurityPolicy {
         report
     }
 
+
     /// Loads policy from JSON file (NPOL6).
     pub fn load_from_path(path: &Path) -> Result<Self, String> {
         validate_policy_path(path)?;
         if !path.exists() {
             return Ok(Self::default());
         }
-        let metadata = fs::metadata(path).map_err(|e| format!("Failed to read metadata for {}: {}", path.display(), e))?;
+        let metadata = fs::metadata(path).map_err(|e| format!("{}: Failed to read metadata for {}: {}", NPOL_IO_ERROR, path.display(), e))?;
         if metadata.len() > MAX_POLICY_FILE_BYTES {
             return Err(format!(
-                "Policy file {} size {} exceeds maximum allowed ({} bytes)",
+                "{}: Policy file {} size {} exceeds maximum allowed ({} bytes)",
+                NPOL_VALIDATION_ERROR,
                 path.display(),
                 metadata.len(),
                 MAX_POLICY_FILE_BYTES
             ));
         }
-        let content = fs::read_to_string(path).map_err(|e| format!("Failed to read policy from {}: {}", path.display(), e))?;
-        let policy: NetworkSecurityPolicy = serde_json::from_str(&content).map_err(|e| format!("Failed to parse policy JSON: {}", e))?;
+        let content = fs::read_to_string(path).map_err(|e| format!("{}: Failed to read policy from {}: {}", NPOL_IO_ERROR, path.display(), e))?;
+        let policy: NetworkSecurityPolicy = serde_json::from_str(&content).map_err(|e| format!("{}: Failed to parse policy JSON: {}", NPOL_PARSE_ERROR, e))?;
         policy.validate()?;
         Ok(policy)
     }
@@ -388,9 +402,9 @@ impl NetworkSecurityPolicy {
         self.validate()?;
         let parent = path.parent().unwrap_or_else(|| Path::new(""));
         if !parent.as_os_str().is_empty() && !parent.exists() {
-            fs::create_dir_all(parent).map_err(|e| format!("Failed to create parent directory {}: {}", parent.display(), e))?;
+            fs::create_dir_all(parent).map_err(|e| format!("{}: Failed to create parent directory {}: {}", NPOL_IO_ERROR, parent.display(), e))?;
         }
-        let json = serde_json::to_string_pretty(self).map_err(|e| format!("Failed to serialize policy: {}", e))?;
+        let json = serde_json::to_string_pretty(self).map_err(|e| format!("{}: Failed to serialize policy: {}", NPOL_PARSE_ERROR, e))?;
 
         let tmp_file_name = format!(
             ".{}.tmp.{}",
@@ -403,9 +417,25 @@ impl NetworkSecurityPolicy {
             parent.join(tmp_file_name)
         };
 
+        struct TempFileGuard {
+            path: PathBuf,
+            active: bool,
+        }
+        impl Drop for TempFileGuard {
+            fn drop(&mut self) {
+                if self.active && self.path.exists() {
+                    let _ = fs::remove_file(&self.path);
+                }
+            }
+        }
+
+        let mut guard = TempFileGuard {
+            path: tmp_path.clone(),
+            active: true,
+        };
+
         if let Err(e) = fs::write(&tmp_path, &json) {
-            let _ = fs::remove_file(&tmp_path);
-            return Err(format!("Failed to write policy temp file {}: {}", tmp_path.display(), e));
+            return Err(format!("{}: Failed to write policy temp file {}: {}", NPOL_IO_ERROR, tmp_path.display(), e));
         }
 
         #[cfg(unix)]
@@ -415,11 +445,13 @@ impl NetworkSecurityPolicy {
         }
 
         if let Err(e) = fs::rename(&tmp_path, path) {
-            let _ = fs::remove_file(&tmp_path);
-            return Err(format!("Failed to atomically rename {} to {}: {}", tmp_path.display(), path.display(), e));
+            return Err(format!("{}: Failed to atomically rename {} to {}: {}", NPOL_IO_ERROR, tmp_path.display(), path.display(), e));
         }
+
+        guard.active = false;
         Ok(())
     }
+
 
     /// Loads policy taking environment variables into account.
     pub fn from_env() -> Self {
