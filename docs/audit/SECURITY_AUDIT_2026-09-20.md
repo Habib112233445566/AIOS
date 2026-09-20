@@ -1323,6 +1323,49 @@ Read line-by-line: `pentest.rs` (597), `train_slm.py` (210), `train_unsloth.py` 
   - `aiosh-cli`: 4/4 network CLI smoke tests in `test_network_cli_smoke.py` passed.
   - Zero compiler warnings or lint errors across Rust and Python suites.
 
+---
+
+## 12. Post-Audit Addendum: Batch T-01827 through T-01836 Verification
+
+**Date:** 2026-09-20  
+**Scope:** Batch `T-01827` through `T-01836` (Network Bootstrap CLI Surface Sub-Epic 3 Closure & MCP/API Surface Sub-Epic 4).  
+**Auditor:** Antigravity Autonomous Agent  
+**Verdict:** **PASS (Zero vulnerabilities)**
+
+### 1. Hardened Surface & Key Controls
+- **Network Bootstrap CLI Surface Closure (T-01827..T-01830)**:
+  - Security review evaluated threat vectors `THREAT-NCLI-01..05` (custom root path injection, interface name injection, ANSI terminal escape injection, unauthenticated link mutation, silent script failures).
+  - Hardened `cmd_network` in `code/aiosh-rust/aiosh-cli/src/main.rs`:
+    - Strict path bounds: $\le 1024$ chars, control character check (`is_control()`).
+    - Interface name bounds: $\le 15$ chars, strict regex `^[a-zA-Z0-9_.-]+$`.
+    - Terminal output sanitized with `sanitize_terminal`.
+    - Honest audit rows emitted for every failure/success branch via `classify_and_emit`.
+  - Documented Section 6 in `docs/network_bootstrap.md`.
+  - Formally verified and closed Sub-Epic 3 with 4/4 Rust unit tests and 4/4 Python smoke tests passing.
+- **Network Bootstrap MCP/API Surface (T-01831..T-01836)**:
+  - Researched, specified, scaffolded, implemented, tested, and integrated 7 MCP tools:
+    - `aios.network.list`: Interface discovery and enumeration.
+    - `aios.network.show`: Detailed interface attributes inspection.
+    - `aios.network.routes`: Host IPv4 routing table.
+    - `aios.network.dns`: DNS resolver configuration (nameservers, search domains).
+    - `aios.network.state`: Full host network state snapshot.
+    - `aios.network.up`: Interface link state activation.
+    - `aios.network.down`: Interface link state deactivation.
+  - Enforced security invariants `NMCP1`..`NMCP6`:
+    - `NMCP1`: Full schema compliance with typed parameters.
+    - `NMCP2`: Path hygiene on `sysfs_path`, `procfs_path`, `resolv_path` ($\le 1024$ chars, control character rejection).
+    - `NMCP3`: Interface name validation on all interface lookups and mutations.
+    - `NMCP4`: PEP gating and consequential classification for mutations.
+    - `NMCP5`: Audit logging via `dispatch::recorded_call` for all invocations.
+    - `NMCP6`: Deterministic JSON serialization with 100% cross-surface CLI/MCP parity.
+- **Test Verification**:
+  - `aiosh-cli`: 4/4 network CLI unit tests in `network_cli_tests` passed.
+  - `aiosh-mcp`: `test_network_mcp_surface` passed in 0.11s.
+  - `aiosh-cli`: 4/4 network CLI smoke tests in `test_network_cli_smoke.py` passed.
+  - `aiosh-mcp`: 3/3 network MCP smoke suites in `test_network_mcp_smoke.py` passed.
+  - Zero compiler warnings or lint errors across Rust and Python suites.
+
+
 
 
 

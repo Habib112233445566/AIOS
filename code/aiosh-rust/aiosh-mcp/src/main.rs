@@ -1415,6 +1415,104 @@ impl Server {
                 "additionalProperties": false
             }
         }));
+
+        // Network Bootstrap Tools (NMCP1..NMCP6)
+        tools.push(json!({
+            "name": "aios.network.list",
+            "description": "List discovered network interfaces on the host with status, type, MTU, and MAC address",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "sysfs_path": { "type": "string", "description": "Optional custom sysfs root directory path" },
+                    "procfs_path": { "type": "string", "description": "Optional custom procfs root directory path" },
+                    "resolv_path": { "type": "string", "description": "Optional custom resolv.conf file path" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.network.show",
+            "description": "Inspect details for a specific network interface",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "interface": { "type": "string", "description": "Name of the network interface to inspect" },
+                    "sysfs_path": { "type": "string", "description": "Optional custom sysfs root directory path" },
+                    "procfs_path": { "type": "string", "description": "Optional custom procfs root directory path" },
+                    "resolv_path": { "type": "string", "description": "Optional custom resolv.conf file path" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "required": ["interface"],
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.network.routes",
+            "description": "Query host IPv4 routing table",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "procfs_path": { "type": "string", "description": "Optional custom procfs root directory path" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.network.dns",
+            "description": "Query host DNS resolver configuration (nameservers and search domains)",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "resolv_path": { "type": "string", "description": "Optional custom resolv.conf file path" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.network.state",
+            "description": "Retrieve complete host network state snapshot (interfaces, routes, DNS, and hostname)",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "sysfs_path": { "type": "string", "description": "Optional custom sysfs root directory path" },
+                    "procfs_path": { "type": "string", "description": "Optional custom procfs root directory path" },
+                    "resolv_path": { "type": "string", "description": "Optional custom resolv.conf file path" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.network.up",
+            "description": "Bring network interface link up",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "interface": { "type": "string", "description": "Name of the network interface to bring up" },
+                    "sysfs_path": { "type": "string", "description": "Optional custom sysfs root directory path" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "required": ["interface"],
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.network.down",
+            "description": "Bring network interface link down",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "interface": { "type": "string", "description": "Name of the network interface to bring down" },
+                    "sysfs_path": { "type": "string", "description": "Optional custom sysfs root directory path" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "required": ["interface"],
+                "additionalProperties": false
+            }
+        }));
         tools
     }
 
@@ -5110,6 +5208,156 @@ impl Server {
                     None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
                 )
             }
+            "aios.network.list" => {
+                let sysfs_opt = arguments.get("sysfs_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let procfs_opt = arguments.get("procfs_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let resolv_opt = arguments.get("resolv_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = || {
+                    let service = resolve_network_service(&sysfs_opt, &procfs_opt, &resolv_opt)?;
+                    let ifaces = service.scan_interfaces().map_err(|e| format!("network list failed: {}", e))?;
+                    let count = ifaces.len();
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.network.list",
+                        "data": {
+                            "interfaces": ifaces,
+                            "count": count
+                        }
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.network.list", "List discovered network interfaces", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.network.show" => {
+                let iface_name = arguments.get("interface").and_then(|v| v.as_str());
+                let sysfs_opt = arguments.get("sysfs_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let procfs_opt = arguments.get("procfs_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let resolv_opt = arguments.get("resolv_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let target = iface_name.map(|s| s.to_string());
+                let f = || {
+                    let name = iface_name.ok_or_else(|| "missing required field 'interface'".to_string())?;
+                    aiosh_core::network::validate_interface_name(name)
+                        .map_err(|e| format!("invalid interface name '{}': {}", name, e))?;
+                    let service = resolve_network_service(&sysfs_opt, &procfs_opt, &resolv_opt)?;
+                    match service.get_interface(name).map_err(|e| format!("network show failed: {}", e))? {
+                        Some(iface) => Ok(json!({
+                            "ok": true,
+                            "tool": "aios.network.show",
+                            "data": { "interface": iface }
+                        })),
+                        None => Err(format!("interface '{}' not found", name))
+                    }
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.network.show", "Inspect details for a specific network interface", arguments,
+                    target.as_deref(), grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.network.routes" => {
+                let procfs_opt = arguments.get("procfs_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = || {
+                    let service = resolve_network_service(&None, &procfs_opt, &None)?;
+                    let routes = service.scan_routes().map_err(|e| format!("network routes failed: {}", e))?;
+                    let count = routes.len();
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.network.routes",
+                        "data": {
+                            "routes": routes,
+                            "count": count
+                        }
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.network.routes", "Query host IPv4 routing table", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.network.dns" => {
+                let resolv_opt = arguments.get("resolv_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = || {
+                    let service = resolve_network_service(&None, &None, &resolv_opt)?;
+                    let dns = service.get_dns_config().map_err(|e| format!("network dns failed: {}", e))?;
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.network.dns",
+                        "data": { "dns": dns }
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.network.dns", "Query host DNS resolver configuration", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.network.state" => {
+                let sysfs_opt = arguments.get("sysfs_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let procfs_opt = arguments.get("procfs_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let resolv_opt = arguments.get("resolv_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = || {
+                    let service = resolve_network_service(&sysfs_opt, &procfs_opt, &resolv_opt)?;
+                    let state = service.get_network_state().map_err(|e| format!("network state failed: {}", e))?;
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.network.state",
+                        "data": { "state": state }
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.network.state", "Retrieve complete host network state snapshot", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.network.up" => {
+                let iface_name = arguments.get("interface").and_then(|v| v.as_str());
+                let sysfs_opt = arguments.get("sysfs_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let target = iface_name.map(|s| s.to_string());
+                let f = || {
+                    let name = iface_name.ok_or_else(|| "missing required field 'interface'".to_string())?;
+                    aiosh_core::network::validate_interface_name(name)
+                        .map_err(|e| format!("invalid interface name '{}': {}", name, e))?;
+                    let service = resolve_network_service(&sysfs_opt, &None, &None)?;
+                    service.bring_up(name).map_err(|e| format!("bring up failed: {}", e))?;
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.network.up",
+                        "data": { "interface": name, "status": "up" }
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.network.up", "Bring network interface link up", arguments,
+                    target.as_deref(), grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.network.down" => {
+                let iface_name = arguments.get("interface").and_then(|v| v.as_str());
+                let sysfs_opt = arguments.get("sysfs_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let target = iface_name.map(|s| s.to_string());
+                let f = || {
+                    let name = iface_name.ok_or_else(|| "missing required field 'interface'".to_string())?;
+                    aiosh_core::network::validate_interface_name(name)
+                        .map_err(|e| format!("invalid interface name '{}': {}", name, e))?;
+                    let service = resolve_network_service(&sysfs_opt, &None, &None)?;
+                    service.bring_down(name).map_err(|e| format!("bring down failed: {}", e))?;
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.network.down",
+                        "data": { "interface": name, "status": "down" }
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.network.down", "Bring network interface link down", arguments,
+                    target.as_deref(), grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
             _ => json!({"ok": false, "error": format!("unknown tool: {}", tool)}),
         }
     }
@@ -5365,6 +5613,41 @@ fn save_kernel_module_service(
         let _ = std::fs::create_dir_all(parent);
     }
     service.store.save_to_path(path)
+}
+
+fn resolve_network_service(
+    sysfs_opt: &Option<String>,
+    procfs_opt: &Option<String>,
+    resolv_opt: &Option<String>,
+) -> Result<aiosh_core::network_service::NetworkService, String> {
+    if let Some(ref p) = sysfs_opt {
+        if p.len() > 1024 {
+            return Err("sysfs_path cannot exceed 1024 characters".to_string());
+        }
+        if p.chars().any(|c| c.is_control()) {
+            return Err("sysfs_path cannot contain control characters".to_string());
+        }
+    }
+    if let Some(ref p) = procfs_opt {
+        if p.len() > 1024 {
+            return Err("procfs_path cannot exceed 1024 characters".to_string());
+        }
+        if p.chars().any(|c| c.is_control()) {
+            return Err("procfs_path cannot contain control characters".to_string());
+        }
+    }
+    if let Some(ref p) = resolv_opt {
+        if p.len() > 1024 {
+            return Err("resolv_path cannot exceed 1024 characters".to_string());
+        }
+        if p.chars().any(|c| c.is_control()) {
+            return Err("resolv_path cannot contain control characters".to_string());
+        }
+    }
+    let sysfs = sysfs_opt.clone().unwrap_or_else(|| "/sys/class/net".to_string());
+    let procfs = procfs_opt.clone().unwrap_or_else(|| "/proc/net".to_string());
+    let resolv = resolv_opt.clone().unwrap_or_else(|| "/etc/resolv.conf".to_string());
+    Ok(aiosh_core::network_service::NetworkService::with_paths(sysfs, procfs, resolv))
 }
 
 fn resolve_hardware_service(
@@ -7878,6 +8161,156 @@ mod tests {
             "classes": ["invalid_class_xyz"]
         }));
         assert_eq!(res_bad_class.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+    }
+
+    #[test]
+    fn test_network_mcp_surface() {
+        let mut server = Server::open();
+
+        // 1. Verify tools/list contains all 7 network tools (NMCP1)
+        let manifest = server.tool_manifest();
+        let tool_names: Vec<&str> = manifest
+            .iter()
+            .filter_map(|t| t.get("name").and_then(|v| v.as_str()))
+            .collect();
+
+        for expected in &[
+            "aios.network.list",
+            "aios.network.show",
+            "aios.network.routes",
+            "aios.network.dns",
+            "aios.network.state",
+            "aios.network.up",
+            "aios.network.down",
+        ] {
+            assert!(
+                tool_names.contains(expected),
+                "manifest missing network tool: {}",
+                expected
+            );
+        }
+
+        // 2. Path hygiene validation (NMCP2)
+        let long_path = "a".repeat(1025);
+        let res_long_sys = server.call_tool("aios.network.list", &json!({
+            "sysfs_path": long_path
+        }));
+        assert_eq!(res_long_sys.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        let res_ctrl_proc = server.call_tool("aios.network.routes", &json!({
+            "procfs_path": "bad\x07proc"
+        }));
+        assert_eq!(res_ctrl_proc.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        let res_ctrl_resolv = server.call_tool("aios.network.dns", &json!({
+            "resolv_path": "bad\x07resolv"
+        }));
+        assert_eq!(res_ctrl_resolv.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 3. Argument validation (NMCP3)
+        let res_no_iface = server.call_tool("aios.network.show", &json!({}));
+        assert_eq!(res_no_iface.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        let res_bad_iface = server.call_tool("aios.network.show", &json!({
+            "interface": "eth0;evil"
+        }));
+        assert_eq!(res_bad_iface.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        let res_up_no_iface = server.call_tool("aios.network.up", &json!({}));
+        assert_eq!(res_up_no_iface.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        let res_down_no_iface = server.call_tool("aios.network.down", &json!({}));
+        assert_eq!(res_down_no_iface.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 4. Mock filesystem execution
+        let tmp_dir = std::env::temp_dir().join(format!("aiosh_net_mcp_test_{}", std::process::id()));
+        let sys_dir = tmp_dir.join("sys").join("class").join("net");
+        let proc_dir = tmp_dir.join("proc").join("net");
+        let resolv_file = tmp_dir.join("etc").join("resolv.conf");
+
+        let eth0 = sys_dir.join("eth0");
+        std::fs::create_dir_all(&eth0).unwrap();
+        std::fs::create_dir_all(&proc_dir).unwrap();
+        std::fs::create_dir_all(resolv_file.parent().unwrap()).unwrap();
+
+        std::fs::write(eth0.join("operstate"), "up\n").unwrap();
+        std::fs::write(eth0.join("type"), "1\n").unwrap();
+        std::fs::write(eth0.join("address"), "02:42:ac:11:00:02\n").unwrap();
+        std::fs::write(eth0.join("mtu"), "1500\n").unwrap();
+        std::fs::write(eth0.join("flags"), "0x1003\n").unwrap();
+
+        let route_content = "Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU\tWindow\tIRTT\neth0\t00000000\t010011AC\t0003\t0\t0\t100\t00000000\t0\t0\t0\n";
+        std::fs::write(proc_dir.join("route"), route_content).unwrap();
+
+        let resolv_content = "nameserver 1.1.1.1\nnameserver 8.8.8.8\nsearch localdomain\n";
+        std::fs::write(&resolv_file, resolv_content).unwrap();
+
+        let sys_str = sys_dir.to_string_lossy().to_string();
+        let proc_str = proc_dir.to_string_lossy().to_string();
+        let resolv_str = resolv_file.to_string_lossy().to_string();
+
+        // 5. Test aios.network.list
+        let res_list = server.call_tool("aios.network.list", &json!({
+            "sysfs_path": sys_str,
+            "procfs_path": proc_str,
+            "resolv_path": resolv_str
+        }));
+        assert_eq!(res_list.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_list.pointer("/data/count").and_then(|v| v.as_u64()), Some(1));
+
+        // 6. Test aios.network.show
+        let res_show = server.call_tool("aios.network.show", &json!({
+            "interface": "eth0",
+            "sysfs_path": sys_str
+        }));
+        assert_eq!(res_show.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_show.pointer("/data/interface/name").and_then(|v| v.as_str()), Some("eth0"));
+
+        let res_show_notfound = server.call_tool("aios.network.show", &json!({
+            "interface": "eth99",
+            "sysfs_path": sys_str
+        }));
+        assert_eq!(res_show_notfound.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 7. Test aios.network.routes
+        let res_routes = server.call_tool("aios.network.routes", &json!({
+            "procfs_path": proc_str
+        }));
+        assert_eq!(res_routes.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_routes.pointer("/data/count").and_then(|v| v.as_u64()), Some(1));
+
+        // 8. Test aios.network.dns
+        let res_dns = server.call_tool("aios.network.dns", &json!({
+            "resolv_path": resolv_str
+        }));
+        assert_eq!(res_dns.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_dns.pointer("/data/dns/nameservers/0").and_then(|v| v.as_str()), Some("1.1.1.1"));
+
+        // 9. Test aios.network.state
+        let res_state = server.call_tool("aios.network.state", &json!({
+            "sysfs_path": sys_str,
+            "procfs_path": proc_str,
+            "resolv_path": resolv_str
+        }));
+        assert_eq!(res_state.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_state.pointer("/data/state/interfaces").and_then(|v| v.as_array()).map(|a| a.len()), Some(1));
+
+        // 10. Test aios.network.up & down
+        let res_up = server.call_tool("aios.network.up", &json!({
+            "interface": "eth0",
+            "sysfs_path": sys_str
+        }));
+        assert_eq!(res_up.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_up.pointer("/data/status").and_then(|v| v.as_str()), Some("up"));
+
+        let res_down = server.call_tool("aios.network.down", &json!({
+            "interface": "eth0",
+            "sysfs_path": sys_str
+        }));
+        assert_eq!(res_down.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_down.pointer("/data/status").and_then(|v| v.as_str()), Some("down"));
 
         let _ = std::fs::remove_dir_all(&tmp_dir);
     }

@@ -133,3 +133,64 @@ The `NetworkService` handles the active discovery of physical and virtual networ
      - `MAX_ROUTE_FILE_BYTES = 1 MB`
      - `MAX_RESOLV_FILE_BYTES = 64 KB`
    - Bounded collections: `MAX_INTERFACES` (1024), `MAX_ROUTES` (4096), `MAX_DNS_NAMESERVERS` (32).
+
+---
+
+## 6. Network Bootstrap CLI Surface (`aiosh net` / `aiosh network`)
+
+The CLI surface provides operators and agents with terminal and machine-readable inspection and control of network interfaces, routing tables, and DNS configuration.
+
+### Subcommands
+
+| Subcommand | Arguments | Description | Exit Codes |
+|------------|-----------|-------------|------------|
+| `list` | None | Lists all discovered interfaces in table or JSON format | 0, 1, 2 |
+| `show` | `<interface>` | Shows detailed interface attributes (type, operstate, MAC, MTU, flags) | 0, 1, 2 |
+| `routes` | None | Displays IPv4 routing table with destinations, gateways, and metrics | 0, 1, 2 |
+| `dns` | None | Displays configured DNS nameservers and search domains | 0, 1, 2 |
+| `state` | None | Generates a complete host network state snapshot | 0, 1, 2 |
+| `up` | `<interface>` | Brings the specified interface link up | 0, 1, 2 |
+| `down` | `<interface>` | Brings the specified interface link down | 0, 1, 2 |
+
+### CLI Options
+
+- `--sysfs <path>`: Override sysfs root directory (default: `/sys/class/net`).
+- `--procfs <path>`: Override procfs root directory (default: `/proc/net`).
+- `--resolv <path>`: Override resolv.conf file path (default: `/etc/resolv.conf`).
+- `--json`: Output machine-readable JSON envelope: `{"code": <int>, "data": ..., "error": ...}`.
+
+### Invariants (`NCLI1..NCLI6`)
+
+1. **`NCLI1` (Path Hygiene)**: `--sysfs`, `--procfs`, and `--resolv` flags are strictly bounded to $\le 1024$ characters and must not contain control characters. Violations exit with code 2 and emit an audit event.
+2. **`NCLI2` (Interface Name Sanitization)**: Interface names are validated against `validate_interface_name` ($\le 15$ chars, `^[a-zA-Z0-9_.-]+$`). Malformed or traversal paths are rejected with exit code 2 (`INVALID_INTERFACE_NAME`).
+3. **`NCLI3` (Terminal Output Sanitization)**: Human-readable output is sanitized via `sanitize_terminal` to strip ANSI escape sequences and prevent terminal injection attacks.
+4. **`NCLI4` (Deterministic JSON Envelope)**: In `--json` mode, output always follows the standard envelope schema with `code`, `data`, and `error`.
+5. **`NCLI5` (Audit Logging & PEP Gating)**: Every execution path (success and failure) emits an audit event via `classify_and_emit` to maintain complete traceability.
+6. **`NCLI6` (POSIX Exit Codes)**: Exit code 0 for success, 1 for operational failures / resource not found, and 2 for syntax or validation errors.
+
+### Example Invocations
+
+```bash
+# List interfaces in human-readable table
+aiosh net list
+
+# Query interface details with JSON envelope
+aiosh net show eth0 --json
+
+# View IPv4 routing table
+aiosh net routes
+
+# Query DNS resolver configuration
+aiosh net dns
+
+# Snapshot full network state
+aiosh net state --json
+
+# Hermetic test execution with custom mock paths
+aiosh net state --sysfs /tmp/mock/sys/class/net --procfs /tmp/mock/proc/net --resolv /tmp/mock/etc/resolv.conf --json
+```
+
+### Constraints & Known Limitations
+- Live kernel reads depend on Linux sysfs and procfs structures; on non-Linux platforms (e.g. Windows/macOS), the CLI functions via mock paths or falls back to empty datasets.
+- Link state mutation (`up`, `down`) on live systems requires appropriate Linux capabilities (`CAP_NET_ADMIN`) or root privileges.
+- IPv6 route parsing is reserved for future milestones; currently `/proc/net/route` handles IPv4 routing tables.
