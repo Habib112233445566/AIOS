@@ -197,3 +197,38 @@ fn test_hardware_service_empty_sysfs_resilience() {
     assert!(inv.summary.is_empty());
     assert!(inv.validate_invariants().is_ok());
 }
+
+#[test]
+fn test_hardware_service_hardening_bounds() {
+    let dir = tempdir().expect("tempdir");
+    let sysfs = dir.path().join("sys");
+    let procfs = dir.path().join("proc");
+
+    let pci_dev = sysfs.join("bus/pci/devices/0000_00_03.0");
+    fs::create_dir_all(&pci_dev).expect("create pci dev dir");
+
+    // Vendor with oversized padding (>1024 bytes)
+    let large_vendor = format!("0x8086{}", " ".repeat(2048));
+    fs::write(pci_dev.join("vendor"), large_vendor).unwrap();
+
+    // Device with control characters (\x07 BEL, \x00 NULL)
+    fs::write(pci_dev.join("device"), "0x9b\x07c\x004\n").unwrap();
+    fs::write(pci_dev.join("class"), "0x030000\n").unwrap();
+
+    // Driver with invalid characters (attempting traversal / injection)
+    fs::write(pci_dev.join("driver"), "../../../evil_driver\n").unwrap();
+
+    let service = HardwareService::with_roots(&sysfs, &procfs);
+    let inv = service.scan(&HardwareScanOptions::default()).expect("scan hardened");
+
+    assert_eq!(inv.devices.len(), 1);
+    let dev = &inv.devices[0];
+    // Driver with illegal traversal characters should be rejected (set to None)
+    assert_eq!(dev.driver, None);
+    // Control characters stripped: 0x9bc4 -> 9bc4
+    assert_eq!(dev.device_id.as_deref(), Some("9bc4"));
+    // Oversized whitespace truncated, successfully parsed 8086
+    assert_eq!(dev.vendor_id.as_deref(), Some("8086"));
+    assert!(inv.validate_invariants().is_ok());
+}
+

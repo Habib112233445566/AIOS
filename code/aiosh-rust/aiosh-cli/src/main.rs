@@ -215,8 +215,9 @@ fn main() {
         Some("session") => cmd_session(&args[1..]),
         Some("layout") | Some("fs-layout") => cmd_fs_layout(&args[1..]),
         Some("mod") | Some("module") => cmd_kernel_module(&args[1..]),
+        Some("hw") | Some("hardware") => cmd_hardware(&args[1..]),
         Some("--help") | Some("-h") | None => {
-            println!("aiosh — AIOS shell CLI (Rust)\n\nUsage: aiosh <status|run|agent|audit|grant|pentest|classify|task|ci|release|backup|toolchain|doc|evidence|repo|secrets|triage|handoff|distro|image|package|service|session|layout|mod> ...\n\n  aiosh task <status|done|block|unblock|skip|rebuild|check>  Task ledger control\n  aiosh ci <show|failures|check|config|metrics> [--file PATH]  CI smoke reports\n  aiosh release generate  Create bootable ISO\n  aiosh backup create  Create system snapshot zip\n  aiosh toolchain check [--config <path>]  Verify host environment against ToolchainManifest\n  aiosh toolchain show [--config <path>]   Display the resolved ToolchainManifest\n  aiosh doc <show|check|search>  Documentation Index Control\n  aiosh evidence <verify|hash|scan>   Evidence & Audit Trail Control\n  aiosh repo <health|check>  Repository Health Diagnostics\n  aiosh secrets <scan|check> [--config <path>]  Secrets & Access Hygiene Scanner\n  aiosh triage <list|show|record|resolve|ingest|check>  Regression Triage Manager\n  aiosh handoff <list|show|initiate|accept|reject|complete|cancel>  Agent Handoff Protocol Manager\n  aiosh distro <list|show|evaluate|recommend|policy|stats|check>  Linux Distro Selection & Justification Manager\n  aiosh image <list|show|plan|filter>  Linux Base Image Build & Packaging Manager\n  aiosh package <list|show|search|plan|apply|validate>  Linux Package Management & Store Control\n  aiosh service <validate|list|show|status|action|start|stop|restart|reload|order>  Init & Service Supervision Control\n  aiosh session <validate|list|show|status|create|action|activate|lock|unlock|terminate|config>  User Session Bootstrap Control\n  aiosh layout <list|show|validate|check|probe|diff|fstab|register|set-active|remove|import-fstab>  Filesystem Layout & Target Partitioning Manager\n  aiosh mod <list|show|blacklist|unblacklist|options|autoload|unautoload|preset|export>  Kernel Module Management");
+            println!("aiosh — AIOS shell CLI (Rust)\n\nUsage: aiosh <status|run|agent|audit|grant|pentest|classify|task|ci|release|backup|toolchain|doc|evidence|repo|secrets|triage|handoff|distro|image|package|service|session|layout|mod|hw> ...\n\n  aiosh task <status|done|block|unblock|skip|rebuild|check>  Task ledger control\n  aiosh ci <show|failures|check|config|metrics> [--file PATH]  CI smoke reports\n  aiosh release generate  Create bootable ISO\n  aiosh backup create  Create system snapshot zip\n  aiosh toolchain check [--config <path>]  Verify host environment against ToolchainManifest\n  aiosh toolchain show [--config <path>]   Display the resolved ToolchainManifest\n  aiosh doc <show|check|search>  Documentation Index Control\n  aiosh evidence <verify|hash|scan>   Evidence & Audit Trail Control\n  aiosh repo <health|check>  Repository Health Diagnostics\n  aiosh secrets <scan|check> [--config <path>]  Secrets & Access Hygiene Scanner\n  aiosh triage <list|show|record|resolve|ingest|check>  Regression Triage Manager\n  aiosh handoff <list|show|initiate|accept|reject|complete|cancel>  Agent Handoff Protocol Manager\n  aiosh distro <list|show|evaluate|recommend|policy|stats|check>  Linux Distro Selection & Justification Manager\n  aiosh image <list|show|plan|filter>  Linux Base Image Build & Packaging Manager\n  aiosh package <list|show|search|plan|apply|validate>  Linux Package Management & Store Control\n  aiosh service <validate|list|show|status|action|start|stop|restart|reload|order>  Init & Service Supervision Control\n  aiosh session <validate|list|show|status|create|action|activate|lock|unlock|terminate|config>  User Session Bootstrap Control\n  aiosh layout <list|show|validate|check|probe|diff|fstab|register|set-active|remove|import-fstab>  Filesystem Layout & Target Partitioning Manager\n  aiosh mod <list|show|blacklist|unblacklist|options|autoload|unautoload|preset|export>  Kernel Module Management\n  aiosh hw <scan|list|show|summary|verify>  Hardware Detection & Inventory Control");
             0
         }
         Some(other) => {
@@ -10883,6 +10884,429 @@ fn cmd_kernel_module(args: &[String]) -> i32 {
     }
 }
 
+fn cmd_hardware(args: &[String]) -> i32 {
+    use aiosh_core::{
+        validate_hardware_inventory, DeviceClass, HardwareInventory, HardwareScanOptions,
+        HardwareService,
+    };
+
+    let mut ctx = open_context();
+    let sub = args.first().map(|s| s.as_str());
+    let rest = if args.len() > 1 { &args[1..] } else { &[] };
+    let is_json = has_flag(rest, "--json");
+
+    // Path hygiene checks
+    let sysfs_opt = parse_flag(rest, "--sysfs");
+    if let Some(ref p) = sysfs_opt {
+        if p.len() > 1024 {
+            let msg = "sysfs path cannot exceed 1024 characters";
+            classify_and_emit(
+                &mut ctx, "hardware", sub.unwrap_or("unknown"), json!({ "error": msg }),
+                "failure", None, Some(msg), "operator", None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "PATH_TOO_LONG", "message": msg } }));
+            } else {
+                eprintln!("{}", sanitize_terminal(msg));
+            }
+            return 2;
+        }
+        if p.chars().any(|c| c.is_control()) {
+            let msg = "sysfs path cannot contain control characters";
+            classify_and_emit(
+                &mut ctx, "hardware", sub.unwrap_or("unknown"), json!({ "error": msg }),
+                "failure", None, Some(msg), "operator", None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "PATH_CONTAINS_CONTROL_CHAR", "message": msg } }));
+            } else {
+                eprintln!("{}", sanitize_terminal(msg));
+            }
+            return 2;
+        }
+    }
+
+    let procfs_opt = parse_flag(rest, "--procfs");
+    if let Some(ref p) = procfs_opt {
+        if p.len() > 1024 {
+            let msg = "procfs path cannot exceed 1024 characters";
+            classify_and_emit(
+                &mut ctx, "hardware", sub.unwrap_or("unknown"), json!({ "error": msg }),
+                "failure", None, Some(msg), "operator", None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "PATH_TOO_LONG", "message": msg } }));
+            } else {
+                eprintln!("{}", sanitize_terminal(msg));
+            }
+            return 2;
+        }
+        if p.chars().any(|c| c.is_control()) {
+            let msg = "procfs path cannot contain control characters";
+            classify_and_emit(
+                &mut ctx, "hardware", sub.unwrap_or("unknown"), json!({ "error": msg }),
+                "failure", None, Some(msg), "operator", None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "PATH_CONTAINS_CONTROL_CHAR", "message": msg } }));
+            } else {
+                eprintln!("{}", sanitize_terminal(msg));
+            }
+            return 2;
+        }
+    }
+
+    let file_opt = parse_flag(rest, "--file");
+    if let Some(ref p) = file_opt {
+        if p.len() > 1024 {
+            let msg = "file path cannot exceed 1024 characters";
+            classify_and_emit(
+                &mut ctx, "hardware", sub.unwrap_or("unknown"), json!({ "error": msg }),
+                "failure", None, Some(msg), "operator", None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "PATH_TOO_LONG", "message": msg } }));
+            } else {
+                eprintln!("{}", sanitize_terminal(msg));
+            }
+            return 2;
+        }
+        if p.chars().any(|c| c.is_control()) {
+            let msg = "file path cannot contain control characters";
+            classify_and_emit(
+                &mut ctx, "hardware", sub.unwrap_or("unknown"), json!({ "error": msg }),
+                "failure", None, Some(msg), "operator", None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "PATH_CONTAINS_CONTROL_CHAR", "message": msg } }));
+            } else {
+                eprintln!("{}", sanitize_terminal(msg));
+            }
+            return 2;
+        }
+    }
+
+    // Parse class filter
+    let class_filter = if let Some(cls_str) = parse_flag(rest, "--class") {
+        match cls_str.to_ascii_lowercase().as_str() {
+            "cpu" => Some(vec![DeviceClass::Cpu]),
+            "gpu" => Some(vec![DeviceClass::Gpu]),
+            "block" => Some(vec![DeviceClass::Block]),
+            "network" | "net" => Some(vec![DeviceClass::Network]),
+            "usb" => Some(vec![DeviceClass::Usb]),
+            "pci" => Some(vec![DeviceClass::Pci]),
+            "system" | "dmi" => Some(vec![DeviceClass::System]),
+            "memory" | "ram" => Some(vec![DeviceClass::Memory]),
+            "other" => Some(vec![DeviceClass::Other]),
+            other => {
+                let msg = format!("unrecognized device class: {}", other);
+                classify_and_emit(
+                    &mut ctx, "hardware", sub.unwrap_or("unknown"), json!({ "error": &msg }),
+                    "failure", None, Some("Invalid device class"), "operator", None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_DEVICE_CLASS", "message": msg } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(&msg));
+                }
+                return 2;
+            }
+        }
+    } else {
+        None
+    };
+
+    let include_attrs = !has_flag(rest, "--no-attrs") && !has_flag(rest, "--no-attributes");
+    let options = HardwareScanOptions {
+        classes: class_filter,
+        include_attributes: include_attrs,
+    };
+
+    // Instantiate service
+    let service = match (&sysfs_opt, &procfs_opt) {
+        (Some(s), Some(p)) => HardwareService::with_roots(s, p),
+        (Some(s), None) => HardwareService::with_roots(s, "/proc"),
+        (None, Some(p)) => HardwareService::with_roots("/sys", p),
+        (None, None) => HardwareService::new(),
+    };
+
+    match sub {
+        Some("scan") => {
+            match service.scan(&options) {
+                Ok(inv) => {
+                    classify_and_emit(
+                        &mut ctx, "hardware", "scan",
+                        json!({ "devices_found": inv.devices.len(), "summary": &inv.summary }),
+                        "success", None, Some("Scanned hardware inventory"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 0, "data": inv, "error": serde_json::Value::Null }));
+                    } else {
+                        println!("Hardware scan complete ({} devices found):", inv.devices.len());
+                        for (c, count) in &inv.summary {
+                            println!("  {:10}: {}", c, count);
+                        }
+                    }
+                    0
+                }
+                Err(e) => {
+                    let msg = format!("hardware scan failed: {}", e);
+                    classify_and_emit(
+                        &mut ctx, "hardware", "scan", json!({ "error": &msg }),
+                        "failure", None, Some("Scan failure"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "SCAN_FAILED", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    1
+                }
+            }
+        }
+        Some("list") => {
+            match service.scan(&options) {
+                Ok(inv) => {
+                    classify_and_emit(
+                        &mut ctx, "hardware", "list",
+                        json!({ "devices_count": inv.devices.len() }),
+                        "success", None, Some("Listed hardware devices"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 0, "data": { "devices": inv.devices, "count": inv.devices.len() }, "error": serde_json::Value::Null }));
+                    } else {
+                        println!("{:<24} {:<10} {:<8} {:<16} {}", "ID", "CLASS", "BUS", "DRIVER", "NAME");
+                        println!("{}", "-".repeat(80));
+                        for d in &inv.devices {
+                            let driver = d.driver.as_deref().unwrap_or("-");
+                            println!("{:<24} {:<10?} {:<8?} {:<16} {}", d.id, d.class, d.bus, driver, d.name);
+                        }
+                    }
+                    0
+                }
+                Err(e) => {
+                    let msg = format!("hardware list failed: {}", e);
+                    classify_and_emit(
+                        &mut ctx, "hardware", "list", json!({ "error": &msg }),
+                        "failure", None, Some("List failure"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "LIST_FAILED", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    1
+                }
+            }
+        }
+        Some("show") => {
+            let target_id_opt = rest.iter().find(|a| !a.starts_with("--"));
+            let target_id = match target_id_opt {
+                Some(id) => id,
+                None => {
+                    let msg = "missing required device ID for show";
+                    classify_and_emit(
+                        &mut ctx, "hardware", "show", json!({ "error": msg }),
+                        "failure", None, Some("Missing device ID"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_DEVICE_ID", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(msg));
+                    }
+                    return 2;
+                }
+            };
+
+            match service.scan(&HardwareScanOptions::default()) {
+                Ok(inv) => {
+                    if let Some(dev) = inv.devices.iter().find(|d| &d.id == target_id) {
+                        classify_and_emit(
+                            &mut ctx, "hardware", "show",
+                            json!({ "device_id": target_id, "found": true }),
+                            "success", Some(target_id), Some("Found hardware device"), "operator", None,
+                        );
+                        if is_json {
+                            println!("{}", json!({ "code": 0, "data": { "device": dev }, "error": serde_json::Value::Null }));
+                        } else {
+                            println!("Device: {}", dev.name);
+                            println!("  ID:          {}", dev.id);
+                            println!("  Class:       {:?}", dev.class);
+                            println!("  Bus:         {:?}", dev.bus);
+                            if let Some(ref vid) = dev.vendor_id { println!("  Vendor ID:   {}", vid); }
+                            if let Some(ref did) = dev.device_id { println!("  Device ID:   {}", did); }
+                            if let Some(ref vn) = dev.vendor_name { println!("  Vendor Name: {}", vn); }
+                            if let Some(ref drv) = dev.driver { println!("  Driver:      {}", drv); }
+                            if let Some(ref p) = dev.sysfs_path { println!("  Sysfs:       {}", p); }
+                            if let Some(ref p) = dev.dev_path { println!("  Dev Path:    {}", p); }
+                            if !dev.attributes.is_empty() {
+                                println!("  Attributes:");
+                                for (k, v) in &dev.attributes {
+                                    println!("    {}: {}", k, v);
+                                }
+                            }
+                        }
+                        0
+                    } else {
+                        let msg = format!("device not found: {}", target_id);
+                        classify_and_emit(
+                            &mut ctx, "hardware", "show", json!({ "device_id": target_id, "found": false }),
+                            "failure", Some(target_id), Some("Device not found"), "operator", None,
+                        );
+                        if is_json {
+                            println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "DEVICE_NOT_FOUND", "message": msg } }));
+                        } else {
+                            eprintln!("{}", sanitize_terminal(&msg));
+                        }
+                        1
+                    }
+                }
+                Err(e) => {
+                    let msg = format!("hardware show scan failed: {}", e);
+                    classify_and_emit(
+                        &mut ctx, "hardware", "show", json!({ "error": &msg }),
+                        "failure", Some(target_id), Some("Scan failure"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "SCAN_FAILED", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    1
+                }
+            }
+        }
+        Some("summary") => {
+            match service.scan(&options) {
+                Ok(inv) => {
+                    let total = inv.devices.len();
+                    classify_and_emit(
+                        &mut ctx, "hardware", "summary",
+                        json!({ "total": total, "summary": &inv.summary }),
+                        "success", None, Some("Summarized hardware inventory"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 0, "data": { "summary": inv.summary, "total": total }, "error": serde_json::Value::Null }));
+                    } else {
+                        println!("Hardware Summary (Total: {} devices):", total);
+                        for (c, count) in &inv.summary {
+                            println!("  {:10}: {}", c, count);
+                        }
+                    }
+                    0
+                }
+                Err(e) => {
+                    let msg = format!("hardware summary failed: {}", e);
+                    classify_and_emit(
+                        &mut ctx, "hardware", "summary", json!({ "error": &msg }),
+                        "failure", None, Some("Summary failure"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "SUMMARY_FAILED", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    1
+                }
+            }
+        }
+        Some("verify") => {
+            let inv_res = if let Some(ref path_str) = file_opt {
+                let file_path = std::path::Path::new(path_str);
+                if !file_path.exists() || !file_path.is_file() {
+                    Err(format!("file not found or not regular file: {}", path_str))
+                } else {
+                    match file_path.metadata() {
+                        Ok(meta) => {
+                            if meta.len() > 10 * 1024 * 1024 {
+                                Err(format!("file exceeds 10MB limit: {} bytes", meta.len()))
+                            } else {
+                                match std::fs::read_to_string(file_path) {
+                                    Ok(content) => HardwareInventory::from_json(&content),
+                                    Err(e) => Err(e.to_string()),
+                                }
+                            }
+                        }
+                        Err(e) => Err(e.to_string()),
+                    }
+                }
+            } else {
+                service.scan(&options)
+            };
+
+            match inv_res {
+                Ok(inv) => {
+                    match validate_hardware_inventory(&inv) {
+                        Ok(()) => {
+                            classify_and_emit(
+                                &mut ctx, "hardware", "verify",
+                                json!({ "valid": true, "device_count": inv.devices.len() }),
+                                "success", None, Some("Hardware inventory verification passed"), "operator", None,
+                            );
+                            if is_json {
+                                println!("{}", json!({ "code": 0, "data": { "valid": true, "device_count": inv.devices.len() }, "error": serde_json::Value::Null }));
+                            } else {
+                                println!("Hardware inventory verification PASSED ({} devices valid).", inv.devices.len());
+                            }
+                            0
+                        }
+                        Err(e) => {
+                            let msg = format!("hardware inventory invariants violated: {}", e);
+                            classify_and_emit(
+                                &mut ctx, "hardware", "verify", json!({ "valid": false, "error": &msg }),
+                                "failure", None, Some("Verification invariants failure"), "operator", None,
+                            );
+                            if is_json {
+                                println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "VALIDATION_FAILED", "message": msg } }));
+                            } else {
+                                eprintln!("{}", sanitize_terminal(&msg));
+                            }
+                            1
+                        }
+                    }
+                }
+                Err(e) => {
+                    let msg = format!("hardware verification failed: {}", e);
+                    classify_and_emit(
+                        &mut ctx, "hardware", "verify", json!({ "error": &msg }),
+                        "failure", None, Some("Verification read failure"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "VERIFICATION_FAILED", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    1
+                }
+            }
+        }
+        Some("--help") | Some("-h") | None => {
+            println!("Usage: aiosh hw <scan|list|show|summary|verify> [OPTIONS]\n\nSubcommands:\n  scan     Discover host hardware across subsystems\n  list     List discovered hardware devices\n  show     Show details for a specific device ID\n  summary  Show hardware inventory count summary\n  verify   Validate inventory against invariants HD1..HD5\n\nOptions:\n  --class <name>  Filter by device class (cpu, gpu, block, network, usb, pci, system)\n  --no-attrs      Omit extended attributes\n  --sysfs <path>  Custom sysfs root path\n  --procfs <path> Custom procfs root path\n  --file <path>   Inventory JSON file for verify\n  --json          Output standard JSON envelope");
+            0
+        }
+        Some(other) => {
+            let msg = format!("unknown hardware subcommand: {}", other);
+            classify_and_emit(
+                &mut ctx,
+                "hardware",
+                other,
+                json!({ "error": &msg }),
+                "failure",
+                None,
+                Some("Unknown subcommand"),
+                "operator",
+                None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "UNKNOWN_SUBCOMMAND", "message": msg } }));
+            } else {
+                eprintln!("{}", sanitize_terminal(&msg));
+            }
+            2
+        }
+    }
+}
+
 #[cfg(test)]
 mod task_cli_tests {
     use super::*;
@@ -12359,6 +12783,136 @@ mod task_cli_tests {
         let _ = std::fs::remove_file(&modprobe_file);
         let _ = std::fs::remove_file(&autoload_file);
         let _ = std::fs::remove_file(&corrupt_path);
+    }
+
+    #[test]
+    fn test_hardware_cli_coverage() {
+        // 1. Help
+        let code_help = cmd_hardware(&["--help".to_string()]);
+        assert_eq!(code_help, 0);
+
+        // 2. Unknown subcommand
+        let code_unknown = cmd_hardware(&["bogus_cmd".to_string(), "--json".to_string()]);
+        assert_eq!(code_unknown, 2);
+
+        // 3. Path hygiene: too long sysfs
+        let long_path = "a".repeat(1025);
+        let code_long_sys = cmd_hardware(&["scan".to_string(), "--sysfs".to_string(), long_path, "--json".to_string()]);
+        assert_eq!(code_long_sys, 2);
+
+        // 4. Path hygiene: control char in procfs
+        let code_ctrl_proc = cmd_hardware(&["scan".to_string(), "--procfs".to_string(), "bad\x00path".to_string(), "--json".to_string()]);
+        assert_eq!(code_ctrl_proc, 2);
+
+        // 5. Invalid device class
+        let code_bad_class = cmd_hardware(&["scan".to_string(), "--class".to_string(), "badclass".to_string(), "--json".to_string()]);
+        assert_eq!(code_bad_class, 2);
+
+        // 6. Missing device ID on show
+        let code_no_id = cmd_hardware(&["show".to_string(), "--json".to_string()]);
+        assert_eq!(code_no_id, 2);
+
+        // Setup mock environment
+        let tmp_dir = std::env::temp_dir().join(format!("aios_hw_cli_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+        std::fs::create_dir_all(&tmp_dir).unwrap();
+        let sysfs = tmp_dir.join("sys");
+        let procfs = tmp_dir.join("proc");
+
+        let pci_dir = sysfs.join("bus/pci/devices/0000_00_02.0");
+        std::fs::create_dir_all(&pci_dir).unwrap();
+        std::fs::write(pci_dir.join("vendor"), "0x8086\n").unwrap();
+        std::fs::write(pci_dir.join("device"), "0x9bc4\n").unwrap();
+        std::fs::write(pci_dir.join("class"), "0x030000\n").unwrap();
+
+        let sysfs_str = sysfs.to_string_lossy().to_string();
+        let procfs_str = procfs.to_string_lossy().to_string();
+
+        // 7. Scan mock sysfs
+        let code_scan = cmd_hardware(&[
+            "scan".to_string(),
+            "--sysfs".to_string(), sysfs_str.clone(),
+            "--procfs".to_string(), procfs_str.clone(),
+            "--json".to_string(),
+        ]);
+        assert_eq!(code_scan, 0);
+
+        // 8. List mock sysfs
+        let code_list = cmd_hardware(&[
+            "list".to_string(),
+            "--sysfs".to_string(), sysfs_str.clone(),
+            "--procfs".to_string(), procfs_str.clone(),
+            "--json".to_string(),
+        ]);
+        assert_eq!(code_list, 0);
+
+        // 9. Summary mock sysfs
+        let code_sum = cmd_hardware(&[
+            "summary".to_string(),
+            "--sysfs".to_string(), sysfs_str.clone(),
+            "--procfs".to_string(), procfs_str.clone(),
+            "--json".to_string(),
+        ]);
+        assert_eq!(code_sum, 0);
+
+        // 10. Show existing device
+        let code_show_ok = cmd_hardware(&[
+            "show".to_string(),
+            "pci:0000:00:02.0".to_string(),
+            "--sysfs".to_string(), sysfs_str.clone(),
+            "--procfs".to_string(), procfs_str.clone(),
+            "--json".to_string(),
+        ]);
+        assert_eq!(code_show_ok, 0);
+
+        // 11. Show nonexistent device
+        let code_show_miss = cmd_hardware(&[
+            "show".to_string(),
+            "pci:nonexistent".to_string(),
+            "--sysfs".to_string(), sysfs_str.clone(),
+            "--procfs".to_string(), procfs_str.clone(),
+            "--json".to_string(),
+        ]);
+        assert_eq!(code_show_miss, 1);
+
+        // 12. Verify live scan
+        let code_verify_live = cmd_hardware(&[
+            "verify".to_string(),
+            "--sysfs".to_string(), sysfs_str,
+            "--procfs".to_string(), procfs_str,
+            "--json".to_string(),
+        ]);
+        assert_eq!(code_verify_live, 0);
+
+        // 13. Verify file ok
+        let valid_file = tmp_dir.join("inventory.json");
+        let valid_json = r#"{
+            "timestamp": "2026-09-20T07:00:00Z",
+            "hostname": "test-host",
+            "architecture": "x86_64",
+            "kernel_version": "6.6.13",
+            "devices": [],
+            "summary": {}
+        }"#;
+        std::fs::write(&valid_file, valid_json).unwrap();
+        let code_verify_file = cmd_hardware(&[
+            "verify".to_string(),
+            "--file".to_string(), valid_file.to_string_lossy().to_string(),
+            "--json".to_string(),
+        ]);
+        assert_eq!(code_verify_file, 0);
+
+        // 14. Verify file failure (corrupted)
+        let corrupt_file = tmp_dir.join("corrupt.json");
+        std::fs::write(&corrupt_file, "{ not json ...").unwrap();
+        let code_verify_fail = cmd_hardware(&[
+            "verify".to_string(),
+            "--file".to_string(), corrupt_file.to_string_lossy().to_string(),
+            "--json".to_string(),
+        ]);
+        assert_eq!(code_verify_fail, 1);
+
+        let _ = std::fs::remove_dir_all(&tmp_dir);
     }
 }
 

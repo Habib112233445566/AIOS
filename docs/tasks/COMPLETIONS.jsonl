@@ -1714,3 +1714,13 @@
 {"seq":1714,"ts":"2026-09-20T02:06:39Z","event":"completed","task_id":1714,"note":"Implemented HardwareService with PCI, USB, Block, Net, CPU, and System probers and mock sysfs support","evidence":[]}
 {"seq":1715,"ts":"2026-09-20T02:15:21Z","event":"completed","task_id":1715,"note":"Hardware Detection core service unit test implemented in test_hardware_service.rs (4/4 tests pass) with 100% regression suite pass rate","evidence":[]}
 {"seq":1716,"ts":"2026-09-20T02:18:16Z","event":"completed","task_id":1716,"note":"Hardware Detection core service integration verified in test_hardware_integration.rs (3/3 pass) and test_hardware_service_smoke.py (all pass)","evidence":[]}
+{"seq":1717,"ts":"2026-09-20T02:20:31Z","event":"completed","task_id":1717,"note":"Hardware Detection core service security review completed (threat scenarios CS-1..CS-5 identified)","evidence":[]}
+{"seq":1718,"ts":"2026-09-20T02:21:36Z","event":"completed","task_id":1718,"note":"Hardware Detection core service hardened with bounded I/O, control-char stripping, and driver validation (5/5 tests pass)","evidence":[]}
+{"seq":1719,"ts":"2026-09-20T02:22:11Z","event":"completed","task_id":1719,"note":"Hardware Detection core service documented in docs/hardware_detection.md Section 8","evidence":[]}
+{"seq":1720,"ts":"2026-09-20T02:22:49Z","event":"completed","task_id":1720,"note":"Hardware Detection Sub-Epic 2 (Core Service) formally verified and closed with 100% test pass rate","evidence":[]}
+{"seq":1721,"ts":"2026-09-20T02:23:09Z","event":"completed","task_id":1721,"note":"Hardware Detection CLI surface research completed (subcommands, envelopes, and exit codes identified)","evidence":[]}
+{"seq":1722,"ts":"2026-09-20T02:23:32Z","event":"completed","task_id":1722,"note":"Hardware Detection CLI surface specification completed (HC1..HC5 defined)","evidence":[]}
+{"seq":1723,"ts":"2026-09-20T02:25:31Z","event":"completed","task_id":1723,"note":"Hardware Detection CLI surface scaffolded in aiosh-cli/src/main.rs (aiosh hw / hardware)","evidence":[]}
+{"seq":1724,"ts":"2026-09-20T02:28:12Z","event":"completed","task_id":1724,"note":"Hardware Detection CLI surface implemented with scan, list, show, summary, and verify in aiosh-cli/src/main.rs","evidence":[]}
+{"seq":1725,"ts":"2026-09-20T02:31:10Z","event":"completed","task_id":1725,"note":"Hardware Detection CLI surface unit tests passing (14 assertions in test_hardware_cli_coverage)","evidence":[]}
+{"seq":1726,"ts":"2026-09-20T02:34:36Z","event":"completed","task_id":1726,"note":"Hardware Detection CLI surface integrated and verified end-to-end with test_hardware_cli_smoke.py (all tests pass)","evidence":[]}

@@ -434,19 +434,27 @@ impl Default for HardwareService {
 // Utility Helpers
 // ----------------------------------------------------------------------
 
-fn read_trimmed_file(path: &Path) -> Option<String> {
-    fs::read_to_string(path).ok().map(|s| {
-        let trimmed = s.trim();
-        // Limit string to 1024 chars to avoid huge reads
-        if trimmed.len() > 1024 {
-            trimmed[..1024].to_string()
-        } else {
-            trimmed.to_string()
-        }
-    })
+pub(crate) fn read_trimmed_file(path: &Path) -> Option<String> {
+    use std::io::Read;
+    let file = fs::File::open(path).ok()?;
+    let mut buffer = Vec::new();
+    let mut take = file.take(1024);
+    take.read_to_end(&mut buffer).ok()?;
+    let s = String::from_utf8_lossy(&buffer);
+    // Sanitize: filter out non-printable ASCII control characters except \t, \n, \r
+    let sanitized: String = s
+        .chars()
+        .filter(|&c| !c.is_ascii_control() || c == '\t' || c == '\n' || c == '\r')
+        .collect();
+    let trimmed = sanitized.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
 }
 
-fn normalize_hex_id(val: &str) -> Option<String> {
+pub(crate) fn normalize_hex_id(val: &str) -> Option<String> {
     let stripped = val.strip_prefix("0x").unwrap_or(val).trim();
     if stripped.len() == 4 && stripped.chars().all(|c| c.is_ascii_hexdigit()) {
         Some(stripped.to_ascii_lowercase())
@@ -455,8 +463,8 @@ fn normalize_hex_id(val: &str) -> Option<String> {
     }
 }
 
-fn resolve_driver_name(driver_path: &Path) -> Option<String> {
-    if let Ok(target) = fs::read_link(driver_path) {
+pub(crate) fn resolve_driver_name(driver_path: &Path) -> Option<String> {
+    let raw = if let Ok(target) = fs::read_link(driver_path) {
         target.file_name().and_then(|n| n.to_str()).map(|s| s.to_string())
     } else if driver_path.is_file() {
         read_trimmed_file(driver_path)
@@ -464,5 +472,17 @@ fn resolve_driver_name(driver_path: &Path) -> Option<String> {
         driver_path.file_name().and_then(|n| n.to_str()).map(|s| s.to_string())
     } else {
         None
+    }?;
+
+    let trimmed = raw.trim();
+    if trimmed.is_empty() || trimmed.len() > 128 {
+        return None;
+    }
+    // Hardening: validate driver name format (alphanumeric, underscore, dash, dot)
+    if trimmed.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.') {
+        Some(trimmed.to_string())
+    } else {
+        None
     }
 }
+
