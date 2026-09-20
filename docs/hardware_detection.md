@@ -520,6 +520,75 @@ assert_eq!(report.verdict, "allow");
 - Documentation: `docs/tasks/evidence/T-01769-security-policy-documentation.md`.
 - Verification & Evidence: `docs/tasks/evidence/T-01770-security-policy-verification-evidenc.md`.
 
+---
+
+## 14. Hardware Detection Observability Subsystem (Sub-Epic 8)
+
+### 14.1 Overview & Architecture
+The Hardware Detection Observability Subsystem (`aiosh-core::hardware_observability`) produces structured telemetry reports, driver binding ratios, class and bus distributions, and security policy compliance summaries.
+
+Designed for fleet monitoring and automated triage, reports provide high-level operational intelligence without disclosing sensitive low-level hardware attributes (MAC addresses, UUIDs, or serial numbers).
+
+### 14.2 Observability Contract (`HardwareObservabilityReport`)
+```rust
+pub struct HardwareObservabilityReport {
+    pub total_devices: usize,
+    pub class_breakdown: BTreeMap<String, usize>,
+    pub bus_breakdown: BTreeMap<String, usize>,
+    pub driver_binding_count: usize,
+    pub unbound_device_count: usize,
+    pub driver_binding_rate: f64,
+    pub total_attributes_count: usize,
+    pub policy_compliant_count: usize,
+    pub policy_violations_count: usize,
+    pub prohibited_devices_found: Vec<String>,
+    pub redacted_devices_count: usize,
+    pub hostname: String,
+    pub architecture: String,
+    pub kernel_version: String,
+    pub generated_at: String,
+}
+```
+
+### 14.3 Observability Invariants (HO1..HO6)
+- **HO1 (Class Breakdown Parity)**: The total device count equals the sum of device counts across all functional classes.
+- **HO2 (Bus Breakdown Parity)**: The total device count equals the sum of device counts across all interconnect buses.
+- **HO3 (Driver Binding Accounting)**: The total device count equals `driver_binding_count + unbound_device_count`.
+- **HO4 (Driver Binding Rate Consistency)**: `driver_binding_rate` is a bounded float in $[0.0, 1.0]$, rounded to 4 decimals, with safe zero-division fallback (`0.0`) when no devices exist.
+- **HO5 (Policy Compliance Telemetry)**: Reports compliant and violating device counts, with `prohibited_devices_found` capped at `MAX_PROHIBITED_DEVICES_REPORTED = 1,000` entries.
+- **HO6 (Deterministic Canonical Serialization)**: All breakdown maps use `BTreeMap` to guarantee deterministic alphabetical key ordering in serialized JSON output. String fields are sanitized against control characters.
+
+### 14.4 API Usage Example
+
+```rust
+use aiosh_core::hardware_service::{HardwareScanOptions, HardwareService};
+use aiosh_core::hardware_policy::HardwareSecurityPolicy;
+
+let service = HardwareService::new();
+let options = HardwareScanOptions::default();
+let policy = HardwareSecurityPolicy::default();
+
+// Generate telemetry report with policy evaluation
+let report = service.generate_observability_report(&options, Some(&policy))?;
+
+println!("Total Devices: {}", report.total_devices);
+println!("Driver Binding Rate: {:.2}%", report.driver_binding_rate * 100.0);
+println!("Policy Compliant Devices: {}", report.policy_compliant_count);
+```
+
+### 14.5 Sub-Epic 8 Verification Evidence
+- Research: `docs/tasks/evidence/T-01771-observability-research.md`.
+- Specification: `docs/tasks/evidence/T-01772-observability-specification.md`.
+- Scaffold: `docs/tasks/evidence/T-01773-observability-scaffold.md`.
+- Implementation: `docs/tasks/evidence/T-01774-observability-implementation.md`.
+- Unit Test: `docs/tasks/evidence/T-01775-observability-unit-test.md`.
+- Integration: `docs/tasks/evidence/T-01776-observability-integration.md`.
+- Security Review: `docs/tasks/evidence/T-01777-observability-security-review.md`.
+- Hardening: `docs/tasks/evidence/T-01778-observability-hardening.md`.
+- Documentation: `docs/tasks/evidence/T-01779-observability-documentation.md`.
+- Verification & Evidence: `docs/tasks/evidence/T-01780-observability-verification-evidenc.md`.
+
+
 
 
 

@@ -39,6 +39,19 @@ pub struct HardwareObservabilityReport {
     pub generated_at: String,
 }
 
+/// Maximum number of prohibited device IDs included in a single observability report to prevent payload inflation.
+pub const MAX_PROHIBITED_DEVICES_REPORTED: usize = 1_000;
+
+/// Sanitizes a string for safe inclusion in telemetry outputs (removes control characters, trims, limits to 256 chars).
+pub fn sanitize_telemetry_text(s: &str) -> String {
+    s.chars()
+        .filter(|c| !c.is_control())
+        .take(256)
+        .collect::<String>()
+        .trim()
+        .to_string()
+}
+
 impl HardwareObservabilityReport {
     /// Generates an observability report from the provided inventory and optional security policy (HO1..HO6).
     pub fn generate(
@@ -100,6 +113,11 @@ impl HardwareObservabilityReport {
             }
         }
 
+        let prohibited_devices_found: Vec<String> = prohibited_set
+            .into_iter()
+            .take(MAX_PROHIBITED_DEVICES_REPORTED)
+            .collect();
+
         let generated_at = chrono::Utc::now().to_rfc3339();
 
         Self {
@@ -112,11 +130,11 @@ impl HardwareObservabilityReport {
             total_attributes_count,
             policy_compliant_count,
             policy_violations_count,
-            prohibited_devices_found: prohibited_set.into_iter().collect(),
+            prohibited_devices_found,
             redacted_devices_count,
-            hostname: inventory.hostname.clone(),
-            architecture: inventory.architecture.clone(),
-            kernel_version: inventory.kernel_version.clone(),
+            hostname: sanitize_telemetry_text(&inventory.hostname),
+            architecture: sanitize_telemetry_text(&inventory.architecture),
+            kernel_version: sanitize_telemetry_text(&inventory.kernel_version),
             generated_at,
         }
     }

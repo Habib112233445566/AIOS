@@ -128,3 +128,34 @@ fn test_observability_service_integration() {
     assert_eq!(report.total_devices, report.bus_breakdown.values().sum::<usize>());
     assert_eq!(report.total_devices, report.driver_binding_count + report.unbound_device_count);
 }
+
+#[test]
+fn test_hardening_metadata_sanitization() {
+    let inv = HardwareInventory::new("host\x1b[2J\x00_test", "x86_64\r\n", "6.6\t.13");
+    let report = HardwareObservabilityReport::generate(&inv, None);
+
+    assert_eq!(report.hostname, "host[2J_test");
+    assert_eq!(report.architecture, "x86_64");
+    assert_eq!(report.kernel_version, "6.6.13");
+}
+
+#[test]
+fn test_hardening_prohibited_devices_cap() {
+    let mut inv = HardwareInventory::new("test-host", "x86_64", "6.6.13-aios");
+    let mut policy = HardwareSecurityPolicy::default();
+    policy.mode = HardwarePolicyMode::Audit;
+
+    // Create 1,200 prohibited devices
+    for i in 0..1200 {
+        let id = format!("pci:0000:00:{:04x}.0", i);
+        policy.prohibited_device_ids.push(id.clone());
+        let dev = HardwareDevice::new(id, "Device", DeviceClass::Other, DeviceBus::Pci);
+        inv.add_device(dev).unwrap();
+    }
+
+    let report = HardwareObservabilityReport::generate(&inv, Some(&policy));
+    assert_eq!(report.total_devices, 1200);
+    // Cap is 1,000
+    assert_eq!(report.prohibited_devices_found.len(), 1000);
+}
+

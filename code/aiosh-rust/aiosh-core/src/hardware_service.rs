@@ -159,6 +159,22 @@ impl HardwareService {
         Ok(crate::hardware_observability::HardwareObservabilityReport::generate(&inventory, policy_opt))
     }
 
+    /// Looks up a hardware documentation topic by ID.
+    pub fn get_doc_topic(&self, id: &str) -> Option<crate::hardware_doc::HardwareDocTopic> {
+        let index = crate::hardware_doc::HardwareDocIndex::new();
+        index.get_topic(id).cloned()
+    }
+
+    /// Searches hardware documentation topics with relevance scoring.
+    pub fn search_doc_topics(
+        &self,
+        query: &str,
+        category: Option<crate::hardware_doc::HardwareDocCategory>,
+    ) -> Vec<crate::hardware_doc::HardwareDocSearchResult> {
+        let index = crate::hardware_doc::HardwareDocIndex::new();
+        index.search(query, category)
+    }
+
     /// Retrieves the cached hardware inventory if present.
     pub fn get_cached_inventory(&self) -> Option<HardwareInventory> {
         self.cached_inventory.read().ok().and_then(|guard| guard.clone())

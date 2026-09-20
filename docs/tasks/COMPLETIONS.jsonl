@@ -1774,3 +1774,13 @@
 {"seq":1774,"ts":"2026-09-20T04:09:14Z","event":"completed","task_id":1774,"note":"Hardware observability report generation implemented in hardware_observability.rs and hardware_service.rs","evidence":[]}
 {"seq":1775,"ts":"2026-09-20T04:10:10Z","event":"completed","task_id":1775,"note":"Hardware observability unit tests verified; 7/7 tests passed","evidence":[]}
 {"seq":1776,"ts":"2026-09-20T04:10:53Z","event":"completed","task_id":1776,"note":"Hardware observability integration verified; 5/5 Python smoke tests passed","evidence":[]}
+{"seq":1777,"ts":"2026-09-20T04:12:54Z","event":"completed","task_id":1777,"note":"Security review of hardware observability subsystem completed","evidence":[]}
+{"seq":1778,"ts":"2026-09-20T04:13:57Z","event":"completed","task_id":1778,"note":"Hardware observability hardening completed; metadata sanitization and prohibited devices cap enforced","evidence":[]}
+{"seq":1779,"ts":"2026-09-20T04:14:24Z","event":"completed","task_id":1779,"note":"Hardware observability documentation completed in docs/hardware_detection.md Section 14","evidence":[]}
+{"seq":1780,"ts":"2026-09-20T04:15:10Z","event":"completed","task_id":1780,"note":"Hardware observability subsystem verified; Sub-Epic 8 formally closed","evidence":[]}
+{"seq":1781,"ts":"2026-09-20T04:15:40Z","event":"completed","task_id":1781,"note":"Hardware documentation research completed and documented","evidence":[]}
+{"seq":1782,"ts":"2026-09-20T04:16:06Z","event":"completed","task_id":1782,"note":"Hardware documentation specification completed with invariants HDOC1..HDOC6","evidence":[]}
+{"seq":1783,"ts":"2026-09-20T04:17:09Z","event":"completed","task_id":1783,"note":"Hardware documentation scaffold completed and compiles cleanly","evidence":[]}
+{"seq":1784,"ts":"2026-09-20T04:17:52Z","event":"completed","task_id":1784,"note":"Hardware documentation index and canonical topics implemented in hardware_doc.rs","evidence":[]}
+{"seq":1785,"ts":"2026-09-20T04:20:25Z","event":"completed","task_id":1785,"note":"Hardware documentation unit tests verified; 7/7 tests passed","evidence":[]}
+{"seq":1786,"ts":"2026-09-20T04:21:14Z","event":"completed","task_id":1786,"note":"Hardware documentation integration verified; service methods wired and 5/5 smoke tests passed","evidence":[]}

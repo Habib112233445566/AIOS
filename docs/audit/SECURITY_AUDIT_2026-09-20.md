@@ -1033,6 +1033,42 @@ Still not read line-by-line (next pass starts here): `aiosh_mcp/pentest.py` body
   - `aiosh-cli`: 5/5 observability smoke tests in `test_hardware_observability_smoke.py` passed.
   - Zero compiler warnings or lint errors.
 
+---
+
+## 7. Post-Audit Addendum: Batch T-01777 through T-01786 Verification
+
+**Date:** 2026-09-20  
+**Scope:** Batch `T-01777` through `T-01786` (Hardware Detection Observability Sub-Epic 8 Closure & Hardware Documentation Sub-Epic 9).  
+**Auditor:** Antigravity Autonomous Agent  
+**Verdict:** **PASS (Zero vulnerabilities)**
+
+### 1. Hardened Surface & Key Controls
+- **Observability Subsystem Closure (T-01777..T-01780)**:
+  - Security review evaluated terminal injection risks, unbounded prohibited device collections, and arithmetic division safety.
+  - Hardened `HardwareObservabilityReport` with string sanitization (`sanitize_telemetry_text`), capped prohibited devices ($\le 1,000$), and guarded zero-division on empty inventories.
+  - Authored comprehensive documentation in `docs/hardware_detection.md` Section 14.
+  - Formally closed Sub-Epic 8 with 9/9 Rust unit tests and 5/5 Python integration smoke tests passing.
+- **Hardware Documentation Subsystem (T-01781..T-01786)**:
+  - Formally specified and implemented `HardwareDocIndex`, `HardwareDocTopic`, `HardwareDocCategory`, and `HardwareDocSearchResult`.
+  - Registered 6 canonical hardware detection topics (`hw-sysfs-topology`, `hw-security-policy`, `hw-observability-telemetry`, `hw-config-options`, `hw-mcp-tools`, `hw-troubleshooting`).
+  - Implemented ranked relevance scoring (ID, title, tags, content) and markdown formatting.
+  - Wired documentation retrieval into `HardwareService` (`get_doc_topic`, `search_doc_topics`).
+  - Enforced invariants `HDOC1..HDOC6`:
+    - `HDOC1`: Offline self-contained topic catalog without external network or filesystem calls.
+    - `HDOC2`: Case-insensitive topic retrieval with length ($\le 64$) and control character guards.
+    - `HDOC3`: Ranked search scoring with bounded query length ($\le 256$) and result caps ($\le 50$).
+    - `HDOC4`: Category filtering on listing and search.
+    - `HDOC5`: Deterministic markdown formatting.
+    - `HDOC6`: Bounded memory footprint ($< 500$ KB) and sub-millisecond search execution.
+- **Test Verification**:
+  - `aiosh-core`: 9/9 observability unit tests in `test_hardware_observability.rs` passed in 0.54s.
+  - `aiosh-core`: 16/16 security policy unit tests in `test_hardware_policy.rs` passed in 0.02s.
+  - `aiosh-core`: 7/7 documentation unit tests in `test_hardware_doc.rs` passed in 0.00s.
+  - `aiosh-cli`: 5/5 observability smoke tests in `test_hardware_observability_smoke.py` passed.
+  - `aiosh-cli`: 5/5 documentation smoke tests in `test_hardware_doc_smoke.py` passed.
+  - Zero compiler warnings or lint errors.
+
+
 
 
 

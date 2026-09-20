@@ -58,6 +58,7 @@ pub mod handoff_config;
 pub mod handoff_service;
 pub mod hardware;
 pub mod hardware_config;
+pub mod hardware_doc;
 pub mod hardware_observability;
 pub mod hardware_policy;
 pub mod hardware_service;
