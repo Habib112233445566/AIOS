@@ -1,0 +1,7 @@
+# T-01917 — Phase 1 — Linux Base System & Bootable Target / System Update Mechanism / core service: Security Review
+
+Completed: 2026-09-20T08:01:09Z
+
+Acceptance criteria:
+- [x] Security evidence file exists with abuse scenarios.
+- [x] No known policy bypass remains open.

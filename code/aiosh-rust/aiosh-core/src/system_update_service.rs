@@ -119,6 +119,27 @@ impl SystemUpdateService {
             ));
         }
 
+        // Quota check: accumulated staged bytes + incoming
+        let current_accumulated: u64 = self.staged_artifacts.values().filter_map(|p| fs::metadata(p).ok().map(|m| m.len())).sum();
+        let projected = current_accumulated.saturating_add(data.len() as u64);
+        if projected > self.config.max_payload_bytes {
+            return Err(format!(
+                "{}: accumulated staged payload size ({} bytes) exceeds limit ({} bytes)",
+                UPD_VALIDATION_ERROR, projected, self.config.max_payload_bytes
+            ));
+        }
+
+        // Symlink defense: verify destination is not an existing symlink
+        let dest_path = self.config.staging_dir.join(&declared_artifact.file_name);
+        if let Ok(meta) = fs::symlink_metadata(&dest_path) {
+            if meta.file_type().is_symlink() {
+                return Err(format!(
+                    "{}: target file {:?} is a symbolic link (symlink attack rejected)",
+                    UPD_VALIDATION_ERROR, dest_path
+                ));
+            }
+        }
+
         // Verify SHA-256 digest
         let mut hasher = Sha256::new();
         hasher.update(data);
@@ -134,7 +155,6 @@ impl SystemUpdateService {
         }
 
         // Write artifact to staging directory
-        let dest_path = self.config.staging_dir.join(&declared_artifact.file_name);
         fs::write(&dest_path, data)
             .map_err(|e| format!("{}: failed to write artifact to {:?}: {}", UPD_VALIDATION_ERROR, dest_path, e))?;
 
@@ -248,6 +268,9 @@ impl SystemUpdateService {
 
         let slot_path = dir.join("slot_status.json");
         let slot_tmp = dir.join("slot_status.json.tmp");
+        if slot_tmp.exists() {
+            let _ = fs::remove_file(&slot_tmp);
+        }
         let slot_json = serde_json::to_string_pretty(&self.slot_status)
             .map_err(|e| format!("failed to serialize slot status: {}", e))?;
         fs::write(&slot_tmp, slot_json.as_bytes())
@@ -257,6 +280,9 @@ impl SystemUpdateService {
 
         let update_path = dir.join("update_status.json");
         let update_tmp = dir.join("update_status.json.tmp");
+        if update_tmp.exists() {
+            let _ = fs::remove_file(&update_tmp);
+        }
         let update_json = serde_json::to_string_pretty(&self.update_status)
             .map_err(|e| format!("failed to serialize update status: {}", e))?;
         fs::write(&update_tmp, update_json.as_bytes())
@@ -289,6 +315,7 @@ impl SystemUpdateService {
             .map_err(|e| format!("failed to read slot status {:?}: {}", slot_path, e))?;
         let slot_status: SystemSlotStatus = serde_json::from_slice(&slot_bytes)
             .map_err(|e| format!("failed to parse slot status: {}", e))?;
+        slot_status.validate()?;
 
         let update_bytes = fs::read(&update_path)
             .map_err(|e| format!("failed to read update status {:?}: {}", update_path, e))?;

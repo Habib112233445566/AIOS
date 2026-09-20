@@ -217,8 +217,9 @@ fn main() {
         Some("mod") | Some("module") => cmd_kernel_module(&args[1..]),
         Some("hw") | Some("hardware") => cmd_hardware(&args[1..]),
         Some("net") | Some("network") => cmd_network(&args[1..]),
+        Some("update") | Some("upd") => cmd_update(&args[1..]),
         Some("--help") | Some("-h") | None => {
-            println!("aiosh — AIOS shell CLI (Rust)\n\nUsage: aiosh <status|run|agent|audit|grant|pentest|classify|task|ci|release|backup|toolchain|doc|evidence|repo|secrets|triage|handoff|distro|image|package|service|session|layout|mod|hw|net> ...\n\n  aiosh task <status|done|block|unblock|skip|rebuild|check>  Task ledger control\n  aiosh ci <show|failures|check|config|metrics> [--file PATH]  CI smoke reports\n  aiosh release generate  Create bootable ISO\n  aiosh backup create  Create system snapshot zip\n  aiosh toolchain check [--config <path>]  Verify host environment against ToolchainManifest\n  aiosh toolchain show [--config <path>]   Display the resolved ToolchainManifest\n  aiosh doc <show|check|search>  Documentation Index Control\n  aiosh evidence <verify|hash|scan>   Evidence & Audit Trail Control\n  aiosh repo <health|check>  Repository Health Diagnostics\n  aiosh secrets <scan|check> [--config <path>]  Secrets & Access Hygiene Scanner\n  aiosh triage <list|show|record|resolve|ingest|check>  Regression Triage Manager\n  aiosh handoff <list|show|initiate|accept|reject|complete|cancel>  Agent Handoff Protocol Manager\n  aiosh distro <list|show|evaluate|recommend|policy|stats|check>  Linux Distro Selection & Justification Manager\n  aiosh image <list|show|plan|filter>  Linux Base Image Build & Packaging Manager\n  aiosh package <list|show|search|plan|apply|validate>  Linux Package Management & Store Control\n  aiosh service <validate|list|show|status|action|start|stop|restart|reload|order>  Init & Service Supervision Control\n  aiosh session <validate|list|show|status|create|action|activate|lock|unlock|terminate|config>  User Session Bootstrap Control\n  aiosh layout <list|show|validate|check|probe|diff|fstab|register|set-active|remove|import-fstab>  Filesystem Layout & Target Partitioning Manager\n  aiosh mod <list|show|blacklist|unblacklist|options|autoload|unautoload|preset|export>  Kernel Module Management\n  aiosh hw <scan|list|show|summary|verify>  Hardware Detection & Inventory Control\n  aiosh net <list|show|routes|dns|state|up|down>  Network Bootstrap & Interface Control");
+            println!("aiosh — AIOS shell CLI (Rust)\n\nUsage: aiosh <status|run|agent|audit|grant|pentest|classify|task|ci|release|backup|toolchain|doc|evidence|repo|secrets|triage|handoff|distro|image|package|service|session|layout|mod|hw|net|update> ...\n\n  aiosh task <status|done|block|unblock|skip|rebuild|check>  Task ledger control\n  aiosh ci <show|failures|check|config|metrics> [--file PATH]  CI smoke reports\n  aiosh release generate  Create bootable ISO\n  aiosh backup create  Create system snapshot zip\n  aiosh toolchain check [--config <path>]  Verify host environment against ToolchainManifest\n  aiosh toolchain show [--config <path>]   Display the resolved ToolchainManifest\n  aiosh doc <show|check|search>  Documentation Index Control\n  aiosh evidence <verify|hash|scan>   Evidence & Audit Trail Control\n  aiosh repo <health|check>  Repository Health Diagnostics\n  aiosh secrets <scan|check> [--config <path>]  Secrets & Access Hygiene Scanner\n  aiosh triage <list|show|record|resolve|ingest|check>  Regression Triage Manager\n  aiosh handoff <list|show|initiate|accept|reject|complete|cancel>  Agent Handoff Protocol Manager\n  aiosh distro <list|show|evaluate|recommend|policy|stats|check>  Linux Distro Selection & Justification Manager\n  aiosh image <list|show|plan|filter>  Linux Base Image Build & Packaging Manager\n  aiosh package <list|show|search|plan|apply|validate>  Linux Package Management & Store Control\n  aiosh service <validate|list|show|status|action|start|stop|restart|reload|order>  Init & Service Supervision Control\n  aiosh session <validate|list|show|status|create|action|activate|lock|unlock|terminate|config>  User Session Bootstrap Control\n  aiosh layout <list|show|validate|check|probe|diff|fstab|register|set-active|remove|import-fstab>  Filesystem Layout & Target Partitioning Manager\n  aiosh mod <list|show|blacklist|unblacklist|options|autoload|unautoload|preset|export>  Kernel Module Management\n  aiosh hw <scan|list|show|summary|verify>  Hardware Detection & Inventory Control\n  aiosh net <list|show|routes|dns|state|up|down>  Network Bootstrap & Interface Control\n  aiosh update <status|slots|check|apply|confirm|rollback>  System Update & Dual-Slot Control");
             0
         }
         Some(other) => {
@@ -13535,5 +13536,473 @@ mod network_cli_tests {
         let _ = std::fs::remove_dir_all(&tmp_dir);
     }
 }
+
+fn extract_update_positional_args<'a>(args: &'a [String]) -> Vec<&'a str> {
+    let mut pos = Vec::new();
+    let mut skip_next = false;
+    for arg in args {
+        if skip_next {
+            skip_next = false;
+            continue;
+        }
+        if arg == "--state-dir" || arg == "--staging-dir" || arg == "--version" || arg == "--slot" {
+            skip_next = true;
+            continue;
+        }
+        if arg.starts_with("--state-dir=") || arg.starts_with("--staging-dir=") || arg.starts_with("--version=") || arg.starts_with("--slot=") {
+            continue;
+        }
+        if arg.starts_with('-') {
+            continue;
+        }
+        pos.push(arg.as_str());
+    }
+    pos
+}
+
+fn cmd_update(args: &[String]) -> i32 {
+    let mut ctx = open_context();
+    let sub = args.first().map(|s| s.as_str());
+    let rest = if args.len() > 1 { &args[1..] } else { &[] };
+    let is_json = has_flag(rest, "--json");
+
+    // Path hygiene checks
+    let state_dir_opt = parse_flag(rest, "--state-dir");
+    if let Some(ref p) = state_dir_opt {
+        if p.len() > 1024 {
+            let msg = "state-dir path cannot exceed 1024 characters";
+            classify_and_emit(
+                &mut ctx, "update", sub.unwrap_or("unknown"), json!({ "error": msg }),
+                "failure", None, Some(msg), "operator", None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "PATH_TOO_LONG", "message": msg } }));
+            } else {
+                eprintln!("{}", sanitize_terminal(msg));
+            }
+            return 2;
+        }
+        if p.chars().any(|c| c.is_control()) {
+            let msg = "state-dir path cannot contain control characters";
+            classify_and_emit(
+                &mut ctx, "update", sub.unwrap_or("unknown"), json!({ "error": msg }),
+                "failure", None, Some(msg), "operator", None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "PATH_CONTAINS_CONTROL_CHAR", "message": msg } }));
+            } else {
+                eprintln!("{}", sanitize_terminal(msg));
+            }
+            return 2;
+        }
+    }
+
+    let staging_dir_opt = parse_flag(rest, "--staging-dir");
+    if let Some(ref p) = staging_dir_opt {
+        if p.len() > 1024 {
+            let msg = "staging-dir path cannot exceed 1024 characters";
+            classify_and_emit(
+                &mut ctx, "update", sub.unwrap_or("unknown"), json!({ "error": msg }),
+                "failure", None, Some(msg), "operator", None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "PATH_TOO_LONG", "message": msg } }));
+            } else {
+                eprintln!("{}", sanitize_terminal(msg));
+            }
+            return 2;
+        }
+        if p.chars().any(|c| c.is_control()) {
+            let msg = "staging-dir path cannot contain control characters";
+            classify_and_emit(
+                &mut ctx, "update", sub.unwrap_or("unknown"), json!({ "error": msg }),
+                "failure", None, Some(msg), "operator", None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "PATH_CONTAINS_CONTROL_CHAR", "message": msg } }));
+            } else {
+                eprintln!("{}", sanitize_terminal(msg));
+            }
+            return 2;
+        }
+    }
+
+    let state_dir = state_dir_opt.map(std::path::PathBuf::from).unwrap_or_else(|| std::path::PathBuf::from("/var/lib/aiosh/updates"));
+    let staging_dir = staging_dir_opt.map(std::path::PathBuf::from).unwrap_or_else(|| std::path::PathBuf::from("/var/lib/aiosh/updates/staging"));
+    let version_override = parse_flag(rest, "--version").unwrap_or_else(|| "1.0.0".to_string());
+    let slot_override = parse_flag(rest, "--slot").and_then(|s| aiosh_core::system_update::UpdateSlot::from_str_loose(&s)).unwrap_or(aiosh_core::system_update::UpdateSlot::SlotA);
+
+    let config = aiosh_core::system_update_service::SystemUpdateServiceConfig {
+        state_dir: state_dir.clone(),
+        staging_dir: staging_dir.clone(),
+        max_payload_bytes: aiosh_core::system_update::MAX_UPDATE_PAYLOAD_SIZE,
+        auto_rollback_on_failure: true,
+    };
+
+    let mut service = match aiosh_core::system_update_service::SystemUpdateService::load_state_from_dir(&state_dir, config.clone()) {
+        Ok(s) => s,
+        Err(_) => aiosh_core::system_update_service::SystemUpdateService::new(
+            version_override,
+            slot_override,
+            config,
+            "2026-09-20T12:00:00Z",
+        ),
+    };
+
+    match sub {
+        Some("status") => {
+            classify_and_emit(
+                &mut ctx, "update", "status", json!({ "state": service.update_status.state.as_str() }),
+                "success", None, Some("Update status queried"), "operator", None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 0, "data": service.update_status, "error": serde_json::Value::Null }));
+            } else {
+                println!("System Update Status:");
+                println!("  State:            {}", service.update_status.state.as_str());
+                println!("  Current Version:  {}", sanitize_terminal(&service.update_status.current_version));
+                println!("  Target Version:   {}", service.update_status.target_version.as_deref().unwrap_or("none"));
+                println!("  Active Slot:      {}", service.update_status.active_slot.as_str());
+                println!("  Progress:         {}%", service.update_status.progress_percent);
+            }
+            0
+        }
+        Some("slots") => {
+            classify_and_emit(
+                &mut ctx, "update", "slots", json!({ "current": service.slot_status.current_slot.as_str() }),
+                "success", None, Some("Slot status queried"), "operator", None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 0, "data": service.slot_status, "error": serde_json::Value::Null }));
+            } else {
+                println!("System Partition Slots:");
+                println!("  Current Slot:     {}", service.slot_status.current_slot.as_str());
+                println!("  Target Slot:      {}", service.slot_status.target_slot.as_str());
+                println!("  Rollback Slot:    {}", service.slot_status.rollback_slot.map(|s| s.as_str()).unwrap_or("none"));
+                println!("  Slot A Version:   {} (successful: {})", sanitize_terminal(&service.slot_status.slot_a_version), service.slot_status.slot_a_successful);
+                println!("  Slot B Version:   {} (successful: {})", sanitize_terminal(&service.slot_status.slot_b_version), service.slot_status.slot_b_successful);
+            }
+            0
+        }
+        Some("check") => {
+            let pos = extract_update_positional_args(rest);
+            let manifest_path_arg = pos.first().copied();
+            let mpath = match manifest_path_arg {
+                Some(p) if !p.trim().is_empty() => p.trim(),
+                _ => {
+                    let msg = "manifest file path required for 'check'";
+                    classify_and_emit(
+                        &mut ctx, "update", "check", json!({ "error": msg }),
+                        "failure", None, Some(msg), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_MANIFEST_PATH", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(msg));
+                    }
+                    return 2;
+                }
+            };
+
+            let manifest_bytes = match std::fs::read(mpath) {
+                Ok(b) => b,
+                Err(e) => {
+                    let msg = format!("failed to read manifest file '{}': {}", mpath, e);
+                    classify_and_emit(
+                        &mut ctx, "update", "check", json!({ "error": &msg }),
+                        "failure", None, Some("Manifest read failed"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "READ_ERROR", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    return 1;
+                }
+            };
+
+            let manifest: aiosh_core::system_update::UpdateManifest = match serde_json::from_slice(&manifest_bytes) {
+                Ok(m) => m,
+                Err(e) => {
+                    let msg = format!("invalid manifest JSON: {}", e);
+                    classify_and_emit(
+                        &mut ctx, "update", "check", json!({ "error": &msg }),
+                        "failure", None, Some("Invalid manifest JSON"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "INVALID_JSON", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    return 1;
+                }
+            };
+
+            match service.check_manifest(manifest) {
+                Ok(()) => {
+                    let _ = service.save_state_to_dir(&state_dir);
+                    classify_and_emit(
+                        &mut ctx, "update", "check", json!({ "target_version": service.update_status.target_version }),
+                        "success", None, Some("Manifest checked and accepted"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 0, "data": service.update_status, "error": serde_json::Value::Null }));
+                    } else {
+                        println!("Manifest accepted. Prepared to stage version {}", service.update_status.target_version.as_deref().unwrap_or("unknown"));
+                    }
+                    0
+                }
+                Err(e) => {
+                    let msg = format!("manifest check failed: {}", e);
+                    classify_and_emit(
+                        &mut ctx, "update", "check", json!({ "error": &msg }),
+                        "failure", None, Some("Check failed"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "CHECK_FAILED", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    1
+                }
+            }
+        }
+        Some("apply") => {
+            // If in Downloading, verify staged first
+            if service.update_status.state == aiosh_core::system_update::UpdateState::Downloading {
+                if let Err(e) = service.verify_staged() {
+                    let msg = format!("cannot apply update: {}", e);
+                    classify_and_emit(
+                        &mut ctx, "update", "apply", json!({ "error": &msg }),
+                        "failure", None, Some("Apply failed"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "APPLY_FAILED", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    return 1;
+                }
+            }
+
+            match service.apply_update() {
+                Ok(next_slot) => {
+                    let _ = service.save_state_to_dir(&state_dir);
+                    classify_and_emit(
+                        &mut ctx, "update", "apply", json!({ "next_slot": next_slot.as_str() }),
+                        "success", None, Some("Update applied; reboot required"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 0, "data": { "next_boot_slot": next_slot.as_str(), "status": service.update_status }, "error": serde_json::Value::Null }));
+                    } else {
+                        println!("Update applied successfully. Target boot slot set to {}. System ready to reboot.", next_slot.as_str());
+                    }
+                    0
+                }
+                Err(e) => {
+                    let msg = format!("apply update failed: {}", e);
+                    classify_and_emit(
+                        &mut ctx, "update", "apply", json!({ "error": &msg }),
+                        "failure", None, Some("Apply failed"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "APPLY_FAILED", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    1
+                }
+            }
+        }
+        Some("confirm") => {
+            let pos = extract_update_positional_args(rest);
+            let ver_arg = pos.first().copied();
+            let ver = ver_arg.map(|s| s.to_string()).unwrap_or_else(|| service.update_status.current_version.clone());
+
+            match service.confirm_boot(&ver) {
+                Ok(()) => {
+                    let _ = service.save_state_to_dir(&state_dir);
+                    classify_and_emit(
+                        &mut ctx, "update", "confirm", json!({ "confirmed_version": ver }),
+                        "success", None, Some("Boot confirmed"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 0, "data": { "confirmed_version": ver, "slot_status": service.slot_status }, "error": serde_json::Value::Null }));
+                    } else {
+                        println!("Boot confirmed on slot {}. Version set to {}.", service.slot_status.current_slot.as_str(), ver);
+                    }
+                    0
+                }
+                Err(e) => {
+                    let msg = format!("confirm boot failed: {}", e);
+                    classify_and_emit(
+                        &mut ctx, "update", "confirm", json!({ "error": &msg }),
+                        "failure", None, Some("Confirm failed"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "CONFIRM_FAILED", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    1
+                }
+            }
+        }
+        Some("rollback") => {
+            match service.rollback() {
+                Ok(restored_slot) => {
+                    let _ = service.save_state_to_dir(&state_dir);
+                    classify_and_emit(
+                        &mut ctx, "update", "rollback", json!({ "restored_slot": restored_slot.as_str() }),
+                        "success", None, Some("Rollback executed"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 0, "data": { "restored_slot": restored_slot.as_str(), "slot_status": service.slot_status }, "error": serde_json::Value::Null }));
+                    } else {
+                        println!("Rollback complete. Restored boot slot to {}.", restored_slot.as_str());
+                    }
+                    0
+                }
+                Err(e) => {
+                    let msg = format!("rollback failed: {}", e);
+                    classify_and_emit(
+                        &mut ctx, "update", "rollback", json!({ "error": &msg }),
+                        "failure", None, Some("Rollback failed"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "ROLLBACK_FAILED", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    1
+                }
+            }
+        }
+        Some("--help") | Some("-h") | None => {
+            println!("aiosh update — System Update & Dual-Boot Partition Manager\n\nUsage: aiosh update <status|slots|check|apply|confirm|rollback> [options]\n\nCommands:\n  status                     Show current update state & progress\n  slots                      Show A/B partition slot configuration\n  check <manifest_path>      Validate and intake release manifest\n  apply                      Commit staged update and mark next boot slot\n  confirm [version]          Confirm successful boot on target slot\n  rollback                   Restore previous operational partition\n\nOptions:\n  --state-dir <PATH>         Custom state directory\n  --staging-dir <PATH>       Custom artifact staging directory\n  --version <VERSION>        Set/override running version\n  --slot <slot_a|slot_b>     Set/override active slot\n  --json                     Output structured JSON envelope\n  -h, --help                 Display this help message");
+            0
+        }
+        Some(unknown) => {
+            let msg = format!("unknown update subcommand: {}", unknown);
+            classify_and_emit(
+                &mut ctx, "update", unknown, json!({ "error": &msg }),
+                "failure", None, Some("Unknown subcommand"), "operator", None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "UNKNOWN_SUBCOMMAND", "message": msg } }));
+            } else {
+                eprintln!("{}", sanitize_terminal(&msg));
+            }
+            2
+        }
+    }
+}
+
+#[cfg(test)]
+mod update_cli_tests {
+    use super::*;
+
+    fn s(v: &[&str]) -> Vec<String> {
+        v.iter().map(|x| x.to_string()).collect()
+    }
+
+    #[test]
+    fn test_update_cli_help_and_subcommands() {
+        assert_eq!(cmd_update(&[]), 0);
+        assert_eq!(cmd_update(&s(&["--help"])), 0);
+        assert_eq!(cmd_update(&s(&["-h"])), 0);
+        assert_eq!(cmd_update(&s(&["unknown_cmd"])), 2);
+        assert_eq!(cmd_update(&s(&["unknown_cmd", "--json"])), 2);
+    }
+
+    #[test]
+    fn test_update_cli_path_hygiene() {
+        let long_path = "a".repeat(1025);
+        assert_eq!(cmd_update(&s(&["status", "--state-dir", &long_path])), 2);
+        assert_eq!(cmd_update(&s(&["status", "--staging-dir", &long_path])), 2);
+        assert_eq!(cmd_update(&s(&["status", "--state-dir", &long_path, "--json"])), 2);
+
+        assert_eq!(cmd_update(&s(&["status", "--state-dir", "path\nwith\ncontrol"])), 2);
+        assert_eq!(cmd_update(&s(&["status", "--staging-dir", "path\twith\tcontrol"])), 2);
+    }
+
+    #[test]
+    fn test_update_cli_status_and_slots() {
+        let tmp_dir = std::env::temp_dir().join(format!("aiosh_upd_cli_test_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&tmp_dir);
+        let tmp_str = tmp_dir.to_string_lossy().to_string();
+
+        assert_eq!(cmd_update(&s(&["status", "--state-dir", &tmp_str])), 0);
+        assert_eq!(cmd_update(&s(&["status", "--state-dir", &tmp_str, "--json"])), 0);
+
+        assert_eq!(cmd_update(&s(&["slots", "--state-dir", &tmp_str])), 0);
+        assert_eq!(cmd_update(&s(&["slots", "--state-dir", &tmp_str, "--json"])), 0);
+
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+    }
+
+    #[test]
+    fn test_update_cli_confirm_and_rollback() {
+        let tmp_dir = std::env::temp_dir().join(format!("aiosh_upd_cli_cr_test_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&tmp_dir);
+        let tmp_str = tmp_dir.to_string_lossy().to_string();
+
+        // Confirm when state is Idle returns 1 (error)
+        assert_eq!(cmd_update(&s(&["confirm", "--state-dir", &tmp_str, "--json"])), 1);
+
+        // Rollback when no rollback slot returns 1 (error)
+        assert_eq!(cmd_update(&s(&["rollback", "--state-dir", &tmp_str, "--json"])), 1);
+
+        // Now initialize state in ReadyToReboot with a rollback slot
+        let mut svc = aiosh_core::SystemUpdateService::new(
+            "1.0.0",
+            aiosh_core::system_update::UpdateSlot::SlotA,
+            aiosh_core::system_update_service::SystemUpdateServiceConfig::default(),
+            "2026-09-20T00:00:00Z",
+        );
+        svc.slot_status.rollback_slot = Some(aiosh_core::system_update::UpdateSlot::SlotB);
+        svc.update_status.state = aiosh_core::system_update::UpdateState::ReadyToReboot;
+        svc.save_state_to_dir(&tmp_dir).unwrap();
+
+        // Confirm now succeeds
+        assert_eq!(cmd_update(&s(&["confirm", "--state-dir", &tmp_str, "--json"])), 0);
+
+        // Reset state with rollback slot available
+        let mut svc2 = aiosh_core::SystemUpdateService::new(
+            "1.0.1",
+            aiosh_core::system_update::UpdateSlot::SlotB,
+            aiosh_core::system_update_service::SystemUpdateServiceConfig::default(),
+            "2026-09-20T00:00:00Z",
+        );
+        svc2.slot_status.rollback_slot = Some(aiosh_core::system_update::UpdateSlot::SlotA);
+        svc2.update_status.state = aiosh_core::system_update::UpdateState::ReadyToReboot;
+        svc2.save_state_to_dir(&tmp_dir).unwrap();
+
+        // Rollback now succeeds
+        assert_eq!(cmd_update(&s(&["rollback", "--state-dir", &tmp_str, "--json"])), 0);
+
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+    }
+
+    #[test]
+    fn test_update_cli_check() {
+        let tmp_dir = std::env::temp_dir().join(format!("aiosh_upd_cli_chk_test_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&tmp_dir);
+        let tmp_str = tmp_dir.to_string_lossy().to_string();
+
+        // Check with non-existent manifest file returns 1
+        let non_existent = tmp_dir.join("non_existent_manifest.json").to_string_lossy().to_string();
+        assert_eq!(cmd_update(&s(&["check", &non_existent, "--state-dir", &tmp_str, "--json"])), 1);
+
+        // Check with invalid json returns 1
+        let bad_json_path = tmp_dir.join("bad.json");
+        std::fs::write(&bad_json_path, b"not valid json").unwrap();
+        assert_eq!(cmd_update(&s(&["check", &bad_json_path.to_string_lossy(), "--state-dir", &tmp_str, "--json"])), 1);
+
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+    }
+}
+
+
 
 

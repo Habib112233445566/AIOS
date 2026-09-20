@@ -161,3 +161,58 @@ pub enum UpdateState {
 | `THREAT-UPD-04` | Active Slot Mutation | Rejection of updates where target slot matches current active slot. |
 | `THREAT-UPD-05` | Denial-of-Service / Overflow | Manifest capped at 32 artifacts; `total_bytes()` uses `saturating_add`. |
 | `THREAT-UPD-06` | State Machine Desynchronization | State machine rejects illegal leaps (e.g. `Idle -> ReadyToReboot`) with `UPD_STATE_ERROR`. |
+
+---
+
+## 5. Core Service Subsystem (Sub-Epic 2: T-01911..T-01920)
+
+The core update orchestrator is implemented in `code/aiosh-rust/aiosh-core/src/system_update_service.rs`.
+
+### 5.1 Service Configuration (`SystemUpdateServiceConfig`)
+```rust
+pub struct SystemUpdateServiceConfig {
+    pub state_dir: PathBuf,              // Default: /var/lib/aiosh/updates
+    pub staging_dir: PathBuf,            // Default: /var/lib/aiosh/updates/staging
+    pub max_payload_bytes: u64,          // Default: 10 GB
+    pub auto_rollback_on_failure: bool,  // Default: true
+}
+```
+
+### 5.2 Service Lifecycle Flow
+1. **Intake (`check_manifest`)**: Evaluates `UpdateManifest` schema, validates that the system is currently `Idle`, creates `staging_dir`, and transitions to `Downloading`.
+2. **Staging (`stage_artifact`)**: 
+   - Checks cumulative payload bytes against `max_payload_bytes`.
+   - Protects against symlink hijacking on `staging_dir/{file_name}`.
+   - Computes SHA-256 digest on incoming byte payload; mismatches immediately halt in `Failed` state with `UPD_DIGEST_ERROR`.
+   - Writes payload to sandboxed staging file and increments progress percentage.
+3. **Verification Gate (`verify_staged`)**:
+   - Asserts all artifacts declared in the manifest exist in staging.
+   - Transitions state to `Verifying`.
+4. **Boot Slot Application (`apply_update`)**:
+   - Asserts slot invariants (`current_slot != target_slot`).
+   - Toggles active slot indicator (`slot_status.switch_slot()`).
+   - Transitions state to `ReadyToReboot`.
+5. **Boot Confirmation (`confirm_boot`)**:
+   - Invoked after boot; marks target slot as booted successfully with the new version.
+   - Resets state to `Idle`.
+6. **Rollback (`rollback`)**:
+   - Invoked if boot health checks fail.
+   - Restores partition pointer to `rollback_slot`.
+   - Resets state to `Idle`.
+
+### 5.3 Core Service Invariants (USVC1..USVC6)
+- **`USVC1` (Isolated Staging Directory)**: Artifacts are isolated in `config.staging_dir`. Symlinks are rejected.
+- **`USVC2` (Cryptographic Digest Gate)**: SHA-256 verification of 100% of payloads before application. Missing artifacts prevent entering `Verifying`.
+- **`USVC3` (Active Slot Non-Interference)**: The active running partition is never targeted or mutated. Only `current_slot.other()` is updated.
+- **`USVC4` (Atomic State Persistence)**: State files (`slot_status.json`, `update_status.json`) are written via `.tmp` files with atomic `rename()`.
+- **`USVC5` (Rollback Safeguard)**: Functional boot partition is preserved in `rollback_slot` and restored on failure.
+- **`USVC6` (Deterministic Error Reporting)**: Errors are mapped to `UPD_STATE_ERROR`, `UPD_DIGEST_ERROR`, `UPD_SLOT_ERROR`, `UPD_VALIDATION_ERROR`.
+
+### 5.4 Core Service Threat Mitigations
+| Threat ID | Threat Category | Implemented Mitigation |
+|---|---|---|
+| `THREAT-USVC-01` | Symlink Hijacking | Destination path checked with `symlink_metadata()`; existing symlinks are rejected. |
+| `THREAT-USVC-02` | Disk Quota DoS | Cumulative staged bytes checked against `max_payload_bytes` before writing. |
+| `THREAT-USVC-03` | Stale Temporary Files | Pre-existing `.tmp` files unlinked before writing state. |
+| `THREAT-USVC-04` | Corrupted State File | `slot_status.validate()?` executed immediately after loading state JSON from disk. |
+

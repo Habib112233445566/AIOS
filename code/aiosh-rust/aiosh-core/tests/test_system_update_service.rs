@@ -257,3 +257,53 @@ fn test_usvc6_clean_staging() {
     assert!(!staging_dir.join("leftover.bin").exists());
     assert!(staging_dir.exists());
 }
+
+#[test]
+fn test_usvc2_quota_exceeded_rejected() {
+    let dir = tempdir().unwrap();
+    let config = SystemUpdateServiceConfig {
+        state_dir: dir.path().join("state"),
+        staging_dir: dir.path().join("staging"),
+        max_payload_bytes: 100, // Very low quota
+        auto_rollback_on_failure: true,
+    };
+
+    let mut service = SystemUpdateService::new("2.0.0", UpdateSlot::SlotA, config, "2026-09-20T12:00:00Z");
+    let rootfs_data = vec![0u8; 150]; // Exceeds quota of 100
+    let kernel_data = b"KERNEL";
+    let manifest = create_sample_manifest(&rootfs_data, kernel_data);
+
+    assert!(service.check_manifest(manifest).is_ok());
+    let err = service.stage_artifact(PartitionTarget::Rootfs, &rootfs_data).unwrap_err();
+    assert!(err.contains("exceeds limit"));
+}
+
+#[test]
+fn test_usvc4_corrupted_slot_state_rejected_on_load() {
+    let dir = tempdir().unwrap();
+    let state_dir = dir.path().join("state");
+    fs::create_dir_all(&state_dir).unwrap();
+
+    let invalid_slot_json = r#"{
+        "current_slot": "slot_a",
+        "target_slot": "slot_a",
+        "rollback_slot": "slot_a",
+        "slot_a_version": "1.0",
+        "slot_b_version": "none",
+        "slot_a_successful": true,
+        "slot_b_successful": false
+    }"#;
+    fs::write(state_dir.join("slot_status.json"), invalid_slot_json).unwrap();
+    fs::write(state_dir.join("update_status.json"), "{}").unwrap();
+
+    let config = SystemUpdateServiceConfig {
+        state_dir: state_dir.clone(),
+        staging_dir: dir.path().join("staging"),
+        max_payload_bytes: 10 * 1024 * 1024,
+        auto_rollback_on_failure: true,
+    };
+
+    let result = SystemUpdateService::load_state_from_dir(&state_dir, config);
+    assert!(result.is_err());
+    assert!(result.unwrap_err().contains("current_slot cannot be identical"));
+}

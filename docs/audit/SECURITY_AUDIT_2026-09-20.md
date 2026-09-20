@@ -1627,3 +1627,39 @@ Read line-by-line: `pentest.rs` (597), `train_slm.py` (210), `train_unsloth.py` 
   - `aiosh-cli`: 5/5 integration smoke tests in `test_system_update_smoke.py` passed in 0.10s.
   - Regression suite: 0 regressions across all prior modules.
 
+---
+
+## 21. Post-Audit Addendum: Batch T-01917 through T-01926 Verification
+
+**Date:** 2026-09-20  
+**Scope:** Batch `T-01917` through `T-01926` (System Update Core Service Sub-Epic 2 Closure & System Update CLI Control Surface Sub-Epic 3).  
+**Auditor:** Antigravity Autonomous Security Subsystem  
+**Verdict:** **PASS (Zero vulnerabilities)**
+
+### 1. Hardened Surface & Key Controls
+- **System Update Core Service Closure & Hardening (T-01917..T-01920)**:
+  - Threat modeling of `THREAT-USVC-01..06` (symlink race conditions, payload bomb/quota exhaustion, corrupted state injection, stale atomic artifacts, non-atomic reboot, unauthorized state alteration).
+  - Hardened `system_update_service.rs`:
+    - Symlink attack rejection on staging paths via `symlink_metadata()`.
+    - Cumulative payload byte quota enforcement against `max_payload_bytes`.
+    - State deserialization schema validation (`slot_status.validate()?`).
+    - Stale `.tmp` file cleanup before state persistence.
+  - Master documentation authored in `docs/system_update.md` (Section 5).
+  - Formally closed Sub-Epic 2 with 10/10 Rust unit tests and 5/5 Python smoke tests.
+- **System Update CLI Control Surface (T-01921..T-01926)**:
+  - Researched, specified, scaffolded, implemented, and tested `aiosh update` / `aiosh upd` operator CLI.
+  - Enforced invariants `UCLI1..UCLI6`:
+    - `UCLI1`: Subcommand routing (`status`, `slots`, `check`, `apply`, `confirm`, `rollback`) with exit code 2 for unknown subcommands.
+    - `UCLI2`: Input path hygiene: `--state-dir` and `--staging-dir` path limits ($\le 1024$ bytes) and control character rejection (`\n`, `\t`, `\r`, `\0`).
+    - `UCLI3`: Structured JSON envelopes `{"code": i32, "data": Any, "error": Any}`.
+    - `UCLI4`: Audit trail integrity via `classify_and_emit` into SQLite WAL audit ring.
+    - `UCLI5`: Hermetic isolation across `--state-dir` and `--staging-dir` overrides.
+    - `UCLI6`: Deterministic exit codes: 0 (success), 1 (domain failure), 2 (syntax/argument error).
+  - Robust positional argument extraction isolating flags from operands.
+- **Test Verification**:
+  - `aiosh-core`: 10/10 unit tests in `test_system_update_service.rs` passed.
+  - `aiosh-cli`: 5/5 unit tests in `update_cli_tests` passed.
+  - `aiosh-cli`: 5/5 integration smoke tests in `test_system_update_cli_smoke.py` passed.
+  - Full regression test suite: 0 failures, 0 regressions across all sub-epics.
+
+
