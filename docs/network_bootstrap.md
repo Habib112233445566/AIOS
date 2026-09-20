@@ -194,3 +194,74 @@ aiosh net state --sysfs /tmp/mock/sys/class/net --procfs /tmp/mock/proc/net --re
 - Live kernel reads depend on Linux sysfs and procfs structures; on non-Linux platforms (e.g. Windows/macOS), the CLI functions via mock paths or falls back to empty datasets.
 - Link state mutation (`up`, `down`) on live systems requires appropriate Linux capabilities (`CAP_NET_ADMIN`) or root privileges.
 - IPv6 route parsing is reserved for future milestones; currently `/proc/net/route` handles IPv4 routing tables.
+
+---
+
+## 7. Network Bootstrap MCP Tool Surface (`aios.network.*`)
+
+The MCP tool surface exposes network inspection and control capabilities to autonomous AI agents via the Model Context Protocol over standard JSON-RPC 2.0.
+
+### Tool Registry
+
+| Tool Name | Parameters | Description | Grant Required |
+|-----------|------------|-------------|----------------|
+| `aios.network.list` | `sysfs_path`, `procfs_path`, `resolv_path`, `grant_id` | List discovered network interfaces with operational state and MAC | No |
+| `aios.network.show` | `interface` (required), `sysfs_path`, `procfs_path`, `resolv_path`, `grant_id` | Inspect detailed interface attributes | No |
+| `aios.network.routes` | `procfs_path`, `grant_id` | Query host IPv4 routing table | No |
+| `aios.network.dns` | `resolv_path`, `grant_id` | Query host DNS nameservers and search domains | No |
+| `aios.network.state` | `sysfs_path`, `procfs_path`, `resolv_path`, `grant_id` | Retrieve unified host networking state snapshot | No |
+| `aios.network.up` | `interface` (required), `sysfs_path`, `grant_id` | Bring network interface link up (consequential) | No (Audited) |
+| `aios.network.down` | `interface` (required), `sysfs_path`, `grant_id` | Bring network interface link down (consequential) | No (Audited) |
+
+### Invariants (`NMCP1..NMCP6`)
+
+1. **`NMCP1` (Tool Schema Completeness)**: Every tool declares a JSON Schema 2020-12 / Draft 7 inputSchema with typed parameters and descriptions.
+2. **`NMCP2` (Path Sanitization)**: Path overrides (`sysfs_path`, `procfs_path`, `resolv_path`) are capped at $\le 1024$ characters with control character rejection.
+3. **`NMCP3` (Interface Name Validation)**: Interface names must strictly conform to `validate_interface_name` ($\le 15$ chars, `^[a-zA-Z0-9_.-]+$`).
+4. **`NMCP4` (PEP & Mutation Controls)**: Link mutations (`up`, `down`) are identified as consequential actions and require valid interface names.
+5. **`NMCP5` (Audit Logging)**: Every invocation routes through `dispatch::recorded_call`, writing an immutable audit record with actor, tool name, parameters, and outcome.
+6. **`NMCP6` (Deterministic Serialization & Cross-Surface Parity)**: MCP tool outputs match the canonical serialized structures produced by the CLI and core service.
+
+### Example MCP Invocations
+
+```json
+// tools/call: aios.network.list
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "aios.network.list",
+    "arguments": {}
+  }
+}
+
+// tools/call: aios.network.show
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "tools/call",
+  "params": {
+    "name": "aios.network.show",
+    "arguments": {
+      "interface": "eth0"
+    }
+  }
+}
+
+// tools/call: aios.network.state
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "method": "tools/call",
+  "params": {
+    "name": "aios.network.state",
+    "arguments": {}
+  }
+}
+```
+
+### Constraints & Known Limitations
+- When running in containers or unprivileged environments, link state changes (`up`, `down`) will fail gracefully if the process lacks `CAP_NET_ADMIN`.
+- Path override parameters are intended for hermetic CI testing and containerized testing environments.
+

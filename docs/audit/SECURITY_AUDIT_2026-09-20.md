@@ -1365,6 +1365,38 @@ Read line-by-line: `pentest.rs` (597), `train_slm.py` (210), `train_unsloth.py` 
   - `aiosh-mcp`: 3/3 network MCP smoke suites in `test_network_mcp_smoke.py` passed.
   - Zero compiler warnings or lint errors across Rust and Python suites.
 
+---
+
+## 13. Post-Audit Addendum: Batch T-01837 through T-01846 Verification
+
+**Date:** 2026-09-20  
+**Scope:** Batch `T-01837` through `T-01846` (Network Bootstrap MCP/API Surface Sub-Epic 4 Closure & Network Bootstrap Configuration Sub-Epic 5).  
+**Auditor:** Antigravity Autonomous Agent  
+**Verdict:** **PASS (Zero vulnerabilities)**
+
+### 1. Hardened Surface & Key Controls
+- **Network Bootstrap MCP/API Surface Closure (T-01837..T-01840)**:
+  - Security review addressed `THREAT-NMCP-01..05` (custom root traversal, interface name injection, unauthorized link mutation, audit evasion, and information disclosure).
+  - Hardened `aiosh-mcp` with `resolve_network_service` path length limits ($\le 1024$), control character scrubbing, interface name validation via `validate_interface_name`, and error encapsulation in `dispatch::recorded_call`.
+  - Authored Section 7 in `docs/network_bootstrap.md`.
+  - Formally closed Sub-Epic 4 with 1/1 Rust unit test in `aiosh-mcp` and 3/3 Python integration smoke suites in `code/aiosh-mcp/tests/test_network_mcp_smoke.py`.
+- **Network Bootstrap Configuration Subsystem (T-01841..T-01846)**:
+  - Researched configuration structure, environment variables (`AIOS_NETWORK_*`), and invariants `NCONF1..NCONF6`.
+  - Formally specified `NetworkConfig` with defaults, bounds, and persistence contracts.
+  - Scaffolded and implemented `NetworkConfig` in `code/aiosh-rust/aiosh-core/src/network_config.rs` and re-exported in `lib.rs`.
+  - Enforced invariants:
+    - `NCONF1`: Path hygiene on `default_store_path`, `sysfs_net_path`, `procfs_path`, `resolv_conf_path` (UTF-8, non-empty, $\le 1024$ chars, no control chars, no parent directory traversal `..`).
+    - `NCONF2`: Capacity caps (`max_interfaces` $\in [1, 10,000]$, `max_routes` $\in [1, 50,000]$, `max_dns_servers` $\in [1, 64]$).
+    - `NCONF3`: Payload and timeout bounds (`max_payload_bytes` $\in [1024, 104,857,600]$, `scan_timeout_secs` $\in [1, 300]$).
+    - `NCONF4`: Fallback DNS servers must be valid IPv4 or IPv6 addresses.
+    - `NCONF5`: Environment variable ingestion (`AIOS_NETWORK_*`) with safe fallback to defaults on invalid input.
+    - `NCONF6`: Atomic persistence (`.{name}.tmp.{pid}` rename) and 1 MB file size limit (`MAX_CONFIG_FILE_BYTES`).
+- **Test Verification**:
+  - `aiosh-core`: 20/20 unit tests in `test_network_config.rs` passed in 0.03s.
+  - `aiosh-cli`: 6/6 integration smoke tests in `test_network_config_smoke.py` passed in 0.17s.
+  - Zero compiler warnings or lint errors across Rust and Python suites.
+
+
 
 
 
