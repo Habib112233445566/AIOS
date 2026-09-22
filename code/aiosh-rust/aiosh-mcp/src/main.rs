@@ -2040,6 +2040,41 @@ impl Server {
         tools
     }
 
+fn validate_and_open_grant_store(path_str: Option<&str>) -> Result<(std::path::PathBuf, aiosh_core::pep_grant::PepGrantStore), String> {
+    let path = path_str.unwrap_or("pep_grants.json");
+    let p = std::path::PathBuf::from(path);
+    aiosh_core::pep_decision_service::validate_pep_service_path(&p)
+        .map_err(|e| format!("invalid store path: {}", e))?;
+    if p.exists() {
+        if let Ok(meta) = std::fs::metadata(&p) {
+            if meta.len() > 16 * 1024 * 1024 {
+                return Err(format!("grant store file exceeds 16 MiB size cap: {} bytes", meta.len()));
+            }
+        }
+        let store = aiosh_core::pep_grant::PepGrantStore::load_from_path(&p)?;
+        Ok((p, store))
+    } else {
+        Ok((p, aiosh_core::pep_grant::PepGrantStore::new()))
+    }
+}
+
+fn validate_and_open_grant_service(path_str: Option<&str>) -> Result<(std::path::PathBuf, aiosh_core::pep_grant_service::PepGrantService), String> {
+    let path = path_str.unwrap_or("pep_grants.json");
+    let p = std::path::PathBuf::from(path);
+    aiosh_core::pep_decision_service::validate_pep_service_path(&p)
+        .map_err(|e| format!("invalid store path: {}", e))?;
+    if p.exists() {
+        if let Ok(meta) = std::fs::metadata(&p) {
+            if meta.len() > 16 * 1024 * 1024 {
+                return Err(format!("grant store file exceeds 16 MiB size cap: {} bytes", meta.len()));
+            }
+        }
+        let service = aiosh_core::pep_grant_service::PepGrantService::load_from_path(&p)?;
+        Ok((p, service))
+    } else {
+        Ok((p.clone(), aiosh_core::pep_grant_service::PepGrantService::new().with_storage_path(p)))
+    }
+}
 
     fn call_tool(&mut self, tool: &str, arguments: &Value) -> Value {
         let grant_id = arguments.get("grant_id").and_then(|v| v.as_str());
@@ -7017,20 +7052,14 @@ impl Server {
                     }
                     grant.validate().map_err(|e| format!("validation failed: {}", e))?;
 
-                    let path = store_path_opt.as_deref().unwrap_or("pep_grants.json");
-                    let p = std::path::Path::new(path);
-                    let mut store = if p.exists() {
-                        aiosh_core::pep_grant::PepGrantStore::load_from_path(p)?
-                    } else {
-                        aiosh_core::pep_grant::PepGrantStore::new()
-                    };
+                    let (p, mut store) = Server::validate_and_open_grant_store(store_path_opt.as_deref())?;
 
                     if store.get_grant(gid).is_some() {
                         return Err(format!("grant ID already exists: {}", gid));
                     }
 
                     store.add_grant(grant.clone())?;
-                    store.save_to_path(p)?;
+                    store.save_to_path(&p)?;
 
                     Ok(json!({
                         "ok": true,
@@ -7048,13 +7077,7 @@ impl Server {
                 let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
                 let subject_opt = arguments.get("subject").and_then(|v| v.as_str()).map(|s| s.to_string());
                 let f = move || -> Result<Value, String> {
-                    let path = store_path_opt.as_deref().unwrap_or("pep_grants.json");
-                    let p = std::path::Path::new(path);
-                    let store = if p.exists() {
-                        aiosh_core::pep_grant::PepGrantStore::load_from_path(p)?
-                    } else {
-                        aiosh_core::pep_grant::PepGrantStore::new()
-                    };
+                    let (_p, store) = Server::validate_and_open_grant_store(store_path_opt.as_deref())?;
                     let grants = if let Some(ref subj) = subject_opt {
                         store.list_grants_for_subject(subj).into_iter().cloned().collect::<Vec<_>>()
                     } else {
@@ -7078,13 +7101,7 @@ impl Server {
                 let grant_id_param = arguments.get("grant_id_param").and_then(|v| v.as_str()).map(|s| s.to_string());
                 let f = move || -> Result<Value, String> {
                     let gid = grant_id_param.as_ref().ok_or_else(|| "missing required parameter: grant_id_param".to_string())?;
-                    let path = store_path_opt.as_deref().unwrap_or("pep_grants.json");
-                    let p = std::path::Path::new(path);
-                    let store = if p.exists() {
-                        aiosh_core::pep_grant::PepGrantStore::load_from_path(p)?
-                    } else {
-                        aiosh_core::pep_grant::PepGrantStore::new()
-                    };
+                    let (_p, store) = Server::validate_and_open_grant_store(store_path_opt.as_deref())?;
                     let grant = store.get_grant(gid).ok_or_else(|| format!("grant not found: {}", gid))?;
                     Ok(json!({
                         "ok": true,
@@ -7105,13 +7122,7 @@ impl Server {
                 let right_opt = arguments.get("right").and_then(|v| v.as_str()).map(|s| s.to_string());
                 let f = move || -> Result<Value, String> {
                     let gid = grant_id_param.as_ref().ok_or_else(|| "missing required parameter: grant_id_param".to_string())?;
-                    let path = store_path_opt.as_deref().unwrap_or("pep_grants.json");
-                    let p = std::path::Path::new(path);
-                    let store = if p.exists() {
-                        aiosh_core::pep_grant::PepGrantStore::load_from_path(p)?
-                    } else {
-                        aiosh_core::pep_grant::PepGrantStore::new()
-                    };
+                    let (_p, store) = Server::validate_and_open_grant_store(store_path_opt.as_deref())?;
                     let grant = store.get_grant(gid).ok_or_else(|| format!("grant not found: {}", gid))?;
                     let now = chrono::Utc::now().to_rfc3339();
 
@@ -7151,15 +7162,9 @@ impl Server {
                 let cascade = arguments.get("cascade").and_then(|v| v.as_bool()).unwrap_or(false);
                 let f = move || -> Result<Value, String> {
                     let gid = grant_id_param.as_ref().ok_or_else(|| "missing required parameter: grant_id_param".to_string())?;
-                    let path = store_path_opt.as_deref().unwrap_or("pep_grants.json");
-                    let p = std::path::Path::new(path);
-                    let mut store = if p.exists() {
-                        aiosh_core::pep_grant::PepGrantStore::load_from_path(p)?
-                    } else {
-                        aiosh_core::pep_grant::PepGrantStore::new()
-                    };
+                    let (p, mut store) = Server::validate_and_open_grant_store(store_path_opt.as_deref())?;
                     let count = store.revoke_grant(gid, "mcp-agent", &reason, cascade)?;
-                    let _ = store.save_to_path(p);
+                    let _ = store.save_to_path(&p);
                     Ok(json!({
                         "ok": true,
                         "tool": "aios.pep.grant.revoke",
@@ -7201,16 +7206,9 @@ impl Server {
                         delegated_rights.push(right);
                     }
 
-                    let path = store_path_opt.as_deref().unwrap_or("pep_grants.json");
-                    let p = std::path::Path::new(path);
-                    let mut service = if p.exists() {
-                        aiosh_core::pep_grant_service::PepGrantService::load_from_path(p)?
-                    } else {
-                        aiosh_core::pep_grant_service::PepGrantService::new().with_storage_path(p.to_path_buf())
-                    };
-
+                    let (p, mut service) = Server::validate_and_open_grant_service(store_path_opt.as_deref())?;
                     let child = service.attenuate_grant(pid, cid, csubj, delegated_rights)?;
-                    service.save_to_path(p)?;
+                    service.save_to_path(&p)?;
 
                     Ok(json!({
                         "ok": true,
@@ -7227,18 +7225,11 @@ impl Server {
             "aios.pep.grant.sweep" => {
                 let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
                 let f = move || -> Result<Value, String> {
-                    let path = store_path_opt.as_deref().unwrap_or("pep_grants.json");
-                    let p = std::path::Path::new(path);
-                    let mut service = if p.exists() {
-                        aiosh_core::pep_grant_service::PepGrantService::load_from_path(p)?
-                    } else {
-                        aiosh_core::pep_grant_service::PepGrantService::new().with_storage_path(p.to_path_buf())
-                    };
-
+                    let (p, mut service) = Server::validate_and_open_grant_service(store_path_opt.as_deref())?;
                     let now = chrono::Utc::now().to_rfc3339();
                     let swept_count = service.sweep_expired(&now)?;
                     if swept_count > 0 {
-                        service.save_to_path(p)?;
+                        service.save_to_path(&p)?;
                     }
 
                     Ok(json!({

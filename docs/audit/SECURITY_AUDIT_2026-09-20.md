@@ -4841,3 +4841,39 @@ Tasks completed: **T-02226 through T-02235** (10 tasks sequentially executed und
 - MCP unit & smoke tests: test_pep_grant_mcp.py (4/4 test suites PASS), test_pep_decision_smoke.py (7/7 PASS).
 - Compiler hygiene: Zero warnings or errors across all crates.
 - Security status: **CLEAN & VERIFIED**. Pointer advances to T-02236.
+
+---
+
+# ADDENDUM 26 — 2026-09-23: Grant Lifecycle Sub-Epic 4 MCP Surface Closure & Sub-Epic 5 Configuration Launch (T-02236..T-02245)
+
+## 1. Scope & Progress
+Tasks completed: **T-02236 through T-02245** (10 tasks sequentially executed under strict No-Skip governance):
+- **T-02236..T-02240 (Sub-Epic 4: MCP Surface Closure)**:
+  - T-02236: Integration of all 7 MCP grant lifecycle endpoints into the primary end-to-end regression smoke test `test_pep_decision_smoke.py`.
+  - T-02237: Comprehensive security review and threat modeling across 7 attack vectors covering path traversal, unauthorized root issuance, rights escalation during attenuation, unauthenticated sweeps, and cascade revocation bypass.
+  - T-02238: Hardening across all MCP grant handlers with strict path hygiene (`validate_pep_service_path`), 16 MiB file size limits, rights parsing guards, and duplicate ID prevention.
+  - T-02239: Complete system documentation added as Section 18 in `docs/pep_decision_engine.md` detailing tool schemas, arguments, outputs, error conditions, and task evidence links.
+  - T-02240: Formal verification and Sub-Epic 4 milestone closure (Rust test suite PASS, Python CLI & MCP test suites PASS, 0 warnings).
+- **T-02241..T-02245 (Sub-Epic 5: Configuration Subsystem Launch)**:
+  - T-02241: Research into configuration precedence (Flags > Env > File > Defaults) and specification of invariants `GRANTCONF1..GRANTCONF6`.
+  - T-02242: Technical specification of `PepGrantConfig`, numerical bounds, error codes, and serialization contracts.
+  - T-02243: Scaffolded `code/aiosh-rust/aiosh-core/src/pep_grant_config.rs` and registered in `aiosh_core::lib`.
+  - T-02244: Full implementation with atomic two-phase write (`.tmp.<pid>`), symlink rejection, 64 KiB read cap, and environment variable overrides.
+  - T-02245: Dedicated unit test suite in `code/aiosh-rust/aiosh-core/tests/test_pep_grant_config.rs` passing 8/8 tests with 0 warnings.
+
+## 2. Invariants & Controls Audited
+1. **`GRANTCONF1` (Path Hygiene & Traversal Resistance)**: `store_path` strictly validated against directory traversal (`..`), length $\le 1024$, `.json` extension, and control characters.
+2. **`GRANTCONF2` & `GRANTCONF3` (Resource Boundaries)**: `max_store_bytes` bounded in $[1\,024, 104\,857\,600]$ ($1\text{ KiB} \dots 100\text{ MiB}$) and `max_grants` bounded in $[1, 50\,000]$.
+3. **`GRANTCONF4` (Delegation Depth Containment)**: `default_max_delegation_depth` bounded in $[1, 10]$.
+4. **`GRANTCONF5` (Automated Lifecycle Flags)**: Secure defaults with configurable `auto_sweep_on_load` and `cascade_revocation_by_default`.
+5. **`GRANTCONF6` (Atomic Persistence & Symlink Rejection)**: Configuration files are checked with `symlink_metadata` to reject symlinks, reads are capped at 64 KiB (`MAX_CONFIG_BYTES`), and writes use atomic renaming.
+6. **MCP Defensive Posture**: All MCP handlers reject files $> 16\text{ MiB}$, enforce strict path hygiene, and emit tamper-evident SQLite WAL audit entries via `dispatch::recorded_call`.
+
+## 3. Audit Certification
+- Rust configuration unit tests: `test_pep_grant_config` (8/8 PASS).
+- Rust core grant test suite: `test_pep_grant` (10/10 PASS), `test_pep_grant_service` (12/12 PASS).
+- CLI unit tests: `test_pep_grant_cli.py` (5/5 test suites PASS).
+- MCP unit & smoke tests: `test_pep_grant_mcp.py` (PASS), `test_pep_decision_smoke.py` (PASS).
+- Compiler hygiene: Zero compiler warnings across all workspace crates.
+- Security status: **CLEAN & VERIFIED**. Pointer advances to `T-02246`.
+

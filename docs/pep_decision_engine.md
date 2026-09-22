@@ -943,6 +943,223 @@ aiosh pep grant sweep \
 - [T-02229: CLI Documentation Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02229-cli-surface-documentation.md)
 - [T-02230: CLI Verification Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02230-cli-surface-verification-evidenc.md)
 
+---
+
+## 18. Grant Lifecycle MCP Surface Reference
+
+The Model Context Protocol (MCP) server provides programmatic access to the AIOS Grant Lifecycle engine under the tool prefix `aios.pep.grant.*`. Under ADR-0035 §D-2, all AIOS model tool interactions are mediated through MCP with strict PEP gating, parameter validation, and immutable SQLite WAL audit logging.
+
+### 18.1 Tool Catalog Overview
+
+| Tool Name | Operation | Description | Audit Classification |
+|---|---|---|---|
+| `aios.pep.grant.issue` | Issue Root Grant | Creates and stores a new root PEP authorization grant | Mutating (`record_call`) |
+| `aios.pep.grant.list` | List Grants | Lists all grants or filters by subject identifier | Read-only (`record_call`) |
+| `aios.pep.grant.inspect` | Inspect Grant | Inspects full details of a grant by its identifier | Read-only (`record_call`) |
+| `aios.pep.grant.validate` | Validate Grant | Verifies usable state, temporal validity, and optional rights | Read-only (`record_call`) |
+| `aios.pep.grant.revoke` | Revoke Grant | Revokes a grant, with optional recursive cascade | Mutating (`record_call`) |
+| `aios.pep.grant.attenuate`| Attenuate Grant | Derives an attenuated child grant under monotonicity rules | Mutating (`record_call`) |
+| `aios.pep.grant.sweep` | Sweep Expired | Sweeps expired active grants to expired status | Mutating (`record_call`) |
+
+### 18.2 Tool Specifications & Schemas
+
+#### 18.2.1 `aios.pep.grant.issue`
+Issues a new root capability grant into the specified grant store.
+- **Input Schema**:
+  ```json
+  {
+    "type": "object",
+    "properties": {
+      "id": { "type": "string", "description": "Unique grant identifier" },
+      "issuer": { "type": "string", "description": "Issuing entity identifier" },
+      "subject": { "type": "string", "description": "Target subject identifier" },
+      "scope_type": { "type": "string", "description": "filesystem | network | ipc | system" },
+      "scope_path": { "type": "string", "description": "Target resource path / address / channel" },
+      "rights": { "type": "array", "items": { "type": "string" }, "description": "Granted capability rights" },
+      "expires_at": { "type": "string", "description": "Optional ISO-8601 expiry timestamp" },
+      "not_before": { "type": "string", "description": "Optional ISO-8601 activation timestamp" },
+      "max_invocations": { "type": "integer", "description": "Optional maximum invocations quota" },
+      "max_bytes": { "type": "integer", "description": "Optional maximum transferred bytes quota" },
+      "max_delegation_depth": { "type": "integer", "description": "Maximum delegation depth (default: 3)" },
+      "store_path": { "type": "string", "description": "Optional path to backing JSON store" }
+    },
+    "required": ["id", "subject", "scope_type", "rights"]
+  }
+  ```
+- **Output Envelope**:
+  ```json
+  {
+    "ok": true,
+    "tool": "aios.pep.grant.issue",
+    "grant": { ... },
+    "audit_id": 1024
+  }
+  ```
+
+#### 18.2.2 `aios.pep.grant.list`
+Lists grants currently loaded in the store, optionally filtered by subject.
+- **Input Schema**:
+  ```json
+  {
+    "type": "object",
+    "properties": {
+      "subject": { "type": "string", "description": "Optional subject filter" },
+      "store_path": { "type": "string", "description": "Optional path to backing JSON store" }
+    }
+  }
+  ```
+- **Output Envelope**:
+  ```json
+  {
+    "ok": true,
+    "tool": "aios.pep.grant.list",
+    "count": 2,
+    "grants": [ ... ],
+    "audit_id": 1025
+  }
+  ```
+
+#### 18.2.3 `aios.pep.grant.inspect`
+Returns comprehensive record metadata for a single grant.
+- **Input Schema**:
+  ```json
+  {
+    "type": "object",
+    "properties": {
+      "grant_id_param": { "type": "string", "description": "Target grant identifier" },
+      "store_path": { "type": "string", "description": "Optional path to backing JSON store" }
+    },
+    "required": ["grant_id_param"]
+  }
+  ```
+- **Output Envelope**:
+  ```json
+  {
+    "ok": true,
+    "tool": "aios.pep.grant.inspect",
+    "grant": { ... },
+    "audit_id": 1026
+  }
+  ```
+
+#### 18.2.4 `aios.pep.grant.validate`
+Validates that a grant is Active, non-expired, and optionally capable of satisfying a requested right for a subject.
+- **Input Schema**:
+  ```json
+  {
+    "type": "object",
+    "properties": {
+      "grant_id_param": { "type": "string", "description": "Target grant identifier" },
+      "subject": { "type": "string", "description": "Optional subject to validate against" },
+      "right": { "type": "string", "description": "Optional capability right (read, write, etc.)" },
+      "store_path": { "type": "string", "description": "Optional path to backing JSON store" }
+    },
+    "required": ["grant_id_param"]
+  }
+  ```
+- **Output Envelope**:
+  ```json
+  {
+    "ok": true,
+    "tool": "aios.pep.grant.validate",
+    "grant_id": "g-root-001",
+    "valid": true,
+    "state": "Active",
+    "audit_id": 1027
+  }
+  ```
+
+#### 18.2.5 `aios.pep.grant.revoke`
+Transitions a grant to Revoked status, recording revocation reason and operator. If `cascade` is true, all transitively derived child grants are also recursively revoked.
+- **Input Schema**:
+  ```json
+  {
+    "type": "object",
+    "properties": {
+      "grant_id_param": { "type": "string", "description": "Target grant identifier" },
+      "reason": { "type": "string", "description": "Reason for revocation" },
+      "cascade": { "type": "boolean", "description": "Whether to cascade revocation to derived grants" },
+      "store_path": { "type": "string", "description": "Optional path to backing JSON store" }
+    },
+    "required": ["grant_id_param"]
+  }
+  ```
+- **Output Envelope**:
+  ```json
+  {
+    "ok": true,
+    "tool": "aios.pep.grant.revoke",
+    "grant_id": "g-root-001",
+    "revoked_count": 3,
+    "cascade": true,
+    "audit_id": 1028
+  }
+  ```
+
+#### 18.2.6 `aios.pep.grant.attenuate`
+Derives an attenuated child grant from an active parent grant.
+- **Rules**:
+  1. Parent must be `Active`.
+  2. Parent must possess the `delegate` right.
+  3. Parent must have `max_delegation_depth > 0`.
+  4. Child rights must be a strict subset of parent rights.
+  5. Child `max_delegation_depth` is decremented by 1.
+- **Input Schema**:
+  ```json
+  {
+    "type": "object",
+    "properties": {
+      "parent_id": { "type": "string", "description": "Parent grant identifier" },
+      "child_id": { "type": "string", "description": "New child grant identifier" },
+      "child_subject": { "type": "string", "description": "Subject receiving child grant" },
+      "rights": { "type": "array", "items": { "type": "string" }, "description": "Attenuated rights subset" },
+      "store_path": { "type": "string", "description": "Optional path to backing JSON store" }
+    },
+    "required": ["parent_id", "child_id", "child_subject", "rights"]
+  }
+  ```
+
+#### 18.2.7 `aios.pep.grant.sweep`
+Evaluates all active grants against the current UTC timestamp, transitioning any whose `expires_at` timestamp has passed to `Expired` state.
+- **Input Schema**:
+  ```json
+  {
+    "type": "object",
+    "properties": {
+      "store_path": { "type": "string", "description": "Optional path to backing JSON store" }
+    }
+  }
+  ```
+- **Output Envelope**:
+  ```json
+  {
+    "ok": true,
+    "tool": "aios.pep.grant.sweep",
+    "swept_count": 1,
+    "timestamp": "2026-09-23T01:00:00Z",
+    "audit_id": 1030
+  }
+  ```
+
+### 18.3 MCP Security Guarantees & Constraints
+1. **Path Traversal Protection**: All store paths are checked by `aiosh_core::pep_decision_service::validate_pep_service_path`. Paths with `..`, length $> 1024$, control characters, or non-`.json` extensions are rejected with `ok: false`.
+2. **File Size Bounding**: Store files $> 16\text{ MiB}$ are rejected before deserialization to protect against memory exhaustion.
+3. **Atomic Persistence**: Mutating operations persist changes via atomic write-and-rename mechanics.
+4. **Audit Trail Completeness**: Every tool execution passes through `dispatch::recorded_call`, writing an immutable entry into `ring.db`.
+
+### 18.4 MCP Task Evidence References
+- [T-02231: MCP Surface Research Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02231-mcp-api-surface-research.md)
+- [T-02232: MCP Surface Specification Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02232-mcp-api-surface-specification.md)
+- [T-02233: MCP Surface Scaffold Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02233-mcp-api-surface-scaffold.md)
+- [T-02234: MCP Surface Implementation Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02234-mcp-api-surface-implementation.md)
+- [T-02235: MCP Surface Unit Test Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02235-mcp-api-surface-unit-test.md)
+- [T-02236: MCP Surface Integration Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02236-mcp-api-surface-integration.md)
+- [T-02237: MCP Surface Security Review Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02237-mcp-api-surface-security-review.md)
+- [T-02238: MCP Surface Hardening Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02238-mcp-api-surface-hardening.md)
+- [T-02239: MCP Surface Documentation Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02239-mcp-api-surface-documentation.md)
+- [T-02240: MCP Surface Verification Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02240-mcp-api-surface-verification-evidenc.md)
+
+
 
 
 

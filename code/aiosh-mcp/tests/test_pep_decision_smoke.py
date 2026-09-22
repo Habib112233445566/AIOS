@@ -363,43 +363,24 @@ def test_pep_recovery_mcp():
 
 
 def test_pep_grant_mcp():
-    print("TEST: PEP MCP grant lifecycle tools (list, inspect, validate, revoke) ...", end=" ")
+    print("TEST: PEP MCP grant lifecycle tools (issue, list, inspect, validate, attenuate, sweep, revoke) ...", end=" ")
     with tempfile.TemporaryDirectory() as tmpdir:
         grant_store = Path(tmpdir) / "pep_grants.json"
-        now = "2026-09-22T10:00:00Z"
-        test_data = {
-            "grants": {
-                "grnt-mcp-1": {
-                    "id": "grnt-mcp-1",
-                    "parent_grant_id": None,
-                    "issuer": "root-admin",
-                    "subject": "agent-worker",
-                    "scope": {
-                        "type": "filesystem",
-                        "details": { "path": "/data/test", "recursive": True }
-                    },
-                    "rights": ["read", "write", "delegate"],
-                    "state": "active",
-                    "constraints": {
-                        "not_before": None,
-                        "expires_at": None,
-                        "max_invocations": None,
-                        "invocations_used": 0,
-                        "max_bytes": None,
-                        "bytes_used": 0,
-                        "max_delegation_depth": 2
-                    },
-                    "revocation": None,
-                    "metadata": {},
-                    "created_at": now,
-                    "updated_at": now
-                }
-            }
-        }
-        with open(grant_store, "w") as f:
-            json.dump(test_data, f)
-
         store_str = str(grant_store)
+
+        # 0. Issue root parent grant via MCP tool
+        res_issue = call_mcp_tool("aios.pep.grant.issue", {
+            "id": "grnt-mcp-1",
+            "issuer": "root-admin",
+            "subject": "agent-worker",
+            "scope_type": "filesystem",
+            "scope_path": "/data/test",
+            "rights": ["read", "write", "delegate"],
+            "delegation_depth": 2,
+            "store_path": store_str,
+        })
+        assert res_issue.get("ok") is True, f"issue failed: {res_issue}"
+        assert res_issue.get("grant", {}).get("id") == "grnt-mcp-1"
 
         # 1. List grants
         res_list = call_mcp_tool("aios.pep.grant.list", {"store_path": store_str})
