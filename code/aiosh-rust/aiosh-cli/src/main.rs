@@ -15552,9 +15552,22 @@ fn cmd_pep(args: &[String]) -> i32 {
             let grant_args = if args.len() > 1 { &args[1..] } else { &[] };
             let mut grant_sub = None;
             let mut grant_id = None;
+            let mut parent_opt = None;
+            let mut child_opt = None;
+            let mut issuer_opt = None;
             let mut subject_opt = None;
+            let mut scope_type_opt = None;
+            let mut scope_path_opt = None;
+            let mut rights_opt = None;
             let mut right_opt = None;
             let mut reason_opt = None;
+            let mut expires_at_opt = None;
+            let mut not_before_opt = None;
+            let mut max_inv_opt = None;
+            let mut max_bytes_opt = None;
+            let mut depth_opt = None;
+            let mut state_opt = None;
+            let mut now_opt = None;
             let mut cascade = false;
             let mut custom_store = None;
             let mut is_grant_json = false;
@@ -15570,10 +15583,52 @@ fn cmd_pep(args: &[String]) -> i32 {
                             custom_store = Some(grant_args[i].clone());
                         }
                     }
+                    "--id" => {
+                        if i + 1 < grant_args.len() {
+                            i += 1;
+                            grant_id = Some(grant_args[i].clone());
+                        }
+                    }
+                    "--parent" => {
+                        if i + 1 < grant_args.len() {
+                            i += 1;
+                            parent_opt = Some(grant_args[i].clone());
+                        }
+                    }
+                    "--child" => {
+                        if i + 1 < grant_args.len() {
+                            i += 1;
+                            child_opt = Some(grant_args[i].clone());
+                        }
+                    }
+                    "--issuer" => {
+                        if i + 1 < grant_args.len() {
+                            i += 1;
+                            issuer_opt = Some(grant_args[i].clone());
+                        }
+                    }
                     "--subject" => {
                         if i + 1 < grant_args.len() {
                             i += 1;
                             subject_opt = Some(grant_args[i].clone());
+                        }
+                    }
+                    "--scope-type" => {
+                        if i + 1 < grant_args.len() {
+                            i += 1;
+                            scope_type_opt = Some(grant_args[i].clone());
+                        }
+                    }
+                    "--scope-path" => {
+                        if i + 1 < grant_args.len() {
+                            i += 1;
+                            scope_path_opt = Some(grant_args[i].clone());
+                        }
+                    }
+                    "--rights" => {
+                        if i + 1 < grant_args.len() {
+                            i += 1;
+                            rights_opt = Some(grant_args[i].clone());
                         }
                     }
                     "--right" => {
@@ -15588,7 +15643,49 @@ fn cmd_pep(args: &[String]) -> i32 {
                             reason_opt = Some(grant_args[i].clone());
                         }
                     }
-                    "list" | "inspect" | "validate" | "revoke" => {
+                    "--expires-at" => {
+                        if i + 1 < grant_args.len() {
+                            i += 1;
+                            expires_at_opt = Some(grant_args[i].clone());
+                        }
+                    }
+                    "--not-before" => {
+                        if i + 1 < grant_args.len() {
+                            i += 1;
+                            not_before_opt = Some(grant_args[i].clone());
+                        }
+                    }
+                    "--max-invocations" => {
+                        if i + 1 < grant_args.len() {
+                            i += 1;
+                            max_inv_opt = grant_args[i].parse::<u64>().ok();
+                        }
+                    }
+                    "--max-bytes" => {
+                        if i + 1 < grant_args.len() {
+                            i += 1;
+                            max_bytes_opt = grant_args[i].parse::<u64>().ok();
+                        }
+                    }
+                    "--delegation-depth" => {
+                        if i + 1 < grant_args.len() {
+                            i += 1;
+                            depth_opt = grant_args[i].parse::<u32>().ok();
+                        }
+                    }
+                    "--state" => {
+                        if i + 1 < grant_args.len() {
+                            i += 1;
+                            state_opt = Some(grant_args[i].clone());
+                        }
+                    }
+                    "--now" => {
+                        if i + 1 < grant_args.len() {
+                            i += 1;
+                            now_opt = Some(grant_args[i].clone());
+                        }
+                    }
+                    "list" | "inspect" | "validate" | "revoke" | "sweep" | "issue" | "attenuate" => {
                         grant_sub = Some(grant_args[i].as_str());
                     }
                     other if !other.starts_with("--") => {
@@ -15615,11 +15712,14 @@ fn cmd_pep(args: &[String]) -> i32 {
 
             match grant_sub {
                 Some("list") | None => {
-                    let grants = if let Some(ref subj) = subject_opt {
+                    let mut grants = if let Some(ref subj) = subject_opt {
                         store.list_grants_for_subject(subj).into_iter().cloned().collect::<Vec<_>>()
                     } else {
                         store.list_grants()
                     };
+                    if let Some(ref st) = state_opt {
+                        grants.retain(|g| g.state.to_string().eq_ignore_ascii_case(st));
+                    }
                     classify_and_emit(
                         &mut ctx, "pep", "grant.list", json!({ "count": grants.len() }),
                         "success", None, Some("Listed PEP grants"), "operator", None,
@@ -15685,7 +15785,7 @@ fn cmd_pep(args: &[String]) -> i32 {
                             return 2;
                         }
                     };
-                    let now = chrono::Utc::now().to_rfc3339();
+                    let now = now_opt.unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
                     let grant = match store.get_grant(gid) {
                         Some(g) => g,
                         None => {
@@ -15781,6 +15881,307 @@ fn cmd_pep(args: &[String]) -> i32 {
                         }
                     }
                 }
+                Some("sweep") => {
+                    let mut service = if g_store_path.exists() {
+                        aiosh_core::pep_grant_service::PepGrantService::load_from_path(&g_store_path)
+                            .unwrap_or_else(|_| aiosh_core::pep_grant_service::PepGrantService::new().with_storage_path(g_store_path.clone()))
+                    } else {
+                        aiosh_core::pep_grant_service::PepGrantService::new().with_storage_path(g_store_path.clone())
+                    };
+                    let now = now_opt.unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
+                    match service.sweep_expired(&now) {
+                        Ok(swept_count) => {
+                            if swept_count > 0 {
+                                let _ = service.save_to_path(&g_store_path);
+                            }
+                            classify_and_emit(&mut ctx, "pep", "grant.sweep", json!({ "swept_count": swept_count, "timestamp": &now }), "success", None, Some("Swept expired grants"), "operator", None);
+                            if is_grant_json {
+                                println!("{}", json!({ "code": 0, "data": { "swept_count": swept_count, "timestamp": now }, "error": serde_json::Value::Null }));
+                            } else {
+                                println!("SWEEP: {} expired grant(s) swept", swept_count);
+                            }
+                            0
+                        }
+                        Err(e) => {
+                            classify_and_emit(&mut ctx, "pep", "grant.sweep", json!({ "error": &e }), "failure", None, Some("Sweep failed"), "operator", None);
+                            if is_grant_json {
+                                println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "SWEEP_FAILED", "message": e } }));
+                            } else {
+                                eprintln!("ERROR: {}", sanitize_terminal(&e));
+                            }
+                            1
+                        }
+                    }
+                }
+                Some("issue") => {
+                    let gid = match grant_id {
+                        Some(ref id) => id.clone(),
+                        None => {
+                            let msg = "usage: aiosh pep grant issue --id <id> --subject <subj> --scope-type <type> --rights <r1,r2> [options]";
+                            classify_and_emit(&mut ctx, "pep", "grant.issue", json!({ "error": msg }), "failure", None, Some("Missing id"), "operator", None);
+                            if is_grant_json {
+                                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENTS", "message": msg } }));
+                            } else {
+                                eprintln!("{}", sanitize_terminal(msg));
+                            }
+                            return 2;
+                        }
+                    };
+                    let subj = match subject_opt {
+                        Some(ref s) => s.clone(),
+                        None => {
+                            let msg = "missing required flag: --subject";
+                            classify_and_emit(&mut ctx, "pep", "grant.issue", json!({ "error": msg }), "failure", Some(&gid), Some("Missing subject"), "operator", None);
+                            if is_grant_json {
+                                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENTS", "message": msg } }));
+                            } else {
+                                eprintln!("{}", sanitize_terminal(msg));
+                            }
+                            return 2;
+                        }
+                    };
+                    let scope_type = match scope_type_opt {
+                        Some(ref st) => st.clone(),
+                        None => {
+                            let msg = "missing required flag: --scope-type <filesystem|network|ipc|system>";
+                            classify_and_emit(&mut ctx, "pep", "grant.issue", json!({ "error": msg }), "failure", Some(&gid), Some("Missing scope type"), "operator", None);
+                            if is_grant_json {
+                                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENTS", "message": msg } }));
+                            } else {
+                                eprintln!("{}", sanitize_terminal(msg));
+                            }
+                            return 2;
+                        }
+                    };
+                    let raw_rights = match rights_opt {
+                        Some(ref r) => r.clone(),
+                        None => {
+                            let msg = "missing required flag: --rights <read,write,...>";
+                            classify_and_emit(&mut ctx, "pep", "grant.issue", json!({ "error": msg }), "failure", Some(&gid), Some("Missing rights"), "operator", None);
+                            if is_grant_json {
+                                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENTS", "message": msg } }));
+                            } else {
+                                eprintln!("{}", sanitize_terminal(msg));
+                            }
+                            return 2;
+                        }
+                    };
+
+                    let issuer = issuer_opt.unwrap_or_else(|| "operator".to_string());
+                    let scope = match scope_type.to_ascii_lowercase().as_str() {
+                        "filesystem" | "fs" => aiosh_core::capability::CapabilityScope::Filesystem {
+                            path: scope_path_opt.unwrap_or_else(|| "/".to_string()),
+                            recursive: true,
+                        },
+                        "network" | "net" => aiosh_core::capability::CapabilityScope::Network {
+                            host: scope_path_opt.unwrap_or_else(|| "localhost".to_string()),
+                            port: None,
+                            protocol: "tcp".to_string(),
+                        },
+                        "ipc" => aiosh_core::capability::CapabilityScope::Ipc {
+                            channel: scope_path_opt.unwrap_or_else(|| "default".to_string()),
+                        },
+                        "system" | "sys" => aiosh_core::capability::CapabilityScope::System {
+                            subsystem: scope_path_opt.unwrap_or_else(|| "core".to_string()),
+                        },
+                        other => {
+                            let msg = format!("unknown scope type: {}", other);
+                            if is_grant_json {
+                                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENTS", "message": msg } }));
+                            } else {
+                                eprintln!("{}", sanitize_terminal(&msg));
+                            }
+                            return 2;
+                        }
+                    };
+
+                    let mut parsed_rights = Vec::new();
+                    for r_str in raw_rights.split(',') {
+                        let trimmed = r_str.trim().to_ascii_lowercase();
+                        if trimmed.is_empty() { continue; }
+                        let right = match trimmed.as_str() {
+                            "read" => aiosh_core::capability::CapabilityRight::Read,
+                            "write" => aiosh_core::capability::CapabilityRight::Write,
+                            "execute" => aiosh_core::capability::CapabilityRight::Execute,
+                            "delete" => aiosh_core::capability::CapabilityRight::Delete,
+                            "admin" => aiosh_core::capability::CapabilityRight::Admin,
+                            "delegate" => aiosh_core::capability::CapabilityRight::Delegate,
+                            other => {
+                                let msg = format!("unknown capability right: {}", other);
+                                if is_grant_json {
+                                    println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENTS", "message": msg } }));
+                                } else {
+                                    eprintln!("{}", sanitize_terminal(&msg));
+                                }
+                                return 2;
+                            }
+                        };
+                        parsed_rights.push(right);
+                    }
+
+                    let mut grant = aiosh_core::pep_grant::PepGrant::new(&gid, &issuer, &subj, scope, parsed_rights);
+                    grant.state = aiosh_core::pep_grant::PepGrantState::Active;
+                    if let Some(exp) = expires_at_opt {
+                        grant.constraints.expires_at = Some(exp);
+                    }
+                    if let Some(nb) = not_before_opt {
+                        grant.constraints.not_before = Some(nb);
+                    }
+                    if let Some(max_inv) = max_inv_opt {
+                        grant.constraints.max_invocations = Some(max_inv);
+                    }
+                    if let Some(max_b) = max_bytes_opt {
+                        grant.constraints.max_bytes = Some(max_b);
+                    }
+                    if let Some(d) = depth_opt {
+                        grant.constraints.max_delegation_depth = d;
+                    }
+
+                    if let Err(e) = grant.validate() {
+                        let msg = format!("grant validation failed: {}", e);
+                        classify_and_emit(&mut ctx, "pep", "grant.issue", json!({ "error": &msg }), "failure", Some(&gid), Some("Validation failed"), "operator", None);
+                        if is_grant_json {
+                            println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "VALIDATION_FAILED", "message": msg } }));
+                        } else {
+                            eprintln!("ERROR: {}", sanitize_terminal(&msg));
+                        }
+                        return 2;
+                    }
+
+                    let mut service = if g_store_path.exists() {
+                        aiosh_core::pep_grant_service::PepGrantService::load_from_path(&g_store_path)
+                            .unwrap_or_else(|_| aiosh_core::pep_grant_service::PepGrantService::new().with_storage_path(g_store_path.clone()))
+                    } else {
+                        aiosh_core::pep_grant_service::PepGrantService::new().with_storage_path(g_store_path.clone())
+                    };
+
+                    match service.issue_grant(grant.clone()) {
+                        Ok(()) => {
+                            let _ = service.save_to_path(&g_store_path);
+                            classify_and_emit(&mut ctx, "pep", "grant.issue", json!({ "grant_id": &gid }), "success", Some(&gid), Some("Issued grant"), "operator", None);
+                            if is_grant_json {
+                                println!("{}", json!({ "code": 0, "data": grant, "error": serde_json::Value::Null }));
+                            } else {
+                                println!("ISSUED: grant '{}' issued to '{}'", gid, subj);
+                            }
+                            0
+                        }
+                        Err(e) => {
+                            classify_and_emit(&mut ctx, "pep", "grant.issue", json!({ "error": &e }), "failure", Some(&gid), Some("Issue failed"), "operator", None);
+                            if is_grant_json {
+                                println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "ISSUE_FAILED", "message": e } }));
+                            } else {
+                                eprintln!("ERROR: {}", sanitize_terminal(&e));
+                            }
+                            1
+                        }
+                    }
+                }
+                Some("attenuate") => {
+                    let pid = parent_opt.or(grant_id).unwrap_or_default();
+                    if pid.is_empty() {
+                        let msg = "usage: aiosh pep grant attenuate <parent_id> --child <child_id> --subject <child_subject> --rights <r1,r2> [options]";
+                        classify_and_emit(&mut ctx, "pep", "grant.attenuate", json!({ "error": msg }), "failure", None, Some("Missing parent_id"), "operator", None);
+                        if is_grant_json {
+                            println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENTS", "message": msg } }));
+                        } else {
+                            eprintln!("{}", sanitize_terminal(msg));
+                        }
+                        return 2;
+                    }
+                    let cid = match child_opt {
+                        Some(ref c) => c.clone(),
+                        None => {
+                            let msg = "missing required flag: --child <child_id>";
+                            classify_and_emit(&mut ctx, "pep", "grant.attenuate", json!({ "error": msg }), "failure", Some(&pid), Some("Missing child_id"), "operator", None);
+                            if is_grant_json {
+                                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENTS", "message": msg } }));
+                            } else {
+                                eprintln!("{}", sanitize_terminal(msg));
+                            }
+                            return 2;
+                        }
+                    };
+                    let csubj = match subject_opt {
+                        Some(ref s) => s.clone(),
+                        None => {
+                            let msg = "missing required flag: --subject <child_subject>";
+                            classify_and_emit(&mut ctx, "pep", "grant.attenuate", json!({ "error": msg }), "failure", Some(&pid), Some("Missing child subject"), "operator", None);
+                            if is_grant_json {
+                                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENTS", "message": msg } }));
+                            } else {
+                                eprintln!("{}", sanitize_terminal(msg));
+                            }
+                            return 2;
+                        }
+                    };
+                    let raw_rights = match rights_opt {
+                        Some(ref r) => r.clone(),
+                        None => {
+                            let msg = "missing required flag: --rights <read,write,...>";
+                            classify_and_emit(&mut ctx, "pep", "grant.attenuate", json!({ "error": msg }), "failure", Some(&pid), Some("Missing rights"), "operator", None);
+                            if is_grant_json {
+                                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENTS", "message": msg } }));
+                            } else {
+                                eprintln!("{}", sanitize_terminal(msg));
+                            }
+                            return 2;
+                        }
+                    };
+
+                    let mut delegated_rights = Vec::new();
+                    for r_str in raw_rights.split(',') {
+                        let trimmed = r_str.trim().to_ascii_lowercase();
+                        if trimmed.is_empty() { continue; }
+                        let right = match trimmed.as_str() {
+                            "read" => aiosh_core::capability::CapabilityRight::Read,
+                            "write" => aiosh_core::capability::CapabilityRight::Write,
+                            "execute" => aiosh_core::capability::CapabilityRight::Execute,
+                            "delete" => aiosh_core::capability::CapabilityRight::Delete,
+                            "admin" => aiosh_core::capability::CapabilityRight::Admin,
+                            "delegate" => aiosh_core::capability::CapabilityRight::Delegate,
+                            other => {
+                                let msg = format!("unknown capability right: {}", other);
+                                if is_grant_json {
+                                    println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENTS", "message": msg } }));
+                                } else {
+                                    eprintln!("{}", sanitize_terminal(&msg));
+                                }
+                                return 2;
+                            }
+                        };
+                        delegated_rights.push(right);
+                    }
+
+                    let mut service = if g_store_path.exists() {
+                        aiosh_core::pep_grant_service::PepGrantService::load_from_path(&g_store_path)
+                            .unwrap_or_else(|_| aiosh_core::pep_grant_service::PepGrantService::new().with_storage_path(g_store_path.clone()))
+                    } else {
+                        aiosh_core::pep_grant_service::PepGrantService::new().with_storage_path(g_store_path.clone())
+                    };
+
+                    match service.attenuate_grant(&pid, &cid, &csubj, delegated_rights) {
+                        Ok(child) => {
+                            let _ = service.save_to_path(&g_store_path);
+                            classify_and_emit(&mut ctx, "pep", "grant.attenuate", json!({ "parent_id": &pid, "child_id": &cid }), "success", Some(&pid), Some("Attenuated grant"), "operator", None);
+                            if is_grant_json {
+                                println!("{}", json!({ "code": 0, "data": child, "error": serde_json::Value::Null }));
+                            } else {
+                                println!("ATTENUATED: derived child grant '{}' from parent '{}'", cid, pid);
+                            }
+                            0
+                        }
+                        Err(e) => {
+                            classify_and_emit(&mut ctx, "pep", "grant.attenuate", json!({ "parent_id": &pid, "error": &e }), "failure", Some(&pid), Some("Attenuation failed"), "operator", None);
+                            if is_grant_json {
+                                println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "ATTENUATION_FAILED", "message": e } }));
+                            } else {
+                                eprintln!("ERROR: {}", sanitize_terminal(&e));
+                            }
+                            1
+                        }
+                    }
+                }
                 Some(other) => {
                     let msg = format!("unknown grant action: {}", other);
                     if is_grant_json {
@@ -15793,7 +16194,7 @@ fn cmd_pep(args: &[String]) -> i32 {
             }
         }
         Some("--help") | Some("-h") | None => {
-            println!("aiosh pep — PEP Decision Engine & Policy Control\n\nUsage: aiosh pep <evaluate|rule-add|rule-list|rule-remove|status|report|doc|validate|recover|grant> [options]\n\nCommands:\n  evaluate                   Evaluate authorization request against policies\n  rule-add                   Add a new policy rule\n  rule-list                  List loaded policy rules\n  rule-remove <id>           Remove a policy rule by ID\n  status                     Display PEP Decision Engine status & metrics\n  report                     Generate comprehensive PEP observability report\n  doc <list|show|search>     Query embedded PEP documentation & help\n  validate <path>            Validate policy store schema, constraints & capacity\n  recover <path>             Recover corrupted policy store (salvage or fail-closed)\n  grant <list|inspect|validate|revoke> Manage and inspect PEP authorization grants\n\nOptions:\n  --store <PATH>             Custom policy JSON store path\n  --strategy <STRAT>         Recovery strategy: strict_fail_closed, salvage_valid_rules, dry_run\n  --salvage                  Shorthand for --strategy salvage_valid_rules\n  --dry-run                  Shorthand for --strategy dry_run\n  --json                     Output structured JSON envelope\n  -h, --help                 Display this help message");
+            println!("aiosh pep — PEP Decision Engine & Policy Control\n\nUsage: aiosh pep <evaluate|rule-add|rule-list|rule-remove|status|report|doc|validate|recover|grant> [options]\n\nCommands:\n  evaluate                   Evaluate authorization request against policies\n  rule-add                   Add a new policy rule\n  rule-list                  List loaded policy rules\n  rule-remove <id>           Remove a policy rule by ID\n  status                     Display PEP Decision Engine status & metrics\n  report                     Generate comprehensive PEP observability report\n  doc <list|show|search>     Query embedded PEP documentation & help\n  validate <path>            Validate policy store schema, constraints & capacity\n  recover <path>             Recover corrupted policy store (salvage or fail-closed)\n  grant <list|inspect|validate|revoke|sweep|issue|attenuate> Manage and inspect PEP authorization grants\n\nOptions:\n  --store <PATH>             Custom policy JSON store path\n  --strategy <STRAT>         Recovery strategy: strict_fail_closed, salvage_valid_rules, dry_run\n  --salvage                  Shorthand for --strategy salvage_valid_rules\n  --dry-run                  Shorthand for --strategy dry_run\n  --json                     Output structured JSON envelope\n  -h, --help                 Display this help message");
             0
         }
         Some(unknown) => {

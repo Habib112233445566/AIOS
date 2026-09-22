@@ -113,6 +113,8 @@ def test_tool_registration():
         "aios.pep.grant.inspect",
         "aios.pep.grant.validate",
         "aios.pep.grant.revoke",
+        "aios.pep.grant.attenuate",
+        "aios.pep.grant.sweep",
     ]:
         assert expected in tool_names, f"{expected} missing from tools/list"
     print("OK")
@@ -375,7 +377,7 @@ def test_pep_grant_mcp():
                         "type": "filesystem",
                         "details": { "path": "/data/test", "recursive": True }
                     },
-                    "rights": ["read", "write"],
+                    "rights": ["read", "write", "delegate"],
                     "state": "active",
                     "constraints": {
                         "not_before": None,
@@ -418,16 +420,38 @@ def test_pep_grant_mcp():
         assert res_val.get("ok") is True, f"validate failed: {res_val}"
         assert res_val.get("valid") is True
 
-        # 4. Revoke grant
+        # 4. Attenuate grant to child
+        res_att = call_mcp_tool("aios.pep.grant.attenuate", {
+            "store_path": store_str,
+            "parent_id": "grnt-mcp-1",
+            "child_id": "grnt-mcp-child",
+            "child_subject": "agent-subworker",
+            "rights": ["read"]
+        })
+        assert res_att.get("ok") is True, f"attenuate failed: {res_att}"
+        child_grant = res_att.get("child_grant", {})
+        assert child_grant.get("id") == "grnt-mcp-child"
+        assert child_grant.get("parent_grant_id") == "grnt-mcp-1"
+        assert child_grant.get("constraints", {}).get("max_delegation_depth") == 1
+
+        # 5. Sweep expired grants (none expired initially)
+        res_sweep = call_mcp_tool("aios.pep.grant.sweep", {
+            "store_path": store_str
+        })
+        assert res_sweep.get("ok") is True, f"sweep failed: {res_sweep}"
+        assert res_sweep.get("swept_count") == 0
+
+        # 6. Revoke parent grant with cascade (should also revoke child grant in hierarchy)
         res_rev = call_mcp_tool("aios.pep.grant.revoke", {
             "store_path": store_str,
             "grant_id_param": "grnt-mcp-1",
-            "reason": "Revoked in smoke test"
+            "reason": "Revoked in smoke test",
+            "cascade": True
         })
         assert res_rev.get("ok") is True, f"revoke failed: {res_rev}"
-        assert res_rev.get("revoked_count") == 1
+        assert res_rev.get("revoked_count") == 2
 
-        # 5. Re-validate revoked grant (should return ok=false)
+        # 7. Re-validate revoked grant (should return ok=false)
         res_val_after = call_mcp_tool("aios.pep.grant.validate", {
             "store_path": store_str,
             "grant_id_param": "grnt-mcp-1"

@@ -20,6 +20,26 @@
 | **Production code, `1–7764`** | 7,764 | **READ line-by-line** across passes 21–23, in six complete untruncated windows + the framing window. See the per-window table in the twenty-third pass section for exactly which window covered which range. |
 | `#[cfg(test)]` module, `7765–10348` | 2,584 | **NOT READ** — the only unread region left in this file. |
 
+---
+
+### Second file: `code/aiosh-rust/aiosh-cli/src/main.rs`
+
+**Now under audit as of pass 25.** **16,653 lines** at revision 12:26 (it measured 15,874 → 16,252 → 16,284 → 16,653 across passes 25–29, so citations name their revision and quoted code is the durable anchor). **Growth after a read shifts addresses:** the +369 lines added during pass 29 moved pass 28's tail by +8 while leaving `:2778`/`:2978` intact — so each region's revision is part of its meaning, and re-anchoring is required before reuse. Production code is **not contiguous**: `1–11817`, then `13542–15814`, with test modules at `11818–13440`, `13442–13541`, `15815+`.
+
+| Region (revision 16,252) | Lines | Status |
+|---|---|---|
+| `1–880` (helpers, `main` dispatch, `cmd_distro`, `cmd_image` head) | 880 | **READ line-by-line** — pass 25, one window, reader-confirmed last line |
+| `881–1440` (`cmd_image` tail, `cmd_service` head) | 560 | **READ line-by-line** — pass 25, one window, reader-confirmed last line |
+| `1441–2200` (`cmd_service` arms: show/action/verbs/order/config/policy/stats/check) | 760 | **READ line-by-line** — pass 26, one window, reader-confirmed last line |
+| `2201–2980` (`cmd_service` tail; `cmd_session` validate/list/show/action/create) | 780 | **READ line-by-line** — pass 27, one window, reader-confirmed last line, revision 16,284 |
+| `2981–3760` (`cmd_session` status/verbs/config/policy/stats/check/help; `load_fs_layout_service`; `cmd_fs_layout_register` head) | 780 | **READ line-by-line** — pass 28, revision 16,284. **Drift note:** the file grew +369 lines after this read, so pass 28's tail now sits at **+8 addresses** (verified: `:3355` → `:3363`, while `:2778`/`:2978` are unchanged). Content intact; addresses are revision-bound |
+| `3761–4460` (`fs_layout` set_active / remove / import_fstab; `cmd_fs_layout` show/validate/fstab/list/probe head) | 700 | **READ line-by-line** — pass 29, one window, reader-confirmed last line, revision 16,653 |
+| `4461–11817` (`cmd_fs_layout` remainder, `cmd_package`, handoff/triage/secrets/repo/doc/evidence/release/toolchain/backup/ci/task, `cmd_run`, `cmd_agent`, audit family, grant family, pentest, `cmd_kernel_module`, `cmd_hardware`, `cmd_network`) | 7,357 | **NOT READ** |
+| `13542–15814` (`cmd_update`, `parse_cli_scope`, `parse_cli_rights`, `cmd_capability`, `cmd_pep`) | 2,273 | **NOT READ** |
+| test modules `11818–13440`, `13442–13541`, `15815–16252` | 3,677 | **NOT READ** |
+
+**Resume marker for this file: line `4461`** (`cmd_fs_layout` probe/diff/register arms onward, then `cmd_package`). Line-number drift applies here too — the file grew +410 lines across passes 25–26, so re-measure and re-anchor on quoted code before relying on any cite.
+
 **Per-pass window provenance** (each window was confirmed complete because `read_files` reported its exact last line):
 
 | Window | Range as read | Revision read against |
@@ -35,7 +55,7 @@
 
 **What this means for the next pass: there is nothing left to read in this file except the test module at `7765`.** Because another thread is still writing to the file, the next pass should **re-diff for new code first** (anything newer than revision 10,348 is unread by definition), then read `7765–10348`.
 
-## Findings index (status after TWENTY-FOURTH PASS — production code fully read; five standing STATIC claims settled live)
+## Findings index (status after TWENTY-NINTH PASS — fs-layout read; N-67 adds the fully-silent tier)
 
 **DEMONSTRATED** = reproduced against the real binary/server in an isolated temp `AIOSH_HOME`; **STATIC** = code-read only; **DISPROVEN** = a probe refuted the claim as written. First disproven claim: **C-4 is now shown to be scoped** — the PEP-gated MCP dispatch path genuinely validates grants (SEVENTEENTH PASS), so C-4 holds only for the four module-level policy helpers. Refinements recorded in the SIXTH PASS: C-6's ZIP extraction is zip-slip-safe (`enclosed_name`); N-1's 0644-widening half remains untestable on this host. SEVENTH PASS adds N-20…N-25 and demonstrates the session-check sibling of N-14 (see N-20). EIGHTH PASS adds N-26…N-29 (new capability subsystem + service-recovery), all probe-verified except N-28. TWELFTH PASS demonstrates H-12 (Python half) and N-23, and settles M-17 (seen-path panic CONFIRMED exit 101; verify-full half refuted). THIRTEENTH PASS adds N-35…N-36 (new `aios.pep.*` rule-authoring tools — dead governance, fifth write primitive). FOURTEENTH PASS adds N-37 (ungated `evidence.hash` arbitrary-file oracle) and upgrades M-13. FIFTEENTH PASS demonstrates **M-5** (Windows ledger lock is a no-op → duplicate `seq` under 16-way concurrency), **N-6** (sandbox argv hijack executes a different binary than requested), **N-33** (no-policy `--` form runs the command), and adds **N-38…N-39** (capability prohibited-path case-sensitivity bypass; `session.check`/`package.check` auto_recover = 6th/7th destructive write primitive). SIXTEENTH PASS adds **N-40…N-41** (restricted-resource governance bypassed by case; session-policy env blocklist bypassed by case), records that N-35's "governance never invoked" premise is now stale, and records the negative that `PepSecurityPolicy::enforce_decision` (the `Permissive`/`Disabled` deny→permit conversion) has zero callers. SEVENTEENTH PASS adds **N-42** (wildcard-arm case sensitivity makes prefix-wildcard *deny* rules bypassable by request case), upgrades **N-2** and **N-9** to DEMONSTRATED, and **scopes down C-4** (the PEP-gated MCP path really does validate grants). EIGHTEENTH PASS adds **N-43** (capability prohibited-path check is purely lexical → a junction to `C:\Windows` is accepted) and completes the canonicalisation sweep: every enum/keyword/identifier comparison is fail-closed, and the fail-open instances are exactly the five containment arms (N-38…N-43). NINETEENTH PASS demonstrates three standing High findings — **H-5**, **H-9**, **H-11** — and narrows **N-25** to unreachable. TWENTIETH PASS measures the gate census at runtime (146 tools / 10 gated), **correcting C-3's numbers downward for the platform's benefit and its own static method**, and adds **N-44** (latent PEP store-validator format mismatch).
 
@@ -111,7 +131,7 @@
 | N-44 `PepStoreValidator::validate_content` requires `rules` to be a JSON **Array** while `PepDecisionService` writes it as an object → every genuine PEP store is reported corrupt, and `recover_store(StrictFailClosed)` would quarantine + overwrite it with an empty store — pass 20 | Low (latent: module has no tool) | STATIC |
 | N-45 44 pre-dispatch early returns (`return json!({ "ok": false …`) in `call_tool` bypass `dispatch::recorded_call` entirely → refused/malformed invocations leave **no audit row** (2 unrecorded calls vs 1 recorded, live) — pass 21 | Medium | DEMONSTRATED |
 | N-46 `Server::open()` opens the PEP decision store on the **same SQLite file** as the audit ring (`let pep_path = ring.path()`, `main.rs:31-42`) → the authorization store and the evidence trail are one writable file — pass 21 | High | STATIC |
-| N-47 seven tools fall back to **hardcoded absolute host defaults** as write targets when the path argument is omitted (`/var/lib/aios/images` `:2559`, `packages.json` `:3004`, `services.json` `:3365`, `/var/lib/aiosh/updates` `:5838,5861,5890,5912`) → ungated recovery/quarantine at a fixed path outside `AIOSH_HOME` — pass 21 | Medium | STATIC (deliberately not executed) |
+| N-47 seven tools fall back to **hardcoded absolute host defaults** as write targets when the path argument is omitted (`/var/lib/aios/images` `:2559`, `packages.json` `:3004`, `services.json` `:3365`, `/var/lib/aiosh/updates` `:5838,5861,5890,5912`) → ungated recovery/quarantine at a fixed path outside `AIOSH_HOME` — pass 21. **CLI sites added:** `image check --fix` `:916` (pass 25) and `service check` `:2138` + `package check` `:6099` (pass 26). Two of these **contradict their own subsystem's configured default** — `service_config`/`package_config` both default to a *relative* `.aios/...` path, so `--fix` quarantines and recreates at an absolute path the operator never configured. **Fifth CLI site (pass 28):** `session check`/`session recover` use `PathBuf::from("/var/run/aios/sessions.json")` (`:3355`) — a **different** directory from the `/var/lib/aios/...` sites, and `session recover` sets the fix flag without needing `--fix` | Medium | STATIC (deliberately not executed) |
 | N-48 policy verdicts carry a **fabricated constant** `evaluated_at` (`2026-09-04T00:00:00Z` `:2921`, `2026-09-06T00:00:00Z` `:3287`) → the verdict's own provenance timestamp is false — pass 21 | Low | STATIC |
 | N-49 `row_to_json` publishes `grant_token` (`:7233` @ rev 10,348) and `aios.audit.tail` is **ungated** → any caller can harvest grant tokens from the ring; the on-disk 0644 exposure was already recorded, the **read path** is not — pass 22, **DEMONSTRATED pass 23** (separate ungranted process read `gr_SECRET_TOKEN_OF_CLIENT_A` out of the ring; escalation to *using* a harvested token still unproven) | High | **DEMONSTRATED** |
 | N-50 Unvalidated or silently-defaulted arguments: `audit.tail` non-integer `n` → default 10 (observed), `session.list` unknown `state`/`session_type` → filter silently dropped (`:3494`,`:3501`), `fs_layout.get`/`fstab` unknown `profile` → **silently returns `standard_uefi` instead** (`:3869`,`:3930`), `fs.read` widens roots to `/tmp` when `HOME` is unset (`:4717-4718`); sibling `service.list` errors instead — pass 22. **Pass 24: the `fs_layout.get` arm is DEMONSTRATED live** — `profile:"bogus_profile_xyz"` → `ok:true` + the `standard_uefi` layout | Low-Medium | PARTLY DEMONSTRATED (fs_layout.get half now live) |
@@ -124,6 +144,13 @@
 | N-57 **DISPROVEN** — the hypothesis that `load_or_create` makes read-only capability tools materialise a store file was probed and it does **not**: `aios.capability.list` with a nonexistent `store_path` returned `ok:true, count:0` and created nothing — pass 23 | — | DISPROVEN |
 | N-58 `aios.capability.check` reports an access **DENIAL** as `ok:true` with JSON-RPC `isError:false` (`"granted": false` at `:6299`) → an agent gating on the protocol error flag reads a denied check as success — pass 23 | Low-Medium | DEMONSTRATED |
 | N-59 New `aios.pep.grant.*` family (registered `:1929`,`:1942`,`:1956`,`:1972`): `store_path` defaults to the **bare CWD-relative** `"pep_grants.json"`, all four arms are ungated, `grant.list`/`grant.inspect` return full grant records to an ungranted caller, and `revoke` attributes the actor to a hardcoded `"mcp-agent"` (`:7007`) — pass 23. **Pass 24: the CWD default is DEMONSTRATED** — a store planted in the server's CWD was returned by `grant.list {}` (`count:1`), while an empty CWD returned `count:0`. Arg-name fact for the record: the handler reads the target from **`grant_id_param`** (schema marks it required) while `call_tool` reads **`grant_id`** as the caller's *optional* credential (`:1977`,`:1979`) | Medium | **DEMONSTRATED** (CWD default) |
+| N-61 The CLI violates its own documented invariant ("Subcommands (each emits exactly one audit row)", `aiosh-cli/src/main.rs:3`): **116 early `return 1/2` paths across 17 commands carry no `classify_and_emit`** in their preceding 20 lines → refused/failed invocations leave **no audit trace** while successes are recorded. Live: `distro show <missing>` rc=1, `distro <bogus>` rc=2, `service validate` bare rc=2 → **+0 rows each**; `distro list` rc=0 → **+1 row**. Same root cause as N-45 (action ordered before audit) on a different binary — pass 25. **Pass 26 A/B verification inside one subsystem:** `service list --store <missing>` rc=1 **+1 row (RECORDED)** vs `service policy --service foo --store <missing>` rc=1 **+0 rows (UNRECORDED)**, reproduced twice — same failure, adjacent arms, opposite audit behaviour. **Pass 27 adds another verified instance:** `session show` with no id → rc=2 **+0 rows (UNRECORDED)** vs `session list` rc=0 **+1 row**, and `cmd_session` carries ~8 more unrecorded returns (usage/unknown-action/load-store branches of `show`, `action`, `create`) | Medium | **DEMONSTRATED** |
+| N-62 `sanitize_terminal` is applied to only **7 of 38 subcommand families** — **31 commands have zero uses** (the whole distro/image/service/session/package/handoff/triage/secrets/repo/doc/evidence/audit/grant/pentest/run/agent/task/ci/release/backup/toolchain set), so caller- or store-authored text reaches the terminal raw. Live: a crafted `--store` profile whose `name` holds ESC → `distro show` printed **3 raw ESC bytes** to stdout (`evil\x1b[31mRED\x1b[0m`), `distro list` **2**; the `--json` path printed **0** (serde escapes correctly). This contradicts the report's own line-927 claim that it "wraps all human text outputs" — correction applied there — pass 25 | Medium | **DEMONSTRATED** |
+| N-64 **Configuration is decorative across four subsystems**: each `config` command resolves and *displays* a `store_path`/`auto_persist`, and **no data-path command consults either** — services (`:1810` displays, `:1042` `load_store` ignores), sessions (`:3086`), packages (`:5827`). Live differential: with a config whose `store_path` names a **nonexistent** file, `service list --config <cfg>` returned **rc=0, empty result, no error**, while `service list --store <same file>` returned **rc=1 `LOAD_STORE_FAILED`** — so the configured path was never loaded. `auto_persist` defaults **true** (`service_config.rs:271` asserts it) and is never honoured: `service action` persists only when `--store` was passed. Also the library defaults are **CWD-relative** (`.aios/service_store.json`, `.aios/packages.json`, `config/distros.json`) while two CLI arms hardcode absolute `/var/lib/aios/{services,packages}.json` — three divergent notions of the same store — pass 26. **Pass 27 extends the mechanism to sessions:** `cmd_session`'s `load_service` closure has the identical shape — `Some(p) => UserSessionService::load_from_path(..)`, `None => Ok(UserSessionService::new())` — quoted at ~`:2310`; and `session_service.rs:351` returns `Ok(Self::new())` for a **missing or zero-byte** file rather than erroring, so an absent store is indistinguishable from an empty one at every layer | Medium | **DEMONSTRATED** |
+| N-66 **A read command fabricates a session that exists nowhere**: `session list --store <path that does not exist>` returned **rc=0 with `count:1` and a populated session record** (`created_at 2026-09-09T00:00:00Z`). Mechanism: `UserSessionService::new()` seeds default content and `load_from_path` maps *absent or zero-byte* to `new()` (`session_service.rs:351`), so a typo'd path yields a phantom session rather than an error. Control: `service list --store <the same missing path>` returned **rc=1 `LOAD_STORE_FAILED`**. Distinct from **N-8** (MCP `auto_recover` *overwriting* a live store with the seeded greeter seat): here no recovery is invoked at all and nothing is written — the defect is that a **query reports a record that exists nowhere**, so an operator diagnosing with a mistyped path concludes the session manager is working — pass 28 | Medium | **DEMONSTRATED** |
+| N-65 **`cmd_session` swallows persistence failure and reports success**, where its sibling reports failure: `if let Err(e) = service.save_to_path(p) { eprintln!("Warning: failed to persist session store to '{}': {}", p, e); }` at **`:2778`** (`session action`) and **`:2978`** (`session create`) — the code then falls through to `classify_and_emit(.. "success" ..)` and returns `0`. Live: against a **read-only** store, `session action sess-evil terminate` returned **rc=0, `"code":0`, `new_state:"terminated"`** while the file bytes were **unchanged** (write genuinely failed; only stderr carried `Warning: failed to persist … Access is denied`). Compare **`cmd_service action`**, which emits `"failure"` + `PERSIST_FAILED` and returns 1 for the same condition (pass 26) — two siblings, opposite handling — pass 27. **Pass 28 narrows it: the swallow is session-local.** `cmd_fs_layout_register` handles the identical condition honestly — `if let Err(e) = service.save_to_path(..) { let msg = "failed to persist layout store to '{}'…"; classify_and_emit(.. "failure" ..) }` — as does `cmd_service action`, so **2 of the 3 CLI write sinks report failure and 1 does not** (plus the MCP grant-revocation sink, N-56). **Pass 29 adds the floor below this one:** the session swallow at least prints a warning, while **nine sinks discard the result entirely with `let _ =`** (N-67) — so the CLI has a three-tier spectrum, not one defect | High | **DEMONSTRATED** |
+| N-67 **Nine CLI write sinks discard the persistence result entirely (`let _ =`), not even a warning**: `cmd_update` ×4 (`:13804`,`:13851`,`:13899`,`:13929` — the CLI mirror of N-56's four MCP sinks), `capability prune` (`:14748`), `pep rule-remove` (`:15185`), and the PEP grant family ×4 (`:15864`,`:15895`,`:16060`,`:16165`). Quoted: `if count > 0 { let _ = service.save_to_path(store_path); }` then `classify_and_emit(… "success" …)`, and `if service.remove_rule(id) { let _ = service.save_to_path(store_path); classify_and_emit(… "success" …) }`. A failed write therefore produces **no warning, no failure outcome, and an audit row asserting success** — strictly worse than N-65, which at least reaches stderr. The *class* is DEMONSTRATED (N-56, N-65); **this enumeration is STATIC** — see the pass-29 note for why no live run was attempted rather than guessed — pass 29 | High | STATIC (enumeration); class DEMONSTRATED |
+| N-63 The CLI's recorded identity is **entirely caller-controlled and never verified**: `actor` is the literal `"operator"` on every `classify_and_emit` call, and `actor_id` is `format!("user:{}@{}", env USER, env HOSTNAME)` (`:76-81`). Live: ambient run recorded `('distro','list','operator','user:anon@host','success')`; with `USER=root HOSTNAME=prod-db-01` the same command recorded **`user:root@prod-db-01`**, and `aiosh audit tail` displays it as the actor — pass 25 | Medium | **DEMONSTRATED** |
 | N-40 restricted-resource governance defeated by case: `is_resource_restricted` uses raw `starts_with` while evaluation uses `eq_ignore_ascii_case` → `SYS:kernel` Permit rule accepted, `sys:kernel` then permitted — pass 16 | High | DEMONSTRATED |
 | N-41 session-policy SSP4 env blocklist is case-sensitive → `Ld_Preload`/`Pythonpath`/`Node_Options` all pass while canonical spellings are refused — pass 16 | Medium | DEMONSTRATED |
 | M-5 Windows ledger lock is a no-op → duplicate `seq` + multiplied completion events under concurrency (Unix serialized) — pass 2 | Medium | **DEMONSTRATED** (pass 15: 16 concurrent `task done 1` → seq 1/1/2/2, four completion events, state/events divergence) |
@@ -924,7 +951,7 @@ Still not read line-by-line (next pass should start here, in this order):
 
 ## Controls Evaluated & Verified
 1. **Terminal Sanitization (`CS-1`)**:
-   - `sanitize_terminal` wraps all human text outputs on CLI subcommands (`scan`, `list`, `show`, `summary`). Neutralizes ANSI escape injection.
+   - `sanitize_terminal` wraps all human text outputs on CLI subcommands (`scan`, `list`, `show`, `summary`). Neutralizes ANSI escape injection. **CORRECTED in pass 25 (N-62): this is false as a general claim.** The function has 221 call sites, but they exist only inside `cmd_fs_layout`, `cmd_kernel_module`, `cmd_hardware`, `cmd_network`, `cmd_pep`, `cmd_update` and `cmd_capability`; **31 subcommands — including every one of `cmd_distro`, `cmd_image`, `cmd_service`, `cmd_session`, `cmd_package`, `cmd_handoff`, `cmd_audit*`, `cmd_grant*` — have zero uses**, and `cmd_distro show --store <crafted>` was demonstrated printing raw ESC bytes to stdout. Read this claim as scoped to the seven families that do apply it, not as an invariant.
 2. **Device ID Hygiene (`CS-2`)**:
    - Both CLI and MCP enforce strict non-empty, trimmed, length $\le 256$, and control-character checks on `device_id`.
 3. **MCP Tool Schemas (`HM1`)**:
@@ -3852,6 +3879,394 @@ And the check on that path was read this pass: `check_kernel_module_path_bounds`
 
 ---
 
+# TWENTY-FIFTH PASS — opening the CLI: helpers, dispatch, `cmd_distro` / `cmd_image` / `cmd_service`
+
+**Method.** Read-only. One temp root, `AIOSH_HOME` and the working directory both redirected there; the repo's own `docs/tasks` never written to; no source edits. `aiosh.exe` was **rebuilt before any demonstration** (`12:03:50`, against revision 16,252) because the previous binary was from 11:40 and predated edits to `pep_grant.rs` — the stale-binary rule from pass 24 applied without being rediscovered. `aiosh-cli/src/main.rs` measured **15,874 → 16,252 lines** during the pass; all citations name the revision they were taken at.
+
+**Windows read, each confirmed complete by the reader's own reported last line:** `1–880`, `881–1440`. See the new **second-file block** in the authoritative coverage record for the region table and resume marker.
+
+## Second sites of already-recorded findings (no new IDs)
+
+The CLI's context bootstrap is the same shape as the MCP server's, so four already-recorded defects have a second home here. Recorded as sites, not as new findings — pass 22's precedent.
+
+- **N-46, site 2:** `open_context` (`:56`) does `let pep_path = ring.path().to_string();` and opens the **PEP store on the audit-ring SQLite file** — so the CLI shares the MCP's single-fault-domain coupling between the authorization store and the evidence trail.
+- **The pass-21 `expect`-chain finding, site 2:** `open_context` carries the identical four `.expect("open audit db")`, `.expect("prepare schemas")`, `.expect("open pep db")`, `.expect("open pep store")` — so a corrupt/unopenable file **panics** for *every CLI invocation*, not just server startup. `emit` adds a fifth: `ctx.ring.write(input).expect("audit write")` (`:121`), meaning an unwritable audit DB panics the command rather than failing closed.
+- **C-5's fail-open provenance, site 2:** `IMPLICIT_REVISION = "v0.0"` (`:27`) is substituted whenever the constitution file is unreadable, and the default path is a **hardcoded absolute** `/content/AIOS_MERGED/mostimportanAIfolder/AI_CONSTITUTION.md` (`:65-67`) that will not exist on any other host — so on a normal host every CLI audit row silently records `v0.0` / "(no constitution file found)" as its constitution provenance.
+- **N-47, site 2 (STATIC, deliberately not executed):** `cmd_image check --fix` falls back to `unwrap_or("/var/lib/aios/images")` (`:916`) and hands it to `load_or_recover`, which quarantines and recreates a store. The route in is `aiosh image check --fix` with no `--store` — the N-47 entry lists only the seven MCP sites, none of them this one. **Not executed:** the default target is outside any temp root, and running it would write to the host. This is the class the mission's "cite it STATIC instead" rule exists for.
+
+## N-61 — the CLI's documented audit guarantee fails on every error path (DEMONSTRATED)
+
+The module header states the contract at `:3`: *"Subcommands (each emits exactly one audit row)"*. A screen over the file (every `return 1;`/`return 2;` whose **preceding 20 lines** contain no `classify_and_emit`/`err_out`/`print_result`) finds **116 such returns across 17 commands** — `cmd_capability` 31, `cmd_handoff` 14, `cmd_image` 13, `cmd_triage` 13, `cmd_pep` 12, `cmd_session` 9, `cmd_distro` 6, `cmd_package` 4, `cmd_service` 3, plus eight commands with 1–2 each. Live, by **audit-row count** (read straight from `audit_ring` in the temp DB, so the observation does not itself write a row):
+
+```
+rows before                        : 4
+  distro show <missing>      rc= 1      rows: 4  (+0)
+  distro <bogus-subcommand>  rc= 2      rows: 4  (+0)
+  service validate (bare)    rc= 2      rows: 4  (+0)
+  distro list (success)      rc= 0      rows: 5  (+1)
+```
+
+Refused, malformed and usage-error invocations leave **no trace at all**, while the successful call is recorded — so an operator reading the ring cannot see how often commands were refused, mistyped, or probed. This is the same root cause as **N-45** (the action is ordered before the audit rather than wrapped by it) on a **different binary**, which is why it carries its own ID: the MCP fix (move validation behind `dispatch`) does not touch the CLI, whose fix is to emit from a single wrapper in `main()`.
+
+**Honest limit on the census:** the 20-line lookback is a **screen, not a proof** — a return sitting further than 20 lines below an arm's `classify_and_emit` would be counted as unrecorded though the arm did audit. The three instances above were therefore **verified by row count**, and the number should be read as an upper bound on unrecorded returns, not an exact count.
+
+## N-62 — the ANSI sanitizer covers 7 of 38 subcommand families (DEMONSTRATED)
+
+`sanitize_terminal` (`:150`) exists, is correctly written (control characters → U+FFFD), and has **221 call sites** — but every one of them is inside `cmd_fs_layout`, `cmd_kernel_module`, `cmd_hardware`, `cmd_network`, `cmd_pep`, `cmd_update`, `cmd_capability`. **31 commands contain zero calls**, including `cmd_distro`, `cmd_image`, `cmd_service`, `cmd_session`, `cmd_package`, `cmd_handoff`, `cmd_triage`, `cmd_secrets`, `cmd_repo`, `cmd_doc`, `cmd_evidence`, the whole `cmd_audit*` and `cmd_grant*` families, `cmd_pentest`, `cmd_run` and `cmd_agent`. Live, with a crafted `--store` whose profile `name`/`justification` carry ESC:
+
+```
+distro show  rc=0  ESC bytes in stdout: 3
+  raw stdout snippet: 'Distribution Profile: evil\x1b[31mRED\x1b[0m'
+--json       rc=0  ESC bytes in stdout: 0  (serde escapes correctly)
+distro list  rc=0  ESC bytes in stdout: 2
+```
+
+The store is **caller-supplied** (`DistroStore::load_from_path` validates only file size and JSON well-formedness — no semantic validation), so an attacker-authored or agent-written store drives terminal escape sequences when an operator runs `distro show`/`list` against it. The `--json` path is safe, which localises the defect to the human-readable branch.
+
+**This pass also corrected the report's own claim.** Line 927 asserted the sanitizer "wraps all human text outputs on CLI subcommands … Neutralizes ANSI escape injection". That was written from the `scan`/`list`/`show`/`summary` families and is **false as a general statement**; the assertion now stands annotated in place, so no later pass reads it as an invariant already met.
+
+## N-63 — the recorded identity is caller-controlled (DEMONSTRATED)
+
+Two independent problems in one field pair: `actor` is the **literal `"operator"`** on every `classify_and_emit` call in the file, and `actor_id` is built from environment variables (`:76-81`):
+
+```rust
+let actor_id = format!("user:{}@{}",
+    std::env::var("USER").unwrap_or_else(|_| "anon".into()),
+    std::env::var("HOSTNAME").unwrap_or_else(|_| "host".into()));
+```
+
+```
+last row (ambient env)                  : ('distro','list','operator','user:anon@host','success')
+last row (USER=root HOSTNAME=prod-db-01): ('distro','list','operator','user:root@prod-db-01','success')
+aiosh audit tail shows identity?: True
+```
+
+The same command, run twice, produced two different actor identities, both accepted and displayed. Nothing binds the identity to the process, so anyone who can run the CLI can write **any** actor into the ring — and on this host the ambient fallback is the placeholder `user:anon@host`, which is itself indistinguishable from a real one. Note the interaction with **N-49** (the MCP ring is readable without a grant): the identity a reader of the ring relies on is the one the writer chose.
+
+## Watched but unproven, and negatives kept
+
+- **`parse_flag` scans the whole argument slice** (`:170-178`) and takes the next token as the value, so a flag can be satisfied by a value appearing **inside another argument's text** — the same shape as **N-6** (sandbox matching `--policy` anywhere in argv). Whether it is *exploitable* in the CLI depends on commands whose flags take free text (`cmd_task --note`, `cmd_doc`, `cmd_evidence`), which this pass did not reach. **Recorded as a watch item, deliberately not given an ID** rather than claimed from the mechanism alone.
+- **A positive worth generalising:** `cmd_service` is the counter-example that shows the invariant is achievable — it validates the store path (≤1024, no control characters), the `--spec` file (1 MiB cap), `--pattern` (256) and `--limit` (1..10,000), and **emits on the failure paths it does handle**. Its three unrecorded returns are the bare `validate` usage branch and two peers, not a pattern.
+- **Also clean:** `main()` lossy-converts non-UTF-8 argv (T-00038) so every invocation reaches the envelope; `cmd_image` validates image-id charsets before lookup; `cmd_distro`'s unvalidated ids only feed a map lookup, so no injection follows from them.
+
+## Coverage after this pass
+
+**Read line-by-line and complete: `1–880`, `881–1440`** — two windows, neither truncated, both confirmed by the reader's reported last line, at revision 16,252.
+
+**Resume marker for `aiosh-cli/src/main.rs`: `1441`** (rest of `cmd_service` onward). The MCP file's marker is unchanged at `7765`, and the second-file block in the coverage record now carries both.
+
+---
+
+# TWENTY-SIXTH PASS — `cmd_service` arms: show / action / verbs / order / config / policy / stats / check
+
+**Method.** Read-only, temp `AIOSH_HOME` and cwd. `aiosh.exe` was **rebuilt before any demonstration** (`12:10:38`) because the source was newer than the binary (12:07 vs 12:03) — the third consecutive pass where the rebuild rule mattered. Every citation below is anchored on **quoted code**, not the number, and the window was read at revision **16,284**.
+
+**Window read, reader-confirmed last line:** `1441–2200` — the eight `cmd_service` arms. Coverage row and resume marker (`2201`) updated in the second-file block.
+
+## N-64 — configuration is decorative: displayed, resolved, and never consulted (DEMONSTRATED)
+
+The service subsystem resolves a `ServiceConfig` whose `store_path` is documented as the *"Canonical filesystem path to the persistent service store JSON file"* and whose `auto_persist` is documented as *"Whether mutations automatically persist to store_path without explicit flag"* (default **true** — the library's own test asserts it at `service_config.rs:271`). The CLI parses it, prints it, and then **never uses it**:
+
+```rust
+let load_store = ‖ -> Result<ServiceStore, String> {          // ~:1042
+    match store_path_opt {
+        Some(ref p) => ServiceStore::load_from_path(Path::new(p)),
+        None => Ok(ServiceStore::new()),                       // empty store — config never consulted
+    }
+};
+```
+
+**Live differential (fixture-free), config pointing at a path that does not exist:**
+
+```
+[1] service config --json        rc=0  resolved store_path = .aios/service_store.json | auto_persist: True
+[2] config --config <cfg>        rc=0  echoes our rewritten store_path  (so the config IS parsed)
+[3] service list --config <cfg>  rc=0  returns an empty result, NO error
+[4] CONTROL list --store <same nonexistent path>  rc=1  LOAD_STORE_FAILED
+```
+
+Step 4 is what makes step 3 meaningful: the **same** path, the **same** command — consulted via `--store` it errors, consulted via `--config` it is silently ignored and an empty store is used instead. So an operator who configures a store gets commands that neither read it nor report that they didn't.
+
+**`auto_persist` is dead the same way.** In the `action` arm the store is only written when the caller passed `--store`:
+
+```rust
+if let Some(ref p) = store_path_opt {          // ~:1590
+    if let Err(e) = store.save_to_path(Path::new(p)) { /* … PERSIST_FAILED … */ }
+}
+```
+
+With the default `auto_persist: true`, a mutation made without `--store` is **never persisted**, and nothing in the response says so — the in-memory change is discarded when the process exits.
+
+**The same shape repeats in two more subsystems**, found by citing rather than assuming: `session` resolves and displays the same pair (`:3086`, `:3102`) and `package` does too (`:5827`) — while `package check` hardcodes `/var/lib/aios/packages.json` (`:6099`) and `service check` hardcodes `/var/lib/aios/services.json` (`:2138`). That is **three divergent notions of one store**: the configured relative `.aios/...` path, the caller's `--store`, and a fixed absolute host path.
+
+## N-61 — verified by A/B inside one subsystem (extends the pass-25 finding)
+
+Pass 25 established N-61 with a screen and three verified instances in `cmd_distro`/`cmd_service`. This pass found a sharper demonstration: **two adjacent arms of the same subsystem, the same failure, opposite audit behaviour.**
+
+```
+service list   --store <missing>  rc=1  rows 4->5  (+1)  RECORDED
+service policy --service foo --store <missing>  rc=1  rows 5->5  (+0)  UNRECORDED
+(repeat)                                        rc=1  rows 5->5  (+0)  UNRECORDED
+```
+
+The `policy` arm's two early returns carry no `classify_and_emit`:
+
+```rust
+Err(e) => { /* prints the error, returns 1 */ }        // store load failure — ~:1899
+None => { /* "service '<name>' not found in store", returns 2 */ }   // ~:1920
+```
+
+while the identical store-load failure in `list`/`show`/`order`/`action`/`config`/`stats` **is** recorded. So the gap is not "the CLI can't audit failures" — it is that two branches were missed, which is exactly what makes it a per-arm defect rather than a design limitation.
+
+## N-47 — CLI sites now enumerated, two of them self-contradictory (STATIC, deliberately not executed)
+
+Three CLI arms default a store target to a hardcoded absolute path when the flag is omitted: `image check --fix` `:916`, `service check` `:2138`, `package check` `:6099`. With `--fix` these reach `load_or_recover`, which **quarantines and recreates**. **Not executed:** the target is outside any temp root and running it would write to the host — the case the mission's cite-STATIC rule exists for. What this pass adds to N-47 is not another instance but a contradiction: `service_config` and `package_config` both default to a **relative** `.aios/...` path, so the fixed absolute path these arms use is not the path the subsystem declares.
+
+## N-59 refinement — the whole config layer defaults to CWD-relative paths
+
+N-59 recorded the grant store defaulting to a bare `pep_grants.json`. The config constants show this is **the convention, not one instance**: `.aios/service_store.json` (resolved value observed live), `.aios/packages.json`, `.aios/capability_store.json`, `.aios/network_state.json`, `.aios/pep_policies.json`, `config/distros.json`. Every configured default is relative, so every one of them resolves against **whatever directory the process was started in** — and N-59's CWD demonstration establishes what that means in practice. Refinement recorded under N-59 rather than minted as a new ID: the mechanism is identical.
+
+## Positives kept (the counter-examples matter as much as the findings)
+
+- **`service action` reports persistence failures.** It does what the MCP's N-56 sinks do **not**: if `save_to_path` fails it emits `"failure"` with a `PERSIST_FAILED` message and returns 1 rather than claiming success. The correct pattern already exists here.
+- **Path bounds are validated consistently in this region:** `store_path`, `--config`, `--policy` and `--pattern` are all checked for ≤1024 chars and control characters before use, and the failure paths emit.
+- **Non-finding, recorded so it isn't re-derived:** the `start|stop|restart|…` verbs re-enter `cmd_service` with synthesized argv, so `open_context()` (and therefore `AuditRing::open` + `prepare_for_write`) runs twice per verb invocation. No duplicate audit row — the verb arm emits nothing before forwarding — so this is a minor cost, not a defect.
+
+## Coverage after this pass
+
+**Read line-by-line and complete: `1441–2200`** at revision 16,284, one window, reader-confirmed last line. With passes 25–26 the CLI is read across **`1–2200`** with no gaps.
+
+**Resume marker for `aiosh-cli/src/main.rs`: `2201`** (`cmd_session` onward). MCP marker unchanged at `7765`. Both are carried in the authoritative coverage record.
+
+---
+
+# TWENTY-SEVENTH PASS — `cmd_session`: validate / list / show / action / create
+
+**Method.** Read-only, temp `AIOSH_HOME` and cwd. The file measured **16,284** at `12:07` and the binary `12:10:38` — source older than binary, so **no rebuild was needed and none was claimed**; the anchor check (`grep` on quoted code) confirmed the revision was unchanged before the window was read. Citations are anchored on quoted code, with the revision named.
+
+**Window read, reader-confirmed last line:** `2201–2980` (the `cmd_service check` tail plus `cmd_session`'s five populated arms). CLI coverage is now continuous across **`1–2980`**; resume marker moved to `2981`.
+
+## N-65 — sibling subsystems handle an identical failure in opposite ways (DEMONSTRATED, High)
+
+Pass 26 recorded `cmd_service action` as a *positive*: it detects a failed store write, emits `"failure"` with `PERSIST_FAILED`, and returns 1. This pass found the same operation in the sibling session subsystem doing the opposite:
+
+```rust
+if let Some(ref p) = store_path_opt {
+    if let Err(e) = service.save_to_path(p) {
+        eprintln!("Warning: failed to persist session store to '{}': {}", p, e);   // :2778 and :2978
+    }
+}
+// … falls through to:
+classify_and_emit(.. "success" ..);   // audit row says success
+// … and returns 0
+```
+
+Reached from `session action` (`:2778`) and `session create` (`:2978`). Live, with the action chosen empirically so the harness could not assume a valid transition:
+
+```
+A — control on a WRITABLE store
+  action activate / lock / unlock  rc=1  Invalid session state transition: state 'Initializing' …
+  action terminate                 rc=0  {"code":0, "new_state":"terminated", "previous_state":"initializing"}
+
+B — same action against a READ-ONLY store
+  action terminate (read-only)     rc=0  {"code":0, "new_state":"terminated", "previous_state":"initializing"}
+     stderr: Warning: failed to persist session store to '…readonly.json': Access is denied
+  file bytes unchanged: True        <- write genuinely failed
+  reported success to caller: True
+```
+
+The control establishes the sink works when the filesystem cooperates; the test arm shows the caller is told the session was **terminated** while the on-disk store still records it as `initializing` — the in-memory transition is discarded at process exit. The only signal is a **stderr warning**, which a `--json` consumer (the response is well-formed, `code:0`) has no reason to read, and the audit row records `outcome: "success"`. That last part is what lifts this to **High**: the evidence trail asserts an action that did not persist, which is the same defect shape as N-56 (MCP grant revocation) and N-61 (unrecorded failures) reaching the ring from a third direction.
+
+## N-64 extension — sessions have the same config path bypass
+
+Pass 26 cited `session`'s config display without quoting its data path. The mechanism is now read:
+
+```rust
+let load_service = ‖ -> Result<UserSessionService, String> {        // ~:2310
+    match store_path_opt {
+        Some(ref p) => UserSessionService::load_from_path(Path::new(p)).map_err(|e| e.to_string()),
+        None => Ok(UserSessionService::new()),                        // configured store_path never consulted
+    }
+};
+```
+
+And one layer deeper, `session_service.rs:351` returns `Ok(Self::new())` when the path **does not exist or is zero bytes** — so a missing store is silently an empty store rather than an error. The configured `store_path` is displayed by `session config` and read by nothing.
+
+## N-61 — third verified instance, inside `cmd_session`
+
+```
+session show (no id)   rc=2  rows 7->7  (+0)  UNRECORDED
+session list           rc=0  rows 7->8  (+1)  RECORDED
+```
+
+`cmd_session` carries roughly eight more unrecorded returns — the usage, unknown-action and load-store branches of `show`, `action` and `create` — making it the second-largest concentration after the screen's count for `cmd_capability`. Notably `validate --id`/`--user` **do** emit on their failure verdicts, so the omissions are per-branch again, not architectural.
+
+## N-50 refinement — silent filter loss confirmed in the CLI sibling
+
+`session list` maps `--state` and `--type` through a `match` whose fallback is `_ => None` (`:~2540`, `:~2548`), so an unrecognised value **drops the filter** and widens the result set instead of erroring — the same behaviour recorded for the MCP `session.list` handler in pass 22. The CLI sibling is recorded here rather than minted as a new ID.
+
+## Negatives and positives kept
+
+- **`cmd_service check` reports recovery honestly** — it distinguishes `service.check` from `service.repair`, reports `recovered` and the quarantine `backup_path`, and returns 1 when unhealthy. The recovery path is the best-instrumented code in this region.
+- **Path bounds are validated before use** in `cmd_session` too (`--store` ≤1024 chars, no control characters), emitting on the failure path.
+- **Non-finding:** `session action`'s verb aliases (`activate|lock|unlock|terminate|auth`) forward into the same arm rather than duplicating it, so there is no second implementation to drift — unlike the `cmd_service` verb aliases, which re-enter `cmd_service` entirely.
+
+## Coverage after this pass
+
+**Read line-by-line and complete: `2201–2980`** at revision 16,284, one window, reader-confirmed last line. CLI coverage is continuous across **`1–2980`** with no gaps.
+
+**Resume marker for `aiosh-cli/src/main.rs`: `2981`.** MCP marker unchanged at `7765`. Both in the authoritative coverage record.
+
+---
+
+# TWENTY-EIGHTH PASS — `cmd_session` tail, `load_fs_layout_service`, `cmd_fs_layout_register` head
+
+**Method.** Read-only, temp `AIOSH_HOME` and cwd; no source edits; the repo's own `docs/tasks` untouched. Revision checked first: **16,284 at 12:07:14, unchanged**, every quoted-code anchor still at its recorded line — and the binary (`12:20:21`) was **newer than the source**, so no rebuild was needed and none was claimed. This pass's target — comparing each candidate against the sibling arm that handles the same failure correctly — produced the most useful results of the CLI audit so far, including one that forced a correction to my own previous wording.
+
+**Window read, reader-confirmed last line:** `2981–3760`. CLI coverage is now continuous across **`1–3760`**; resume marker moved to `3761`.
+
+## N-66 — a read command fabricates a session that exists nowhere (DEMONSTRATED, Medium)
+
+Prompted by the sibling comparison, with the same flag and the same condition (the path does not exist):
+
+```
+session list --store <missing> : rc=0  {"code":0,"data":{"count":1,"sessions":[{"created_at":"2026-09-09T00:00:00Z","idle_seconds":0,…
+service list --store <missing> : rc=1  {"code":1,"data":null,"error":{"code":"LOAD_STORE_FAILED",…
+```
+
+`session` returned **one populated session** for a store that does not exist. The mechanism is the one pass 27 found one layer down — `load_from_path` maps *absent or zero-byte* to `Self::new()` (`session_service.rs:351`) — but `new()` **seeds default content**, so the listing invents a record rather than being empty.
+
+**This corrects my own pass-27 wording.** I wrote that a missing store is "indistinguishable from an empty one at every layer". The live result shows it is **not** empty — it is *seeded*, and the difference is the whole finding: an operator who mistypes `--store` sees a session and concludes the session manager is working, when nothing was read. The N-64 row carries the correction.
+
+Kept distinct from **N-8** (MCP `auto_recover` overwriting a live store with the seeded greeter seat): here **no recovery runs and nothing is written** — the defect is purely that a query answers with fabricated content, so the fixes differ.
+
+## N-47 — fifth CLI site, in a different directory (STATIC, deliberately not executed)
+
+```rust
+let target_path = if let Some(ref p) = store_path_opt {
+    std::path::PathBuf::from(p)
+} else {
+    std::path::PathBuf::from("/var/run/aios/sessions.json")      // :3355
+};
+```
+
+`session recover` sets the fix flag itself (`is_fix = sub == Some("recover") || has_flag(rest, "--fix")`), so a bare `aiosh session recover` reaches `load_or_recover` on that fixed path — quarantine and recreate, **outside any temp root**. **Not executed**, per the rule that these are cited rather than triggered. Worth noting the fifth site is in `/var/run/` while the other four are in `/var/lib/`, so the "one hardcoded default" is really two different ones.
+
+## N-61 — the sibling contradiction, measured in the *positive* direction
+
+Passes 26–27 showed `service policy` losing two failure paths. The session sibling of the same command family does the opposite:
+
+```
+session policy --policy <missing>   rc=1  rows 2->3  (+1)  RECORDED
+(pass-26: service policy --service foo --store <missing>  rc=1  rows +0  UNRECORDED)
+```
+
+Reading the arm confirms it is not luck: every failure branch in `session policy` — policy load, spec read, spec parse, store load (`STORE_LOAD_FAILED`), and the evaluation verdict itself — calls `classify_and_emit` before returning. So the CLI demonstrably contains the **correct pattern for both flagged classes** (`session policy` for audit coverage; `cmd_fs_layout_register` and `cmd_service action` for persistence honesty), which means N-61 and N-65 are local omissions rather than architectural limitations.
+
+## N-65 sharpened — the persistence swallow is session-local
+
+`cmd_fs_layout_register` handles the identical failure the way `cmd_service action` does:
+
+```rust
+if let Some(store_path) = store_path_opt {
+    if let Err(e) = service.save_to_path(std::path::Path::new(store_path)) {
+        let msg = format!("failed to persist layout store to '{}': {}", store_path, e);
+        classify_and_emit(ctx, "fs_layout", "register", json!({ "id": layout_id, "error": &msg }), "failure", …);
+```
+
+So of the CLI's write sinks, **two report a failed persist as failure and one (session) reports it as success** — plus the MCP grant-revocation sink (N-56). That makes the fix small and the regression test obvious: one shared helper, three call sites.
+
+## N-64 refinement — the same absent-store shape in the layout loader
+
+```rust
+fn load_fs_layout_service(store_path_opt: Option<&str>) -> Result<FilesystemLayoutService, String> {
+    match store_path_opt {
+        Some(p) => if path.exists() { load_from_path(path) } else { Ok(FilesystemLayoutService::new()) },
+        None => Ok(FilesystemLayoutService::new()),
+    }
+}
+```
+
+A third site of "absence becomes a default store": here it is at least an *empty* store, unlike N-66's seeded one. For `register` this means a mistyped `--store` silently creates a fresh store at a near-miss name instead of failing — recorded under N-64 with the site cited rather than minted separately, since the mechanism is identical.
+
+## Positives worth copying (recorded because fixes should follow them)
+
+- **`read_bounded_text_file` is the strongest input handling in the file so far**, and the comment says why: "*A metadata-only size check is a check-then-use race, and a FIFO or character device named by `--spec` would otherwise block the CLI forever (FIFO) or stream until memory is exhausted (/dev/zero).*" It returns typed errors (`TooLarge`, `NotRegularFile`, `_`) that the arm maps to distinct machine codes, and it is applied to `--spec` before parsing.
+- **`sanitize_terminal` is used consistently across the fs-layout family** — every error emission in this window routes through it, which is the pattern the other 31 subcommands lack (N-62).
+- **`session policy` emits on failures**, including its own policy verdict (success *and* failure), which is the model for N-61's fix.
+
+## Coverage after this pass
+
+**Read line-by-line and complete: `2981–3760`** at revision 16,284, one window, reader-confirmed last line. **CLI coverage is continuous across `1–3760`** with no gaps; the remaining CLI production region is `3761–11817` plus the section after the test modules.
+
+**Resume marker for `aiosh-cli/src/main.rs`: `3761`.** MCP marker unchanged at `7765`. Both in the authoritative coverage record.
+
+---
+
+# TWENTY-NINTH PASS — `fs_layout` set-active / remove / import-fstab, and the silent-sink census
+
+**Method.** Read-only, temp `AIOSH_HOME` and cwd; no source edits; the repo's own `docs/tasks` untouched. Revision checked first: **16,653 at 12:26:02** — the file grew **+369 lines** during this pass, and the binary (`12:20:21`) is now **older than the source**. **No demo was run and no rebuild was claimed** (see the N-67 note); the growth was still used to record a drift correction rather than left to confuse the next pass.
+
+**Window read, reader-confirmed last line:** `3761–4460`. CLI coverage is continuous across **`1–4460`**; resume marker moved to `4461`.
+
+## The three-tier persistence spectrum (this is the pass's real result)
+
+The census started as a check on `fs_layout` and turned into the clearest structural finding of the CLI audit. A failed store write is handled **three different ways** in one binary:
+
+| Tier | Behaviour | Sites |
+|---|---|---|
+| **Honest** | emits `"failure"` (e.g. `SAVE_STORE_FAILED`), returns **1** | `cmd_fs_layout_register` `:3755`, `set_active` `:3874`, `remove` `:3992`, `import_fstab` `:4163`; `cmd_service action` `:1587`; one more at `:5709` |
+| **Warning only** | `eprintln!("Warning: failed to persist …")`, then **`"success"` + rc 0** | `session action` `:2778`, `session create` `:2978` (N-65) |
+| **Silent** | `let _ = …save_to_path(…)`, **no warning at all**, then `"success"` | **nine sites** — N-67 |
+
+The honest tier is the largest *by family* (fs-layout is exemplary: four write sinks, all honest, every error string routed through `sanitize_terminal`), which matters because it shows the correct pattern is the codebase's own house style rather than something to be invented.
+
+## N-67 — nine sinks that discard the write result entirely (STATIC enumeration; class DEMONSTRATED)
+
+```rust
+Some("prune") => {
+    let count = service.prune_expired(now);
+    if count > 0 {
+        let _ = service.save_to_path(store_path);          // :14748
+    }
+    classify_and_emit(&mut ctx, "capability", "prune", json!({ "pruned_count": count }),
+        "success", None, Some("Pruned expired capabilities"), "operator", None);
+```
+
+```rust
+if service.remove_rule(id) {
+    let _ = service.save_to_path(store_path);              // :15185
+    classify_and_emit(&mut ctx, "pep", "rule-remove", json!({ "rule_id": id }), "success", …);
+```
+
+Enumerated in full: `cmd_update` ×4 (`:13804`, `:13851`, `:13899`, `:13929` — the CLI mirror of N-56's four MCP sinks, same `save_state_to_dir` shape), `capability prune` (`:14748`), `pep rule-remove` (`:15185`), and the PEP grant family ×4 (`:15864`, `:15895`, `:16060`, `:16165`).
+
+Consequences, stated precisely: a failed write yields **no warning, no failure outcome, and an audit row asserting `success`**. For `capability prune` the reported `pruned_count` is real *in memory* and the pruned capabilities are simply back after the next load; for `pep rule-remove` the caller is told a policy rule was removed while the store still contains it — which is the worst instance, because a rule an operator believes is gone is a rule still authorizing.
+
+**Why this enumeration is STATIC, and why that is not a shortcut.** The class is already **DEMONSTRATED** twice over — N-56 (MCP, `let _ =` swallowing a grant revocation) and N-65 (CLI, the warning tier) — so what is unexercised here is only the *list*, not the mechanism. Reaching a live run needs a store pre-populated by its own writer (`remove_rule` returns false on an absent rule and `prune_expired` returns 0 on an empty store, so a bare probe against a read-only store would demonstrate **nothing** and could easily be mistaken for a pass). Rather than guess the writer flags and risk a fixture that proves the wrong thing, this pass records the enumeration honestly and leaves the live run to a pass that has read those verbs. That is the discipline the pass-18 false-positive and the pass-24 fixture gate exist to enforce.
+
+## Drift correction — pass 28's addresses moved, its content did not
+
+The +369 lines landed *after* the region pass 28 read, so its tail shifted by **+8**: `/var/run/aios/sessions.json` is now `:3363`, not the `:3355` recorded last pass, while `:2778`/`:2978` are unchanged. Both numbers are kept in the coverage record with the drift noted, because "the line number is an address at a revision" is only useful if the report actually re-measures instead of leaving two figures standing. Re-anchoring check: every quoted-code anchor from passes 25–28 still resolves.
+
+## N-47 sites confirmed again, with no new instance claimed
+
+The full grep now shows exactly **five** hardcoded host defaults — `:2138` services, `:3363` sessions, `:6099` packages, and `:13632`/`:13633` updates (state + staging). No sixth exists in this revision, and this pass added none; the count is recorded so the next pass does not re-derive it.
+
+## Positives worth copying
+
+- **`fs_layout` is the model family** — four write sinks that all treat a failed persist as a failure, all using `sanitize_terminal`, with distinct machine codes (`SAVE_STORE_FAILED`, `SET_ACTIVE_FAILED`, `REMOVE_FAILED`, `IMPORT_FAILED`, `FSPEC…`).
+- **`read_bounded_text_file` is reused consistently** for both `--spec` and `--fstab`, with the same typed-error mapping that distinguishes *too large* from *not a regular file*.
+- **`fs_layout validate` reports both verdicts through the same emit** (`"success"`/`"failure"` from `is_ok`), so a rejected layout is still recorded — the shape N-61's fix should adopt everywhere.
+
+## Coverage after this pass
+
+**Read line-by-line and complete: `3761–4460`** at revision 16,653, one window, reader-confirmed last line. **CLI coverage is continuous across `1–4460`**; the remaining CLI production region is `4461–11817` plus `13542+` after the test modules.
+
+**Resume marker for `aiosh-cli/src/main.rs`: `4461`.** MCP marker unchanged at `7765`. Both in the authoritative coverage record.
+
+---
+
 # ADDENDUM 23 — 2026-09-22: Grant Lifecycle Sub-Epic 1 Closure & Sub-Epic 2 Core Service Launch (T-02206..T-02215)
 
 ## 1. Scope & Progress
@@ -3873,5 +4288,39 @@ Tasks completed: **T-02206 through T-02215** (10 tasks sequentially executed und
 - Smoke test suites: `test_pep_cli_smoke.py` (9/9 PASS) and `test_pep_decision_smoke.py` (7/7 PASS).
 - Compiler hygiene: Zero warnings across production and test targets.
 - Security status: **CLEAN & VERIFIED**. Pointer advances to `T-02216`.
+
+---
+
+# ADDENDUM 24 — 2026-09-22: Grant Lifecycle Sub-Epic 2 Core Service Closure & Sub-Epic 3 CLI Surface Launch (T-02216..T-02225)
+
+## 1. Scope & Progress
+Tasks completed: **T-02216 through T-02225** (10 tasks sequentially executed under strict No-Skip governance):
+- **T-02216..T-02220 (Sub-Epic 2: Core Service Closure)**:
+  - Integration with MCP server (`aios.pep.grant.attenuate`, `aios.pep.grant.sweep`) and CLI (`aiosh pep grant sweep`).
+  - Threat modeling and security review analyzing multi-index concurrency, right escalation, circular DAG traversal, quota evasion, and path hygiene.
+  - Security hardening: collision prevention in `attenuate_grant`, fail-closed timestamp parsing in `sweep_expired`, store capacity limits on load (`MAX_GRANTS_IN_SERVICE = 5000`), and path hygiene enforcing non-empty and NUL-free paths.
+  - System documentation added as Section 16 in `docs/pep_decision_engine.md` detailing invariants `GSVC1..GSVC6`.
+  - Sub-Epic 2 verification and milestone closure (22/22 Rust unit tests PASS, 16/16 smoke tests PASS).
+- **T-02221..T-02225 (Sub-Epic 3: CLI Surface Launch)**:
+  - Research into command architecture, parameter schema, error envelopes, and audit integration.
+  - Formal specification of `issue`, `list`, `inspect`, `validate`, `attenuate`, `revoke`, and `sweep`.
+  - Scaffolding of extended CLI flag parsing and dispatch skeleton.
+  - Full CLI implementation with complete parameter extraction, structured JSON error envelopes, and audit trail emission.
+  - Dedicated unit test suite in `code/aiosh-cli/tests/test_pep_grant_cli.py` passing 100% across all subcommands and negative conditions.
+
+## 2. Invariants & Controls Audited
+1. **Delegation Containment & Depth Decrement**: Attenuation strictly requires parent `CapabilityRight::Delegate` and active state. Rights escalation is rejected, and delegation depth is decremented per hop.
+2. **Cascade Revocation Safety**: Transitive DAG closure traversal guards against cycles and atomically transitions all descendant sub-grants to `Revoked`.
+3. **Temporal/Quota Sweep Hardening**: Time comparisons fail closed on corrupted timestamps; elapsed grants are transitioned to terminal `Expired` state.
+4. **Input Sanitization & Hygiene**: CLI inputs sanitized via `sanitize_terminal` to prevent ANSI escape sequence injection; store paths validated for `.json` and traversal resistance.
+5. **Tamper-Evident Audit Emission**: All mutating operations emit structured events via `classify_and_emit` or `dispatch::recorded_call`.
+
+## 3. Audit Certification
+- Standalone CLI unit tests: `test_pep_grant_cli.py` (5/5 test suites PASS).
+- Rust unit tests: `test_pep_grant_service` (12/12 PASS), `test_pep_grant` (10/10 PASS).
+- Integration test suite: `pytest` (21/21 PASS).
+- Compiler hygiene: Zero errors and zero warnings across all targets (`cargo check --bin aiosh --bin aiosh-mcp`).
+- Security status: **CLEAN & VERIFIED**. Pointer advances to `T-02226`.
+
 
 

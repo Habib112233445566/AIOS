@@ -393,6 +393,13 @@ def test_pep_grant_cli():
         assert d_val_after["code"] == 1
         assert d_val_after["data"]["valid"] is False
 
+        # 6. Sweep expired grants
+        res_sweep = run_aiosh("pep", "grant", "sweep", "--store", grant_store, "--json")
+        assert res_sweep.returncode == 0
+        d_sweep = parse_json_output(res_sweep)
+        assert d_sweep["code"] == 0
+        assert "swept_count" in d_sweep["data"]
+
     print("PASS: aiosh pep grant CLI integration")
 
 

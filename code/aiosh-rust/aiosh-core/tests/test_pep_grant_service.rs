@@ -277,3 +277,56 @@ fn service_save_fails(path: &std::path::Path) -> bool {
     service.save_to_path(path).is_err()
 }
 
+#[test]
+fn test_pep_grant_service_hardening() {
+    let mut service = PepGrantService::new();
+    let mut parent = PepGrant::new(
+        "g-parent",
+        "admin",
+        "agent-alice",
+        CapabilityScope::System { subsystem: "sec".into() },
+        vec![CapabilityRight::Read, CapabilityRight::Delegate],
+    );
+    parent.state = PepGrantState::Active;
+    parent.constraints.max_delegation_depth = 2;
+    service.issue_grant(parent).unwrap();
+
+    // 1. Attenuate with existing child ID is rejected
+    let existing_g = PepGrant::new(
+        "g-existing",
+        "admin",
+        "agent-alice",
+        CapabilityScope::System { subsystem: "sec".into() },
+        vec![CapabilityRight::Read],
+    );
+    service.issue_grant(existing_g).unwrap();
+
+    let err_collision = service.attenuate_grant("g-parent", "g-existing", "agent-bob", vec![CapabilityRight::Read]);
+    assert!(err_collision.unwrap_err().contains("already exists"));
+
+    // 2. Sweep with invalid ISO timestamp fails
+    let err_sweep_ts = service.sweep_expired("not-a-timestamp");
+    assert!(err_sweep_ts.unwrap_err().contains("invalid timestamp"));
+
+    // 3. Fail-closed: unparseable expiration string expires upon sweep
+    let mut malformed_exp_g = PepGrant::new(
+        "g-malformed",
+        "admin",
+        "agent-alice",
+        CapabilityScope::System { subsystem: "sec".into() },
+        vec![CapabilityRight::Read],
+    );
+    malformed_exp_g.state = PepGrantState::Active;
+    malformed_exp_g.constraints.expires_at = Some("malformed-rfc3339".to_string());
+    service.issue_grant(malformed_exp_g).unwrap();
+
+    let swept = service.sweep_expired("2026-09-22T12:00:00Z").unwrap();
+    assert!(swept >= 1);
+    let g = service.get_grant("g-malformed").unwrap();
+    assert_eq!(g.state, PepGrantState::Expired);
+
+    // 4. Path validation hardening
+    assert!(service.save_to_path(std::path::Path::new("")).is_err());
+    assert!(service.save_to_path(std::path::Path::new("bad\0name.json")).is_err());
+}
+

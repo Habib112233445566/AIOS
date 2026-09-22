@@ -748,6 +748,112 @@ aiosh pep grant revoke grnt-001 --reason "Compromised credential" --cascade
 - [T-02209: Documentation Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02209-data-model-documentation.md)
 - [T-02210: Verification Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02210-data-model-verification-evidenc.md)
 
+---
+
+## 16. Grant Lifecycle Subsystem Reference — Core Service (Sub-Epic 2)
+
+### 16.1 Overview & Invariants (`GSVC1..GSVC6`)
+
+The Grant Core Service Subsystem (`pep_grant_service.rs`) acts as the authoritative in-memory coordinator, multi-index directory, and policy enforcement anchor for PEP authorization grants across the AIOS runtime.
+
+| Invariant | Name | Formal Rule |
+|---|---|---|
+| **`GSVC1`** | **Multi-Indexed State Coordination** | Maintains synchronized secondary multi-maps (`by_subject`, `by_parent`, `by_state`) alongside primary `grants` hash map. Every mutation updates all indices atomically; full index reconstruction occurs on deserialization. |
+| **`GSVC2`** | **Dynamic Issuance & Lifecycle FSM Management** | Manages grant progression across `Requested -> Active -> Suspended -> Revoked / Expired`. Enforces terminal sink status for `Revoked` and `Expired`, preventing state resurrection. |
+| **`GSVC3`** | **Delegation Attenuation & Containment Calculus** | Coordinates child grant derivation (`attenuate_grant()`). Enforces parent `Active` state, `Delegate` right presence, strict rights subset containment, depth decrement, and grant ID uniqueness. |
+| **`GSVC4`** | **Active Grant Authorization Evaluation & Usage Metering** | Evaluates grant authorization (`evaluate_grant()`) against subject, rights, and temporal windows. Meters consumption (`record_grant_usage()`), auto-expiring grants upon reaching invocation or byte quotas. |
+| **`GSVC5`** | **Transitive Cascade Revocation Traversal** | Performs cycle-safe breadth-first traversal (`revoke_grant()`) across the delegation DAG, revoking all descendant grants atomically and updating all secondary indices. |
+| **`GSVC6`** | **Periodic Temporal/Quota Sweep & Crash-Resilient Storage** | Provides batch sweeping (`sweep_expired()`) transitioning past-deadline and quota-exhausted grants to `Expired`. Employs atomic rename (`tmp.<pid>.<nonce>` -> `replace`) and strict path hygiene. |
+
+### 16.2 Invocation Examples
+
+#### CLI Usage
+```bash
+# Sweep expired or quota-exhausted grants from the grant store
+aiosh pep grant sweep
+
+# Sweep with custom store path and JSON envelope output
+aiosh pep grant sweep --store /etc/aios/pep_grants.json --json
+```
+
+#### MCP Tool Invocations
+```json
+// Tool: aios.pep.grant.attenuate
+{
+  "method": "tools/call",
+  "params": {
+    "name": "aios.pep.grant.attenuate",
+    "arguments": {
+      "parent_id": "grnt-001",
+      "child_id": "grnt-child-001",
+      "child_subject": "agent-subworker",
+      "rights": ["read"],
+      "store_path": "pep_grants.json"
+    }
+  }
+}
+
+// Tool: aios.pep.grant.sweep
+{
+  "method": "tools/call",
+  "params": {
+    "name": "aios.pep.grant.sweep",
+    "arguments": {
+      "store_path": "pep_grants.json"
+    }
+  }
+}
+```
+
+#### Rust Core Service API
+```rust
+use aiosh_core::pep_grant_service::PepGrantService;
+use aiosh_core::capability::CapabilityRight;
+
+// Initialize or load service
+let mut service = PepGrantService::load_from_path(std::path::Path::new("pep_grants.json"))?;
+
+// Evaluate active grant authorization
+service.evaluate_grant("grnt-001", "agent-worker", CapabilityRight::Read, &chrono::Utc::now().to_rfc3339())?;
+
+// Record metered usage (1 invocation, 4096 bytes)
+service.record_grant_usage("grnt-001", 4096)?;
+
+// Attenuate to sub-agent
+let child = service.attenuate_grant(
+    "grnt-001",
+    "grnt-child-001",
+    "agent-subworker",
+    vec![CapabilityRight::Read],
+)?;
+
+// Batch sweep expired grants
+let swept_count = service.sweep_expired(&chrono::Utc::now().to_rfc3339())?;
+
+// Persist state atomically
+service.save_to_path(std::path::Path::new("pep_grants.json"))?;
+```
+
+### 16.3 Constraints and Known Limitations
+1. **Service Capacity**: In-memory capacity is bounded to `MAX_GRANTS_IN_SERVICE = 5000` grants.
+2. **File Size Limit**: Store files exceeding `MAX_GRANT_SERVICE_STORE_SIZE = 10 MiB` are rejected before deserialization.
+3. **Storage Hygiene**: Paths must end with `.json`, be non-empty, and contain no control characters or NUL bytes.
+4. **Child ID Uniqueness**: Attenuation rejects duplicate grant IDs to prevent credential overwriting or hijacking.
+5. **Fail-Closed Sweep**: Corrupted or unparseable timestamps in grant constraints fail closed and are immediately expired.
+
+### 16.4 Task Evidence References
+- [T-02211: Research Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02211-core-service-research.md)
+- [T-02212: Specification Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02212-core-service-specification.md)
+- [T-02213: Scaffold Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02213-core-service-scaffold.md)
+- [T-02214: Implementation Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02214-core-service-implementation.md)
+- [T-02215: Unit Test Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02215-core-service-unit-test.md)
+- [T-02216: Integration Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02216-core-service-integration.md)
+- [T-02217: Security Review Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02217-core-service-security-review.md)
+- [T-02218: Hardening Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02218-core-service-hardening.md)
+- [T-02219: Documentation Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02219-core-service-documentation.md)
+- [T-02220: Verification Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02220-core-service-verification-evidenc.md)
+
+
 
 
 

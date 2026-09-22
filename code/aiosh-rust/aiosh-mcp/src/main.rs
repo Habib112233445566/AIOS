@@ -1984,6 +1984,35 @@ impl Server {
                 "additionalProperties": false
             }
         }));
+        tools.push(json!({
+            "name": "aios.pep.grant.attenuate",
+            "description": "Derive an attenuated child grant from an active parent grant",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "parent_id": { "type": "string", "description": "The active parent grant ID" },
+                    "child_id": { "type": "string", "description": "Unique identifier for the child grant" },
+                    "child_subject": { "type": "string", "description": "Subject entity for the child grant" },
+                    "rights": { "type": "array", "items": { "type": "string" }, "description": "Attenuated rights subset" },
+                    "store_path": { "type": "string", "description": "Optional path to PEP grants JSON store" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "required": ["parent_id", "child_id", "child_subject", "rights"],
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.pep.grant.sweep",
+            "description": "Sweep expired and quota-exhausted grants to Expired state",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "store_path": { "type": "string", "description": "Optional path to PEP grants JSON store" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
         tools
     }
 
@@ -7017,6 +7046,86 @@ impl Server {
                 dispatch::recorded_call(
                     &mut self.ring, &self.pep,
                     "aios.pep.grant.revoke", "Revoke PEP authorization grant", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.pep.grant.attenuate" => {
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let parent_id_opt = arguments.get("parent_id").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let child_id_opt = arguments.get("child_id").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let child_subject_opt = arguments.get("child_subject").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let rights_opt = arguments.get("rights").and_then(|v| v.as_array()).cloned();
+                let f = move || -> Result<Value, String> {
+                    let pid = parent_id_opt.as_ref().ok_or_else(|| "missing required parameter: parent_id".to_string())?;
+                    let cid = child_id_opt.as_ref().ok_or_else(|| "missing required parameter: child_id".to_string())?;
+                    let csubj = child_subject_opt.as_ref().ok_or_else(|| "missing required parameter: child_subject".to_string())?;
+                    let raw_rights = rights_opt.as_ref().ok_or_else(|| "missing required parameter: rights".to_string())?;
+
+                    let mut delegated_rights = Vec::new();
+                    for r_val in raw_rights {
+                        let r_str = r_val.as_str().ok_or_else(|| "rights must be strings".to_string())?;
+                        let right = match r_str.to_ascii_lowercase().as_str() {
+                            "read" => aiosh_core::capability::CapabilityRight::Read,
+                            "write" => aiosh_core::capability::CapabilityRight::Write,
+                            "execute" => aiosh_core::capability::CapabilityRight::Execute,
+                            "delete" => aiosh_core::capability::CapabilityRight::Delete,
+                            "admin" => aiosh_core::capability::CapabilityRight::Admin,
+                            "delegate" => aiosh_core::capability::CapabilityRight::Delegate,
+                            other => return Err(format!("unknown capability right: {}", other)),
+                        };
+                        delegated_rights.push(right);
+                    }
+
+                    let path = store_path_opt.as_deref().unwrap_or("pep_grants.json");
+                    let p = std::path::Path::new(path);
+                    let mut service = if p.exists() {
+                        aiosh_core::pep_grant_service::PepGrantService::load_from_path(p)?
+                    } else {
+                        aiosh_core::pep_grant_service::PepGrantService::new().with_storage_path(p.to_path_buf())
+                    };
+
+                    let child = service.attenuate_grant(pid, cid, csubj, delegated_rights)?;
+                    service.save_to_path(p)?;
+
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.pep.grant.attenuate",
+                        "child_grant": child
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.pep.grant.attenuate", "Derive attenuated child grant", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.pep.grant.sweep" => {
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = move || -> Result<Value, String> {
+                    let path = store_path_opt.as_deref().unwrap_or("pep_grants.json");
+                    let p = std::path::Path::new(path);
+                    let mut service = if p.exists() {
+                        aiosh_core::pep_grant_service::PepGrantService::load_from_path(p)?
+                    } else {
+                        aiosh_core::pep_grant_service::PepGrantService::new().with_storage_path(p.to_path_buf())
+                    };
+
+                    let now = chrono::Utc::now().to_rfc3339();
+                    let swept_count = service.sweep_expired(&now)?;
+                    if swept_count > 0 {
+                        service.save_to_path(p)?;
+                    }
+
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.pep.grant.sweep",
+                        "swept_count": swept_count,
+                        "timestamp": now
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.pep.grant.sweep", "Sweep expired PEP authorization grants", arguments,
                     None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
                 )
             }

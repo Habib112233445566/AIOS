@@ -32,10 +32,13 @@ pub const GSVC_ERR_IO: &str = "GSVC_ERR_IO";
 /// Validates that a grant service storage path is clean, canonical, and has a .json extension.
 pub fn validate_grant_service_path(path: &Path) -> Result<(), String> {
     let path_str = path.to_string_lossy();
+    if path_str.trim().is_empty() {
+        return Err(format!("{}: path cannot be empty", GSVC_ERR_VALIDATION));
+    }
     if path_str.len() > 1024 {
         return Err(format!("{}: path length exceeds 1024 characters", GSVC_ERR_VALIDATION));
     }
-    if path_str.chars().any(|c| c.is_control()) {
+    if path_str.chars().any(|c| c.is_control() || c == '\0') {
         return Err(format!("{}: path contains control characters", GSVC_ERR_VALIDATION));
     }
     for component in path.components() {
@@ -233,6 +236,10 @@ impl PepGrantService {
         child_subject: &str,
         delegated_rights: Vec<CapabilityRight>,
     ) -> Result<PepGrant, String> {
+        if self.grants.contains_key(child_id) {
+            return Err(format!("{}: grant id '{}' already exists", GSVC_ERR_VALIDATION, child_id));
+        }
+
         let parent = self
             .grants
             .get(parent_id)
@@ -368,6 +375,9 @@ impl PepGrantService {
 
     /// Sweeps active/suspended grants and transitions expired grants to Expired (GSVC6).
     pub fn sweep_expired(&mut self, now_iso: &str) -> Result<usize, String> {
+        let now_dt = chrono::DateTime::parse_from_rfc3339(now_iso)
+            .map_err(|e| format!("{}: invalid timestamp '{}': {}", GSVC_ERR_VALIDATION, now_iso, e))?;
+
         let mut candidates = Vec::new();
         if let Some(active) = self.by_state.get(&PepGrantState::Active) {
             candidates.extend(active.clone());
@@ -382,11 +392,14 @@ impl PepGrantService {
                 let mut should_expire = false;
 
                 if let Some(ref exp) = grant.constraints.expires_at {
-                    if let (Ok(now_dt), Ok(exp_dt)) = (
-                        chrono::DateTime::parse_from_rfc3339(now_iso),
-                        chrono::DateTime::parse_from_rfc3339(exp),
-                    ) {
-                        if now_dt >= exp_dt {
+                    match chrono::DateTime::parse_from_rfc3339(exp) {
+                        Ok(exp_dt) => {
+                            if now_dt >= exp_dt {
+                                should_expire = true;
+                            }
+                        }
+                        Err(_) => {
+                            // Fail-closed: unparseable expiration timestamp treated as expired
                             should_expire = true;
                         }
                     }
@@ -478,6 +491,13 @@ impl PepGrantService {
 
         let mut service: Self = serde_json::from_str(&content)
             .map_err(|e| format!("{}: deserialization failed: {}", GSVC_ERR_VALIDATION, e))?;
+
+        if service.grants.len() > MAX_GRANTS_IN_SERVICE {
+            return Err(format!(
+                "{}: loaded store exceeds maximum capacity of {} grants (found {})",
+                GSVC_ERR_CAPACITY, MAX_GRANTS_IN_SERVICE, service.grants.len()
+            ));
+        }
 
         service.rebuild_indexes();
         service.storage_path = Some(path.to_path_buf());
