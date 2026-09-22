@@ -853,6 +853,97 @@ service.save_to_path(std::path::Path::new("pep_grants.json"))?;
 - [T-02219: Documentation Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02219-core-service-documentation.md)
 - [T-02220: Verification Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02220-core-service-verification-evidenc.md)
 
+---
+
+## 17. Grant Lifecycle CLI Surface Reference (`T-02221..T-02230`)
+
+The `aiosh pep grant` command suite equips operators, administrative tooling, and runtime agents with complete control over capability grants and zero-ambient delegation.
+
+### 17.1 Command Syntax & Subcommands
+
+```bash
+aiosh pep grant <issue|attenuate|list|inspect|validate|revoke|sweep> [OPTIONS]
+```
+
+| Subcommand | Description | Mandatory Arguments | Key Options |
+|:---|:---|:---|:---|
+| `issue` | Issue a new root authorization grant | `--id`, `--subject`, `--scope-type`, `--rights` | `--issuer`, `--scope-path`, `--delegation-depth`, `--expires-at`, `--not-before`, `--max-invocations`, `--max-bytes` |
+| `attenuate` | Derive a restricted child grant from a parent grant | `--parent`, `--child`, `--subject`, `--rights` | `--store`, `--json` |
+| `list` | List existing grants in the repository | None | `--subject`, `--state`, `--store`, `--json` |
+| `inspect` | Inspect detailed grant attributes and constraints | `<ID>` or `--id <ID>` | `--store`, `--json` |
+| `validate` | Validate grant eligibility for subject and right | `<ID>` or `--id <ID>`, `--subject`, `--right` | `--now`, `--store`, `--json` |
+| `revoke` | Revoke a grant (with optional recursive cascade) | `<ID>` or `--id <ID>` | `--cascade`, `--reason`, `--store`, `--json` |
+| `sweep` | Batch-sweep and transition expired grants | None | `--now`, `--store`, `--json` |
+
+### 17.2 Example Workflows
+
+#### 1. Issue a Root Parent Grant
+```bash
+aiosh pep grant issue \
+  --id "g-root-001" \
+  --issuer "sec-admin" \
+  --subject "agent:analyst" \
+  --scope-type "filesystem" \
+  --scope-path "/var/log/audit" \
+  --rights "read,delegate" \
+  --delegation-depth 2 \
+  --expires-at "2026-12-31T23:59:59Z" \
+  --json
+```
+
+#### 2. Attenuate a Child Grant
+```bash
+aiosh pep grant attenuate \
+  --parent "g-root-001" \
+  --child "g-child-001" \
+  --subject "agent:subworker" \
+  --rights "read" \
+  --json
+```
+
+#### 3. Validate Grant Authorization
+```bash
+aiosh pep grant validate "g-child-001" \
+  --subject "agent:subworker" \
+  --right "read" \
+  --json
+```
+
+#### 4. Revoke and Cascade
+```bash
+aiosh pep grant revoke "g-root-001" \
+  --cascade \
+  --reason "Incident response containment" \
+  --json
+```
+
+#### 5. Sweep Expired Grants
+```bash
+aiosh pep grant sweep \
+  --now "2027-01-01T00:00:00Z" \
+  --json
+```
+
+### 17.3 Constraints and Known Limitations
+1. **Delegation Right Mandatory**: A parent grant cannot derive children unless its `rights` set includes `delegate`.
+2. **Strict Right Containment**: Child grants cannot expand rights beyond the parent's rights (`ATTENUATION_FAILED`, exit code 1).
+3. **Depth Monotonicity**: Each derivation step decrements `max_delegation_depth` by 1. Derivations with depth 0 are refused.
+4. **Path Hygiene**: All `--store` paths must have `.json` extension, no traversal (`..`), and are limited to 16 MiB.
+5. **Standard Result Envelope**: In `--json` mode, responses conform to `{"code": <int>, "data": <obj>, "error": <err_or_null>}`.
+
+### 17.4 CLI Task Evidence References
+- [T-02221: CLI Research Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02221-cli-surface-research.md)
+- [T-02222: CLI Specification Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02222-cli-surface-specification.md)
+- [T-02223: CLI Scaffold Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02223-cli-surface-scaffold.md)
+- [T-02224: CLI Implementation Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02224-cli-surface-implementation.md)
+- [T-02225: CLI Unit Test Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02225-cli-surface-unit-test.md)
+- [T-02226: CLI Integration Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02226-cli-surface-integration.md)
+- [T-02227: CLI Security Review Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02227-cli-surface-security-review.md)
+- [T-02228: CLI Hardening Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02228-cli-surface-hardening.md)
+- [T-02229: CLI Documentation Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02229-cli-surface-documentation.md)
+- [T-02230: CLI Verification Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02230-cli-surface-verification-evidenc.md)
+
+
 
 
 

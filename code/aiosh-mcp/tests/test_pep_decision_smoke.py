@@ -109,6 +109,7 @@ def test_tool_registration():
         "aios.pep.doc",
         "aios.pep.validate",
         "aios.pep.recover",
+        "aios.pep.grant.issue",
         "aios.pep.grant.list",
         "aios.pep.grant.inspect",
         "aios.pep.grant.validate",

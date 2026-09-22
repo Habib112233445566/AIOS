@@ -1926,6 +1926,30 @@ impl Server {
             }
         }));
         tools.push(json!({
+            "name": "aios.pep.grant.issue",
+            "description": "Issue a new root PEP authorization grant",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "string", "description": "Unique identifier for the grant" },
+                    "issuer": { "type": "string", "description": "Issuing authority identity" },
+                    "subject": { "type": "string", "description": "Authorized subject entity" },
+                    "scope_type": { "type": "string", "description": "Capability resource domain" },
+                    "scope_path": { "type": "string", "description": "Target resource path or identifier" },
+                    "rights": { "type": "array", "items": { "type": "string" }, "description": "Granted rights" },
+                    "delegation_depth": { "type": "integer", "description": "Maximum delegation depth" },
+                    "expires_at": { "type": "string", "description": "RFC 3339 expiration timestamp" },
+                    "not_before": { "type": "string", "description": "RFC 3339 not-before timestamp" },
+                    "max_invocations": { "type": "integer", "description": "Maximum permitted invocations quota" },
+                    "max_bytes": { "type": "integer", "description": "Maximum permitted bytes transferred quota" },
+                    "store_path": { "type": "string", "description": "Optional path to PEP grants JSON store" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "required": ["id", "subject", "scope_type", "rights"],
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
             "name": "aios.pep.grant.list",
             "description": "List PEP authorization grants with optional subject filtering",
             "inputSchema": {
@@ -6916,6 +6940,107 @@ impl Server {
                 dispatch::recorded_call(
                     &mut self.ring, &self.pep,
                     "aios.pep.recover", "Recover PEP policy store", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.pep.grant.issue" => {
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let id_opt = arguments.get("id").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let issuer_opt = arguments.get("issuer").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let subject_opt = arguments.get("subject").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let scope_type_opt = arguments.get("scope_type").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let scope_path_opt = arguments.get("scope_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let rights_opt = arguments.get("rights").and_then(|v| v.as_array()).cloned();
+                let depth_opt = arguments.get("delegation_depth").and_then(|v| v.as_u64()).map(|d| d as u32);
+                let expires_at_opt = arguments.get("expires_at").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let not_before_opt = arguments.get("not_before").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let max_inv_opt = arguments.get("max_invocations").and_then(|v| v.as_u64());
+                let max_bytes_opt = arguments.get("max_bytes").and_then(|v| v.as_u64());
+
+                let f = move || -> Result<Value, String> {
+                    let gid = id_opt.as_ref().ok_or_else(|| "missing required parameter: id".to_string())?;
+                    let subj = subject_opt.as_ref().ok_or_else(|| "missing required parameter: subject".to_string())?;
+                    let scope_type_str = scope_type_opt.as_ref().ok_or_else(|| "missing required parameter: scope_type".to_string())?;
+                    let raw_rights = rights_opt.as_ref().ok_or_else(|| "missing required parameter: rights".to_string())?;
+                    let issuer = issuer_opt.as_deref().unwrap_or("mcp-agent");
+
+                    let scope = match scope_type_str.to_ascii_lowercase().as_str() {
+                        "filesystem" | "fs" => aiosh_core::capability::CapabilityScope::Filesystem {
+                            path: scope_path_opt.as_deref().unwrap_or("/").to_string(),
+                            recursive: true,
+                        },
+                        "network" | "net" => aiosh_core::capability::CapabilityScope::Network {
+                            host: scope_path_opt.as_deref().unwrap_or("localhost").to_string(),
+                            port: None,
+                            protocol: "tcp".to_string(),
+                        },
+                        "ipc" => aiosh_core::capability::CapabilityScope::Ipc {
+                            channel: scope_path_opt.as_deref().unwrap_or("default").to_string(),
+                        },
+                        "system" | "sys" => aiosh_core::capability::CapabilityScope::System {
+                            subsystem: scope_path_opt.as_deref().unwrap_or("core").to_string(),
+                        },
+                        other => return Err(format!("unknown scope type: {}", other)),
+                    };
+
+                    let mut rights = Vec::new();
+                    for r_val in raw_rights.iter() {
+                        let r_str = r_val.as_str().ok_or_else(|| "rights must be strings".to_string())?;
+                        let right = match r_str.to_ascii_lowercase().as_str() {
+                            "read" => aiosh_core::capability::CapabilityRight::Read,
+                            "write" => aiosh_core::capability::CapabilityRight::Write,
+                            "execute" => aiosh_core::capability::CapabilityRight::Execute,
+                            "delete" => aiosh_core::capability::CapabilityRight::Delete,
+                            "admin" => aiosh_core::capability::CapabilityRight::Admin,
+                            "delegate" => aiosh_core::capability::CapabilityRight::Delegate,
+                            other => return Err(format!("unknown capability right: {}", other)),
+                        };
+                        rights.push(right);
+                    }
+
+                    let mut grant = aiosh_core::pep_grant::PepGrant::new(gid, issuer, subj, scope, rights);
+                    grant.state = aiosh_core::pep_grant::PepGrantState::Active;
+                    if let Some(ref exp) = expires_at_opt {
+                        grant.constraints.expires_at = Some(exp.clone());
+                    }
+                    if let Some(ref nb) = not_before_opt {
+                        grant.constraints.not_before = Some(nb.clone());
+                    }
+                    if let Some(inv) = max_inv_opt {
+                        grant.constraints.max_invocations = Some(inv);
+                    }
+                    if let Some(bytes) = max_bytes_opt {
+                        grant.constraints.max_bytes = Some(bytes);
+                    }
+                    if let Some(depth) = depth_opt {
+                        grant.constraints.max_delegation_depth = depth;
+                    }
+                    grant.validate().map_err(|e| format!("validation failed: {}", e))?;
+
+                    let path = store_path_opt.as_deref().unwrap_or("pep_grants.json");
+                    let p = std::path::Path::new(path);
+                    let mut store = if p.exists() {
+                        aiosh_core::pep_grant::PepGrantStore::load_from_path(p)?
+                    } else {
+                        aiosh_core::pep_grant::PepGrantStore::new()
+                    };
+
+                    if store.get_grant(gid).is_some() {
+                        return Err(format!("grant ID already exists: {}", gid));
+                    }
+
+                    store.add_grant(grant.clone())?;
+                    store.save_to_path(p)?;
+
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.pep.grant.issue",
+                        "grant": grant
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.pep.grant.issue", "Issue a new root PEP authorization grant", arguments,
                     None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
                 )
             }

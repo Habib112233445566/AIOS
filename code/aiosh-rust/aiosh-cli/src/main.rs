@@ -15704,6 +15704,38 @@ fn cmd_pep(args: &[String]) -> i32 {
                 store_path.with_file_name("pep_grants.json")
             });
 
+            if let Err(e) = aiosh_core::pep_decision_service::validate_pep_service_path(&g_store_path) {
+                let msg = format!("invalid grant store path: {}", e);
+                classify_and_emit(
+                    &mut ctx, "pep", "grant", json!({ "error": &msg }),
+                    "failure", None, Some("Invalid grant store path"), "operator", None,
+                );
+                if is_grant_json {
+                    println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_STORE_PATH", "message": msg } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(&msg));
+                }
+                return 2;
+            }
+
+            if g_store_path.exists() {
+                if let Ok(meta) = std::fs::metadata(&g_store_path) {
+                    if meta.len() > 16 * 1024 * 1024 {
+                        let msg = format!("grant store file exceeds 16 MiB size cap: {} bytes", meta.len());
+                        classify_and_emit(
+                            &mut ctx, "pep", "grant", json!({ "error": &msg }),
+                            "failure", None, Some("Grant store size cap exceeded"), "operator", None,
+                        );
+                        if is_grant_json {
+                            println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "STORE_TOO_LARGE", "message": msg } }));
+                        } else {
+                            eprintln!("{}", sanitize_terminal(&msg));
+                        }
+                        return 2;
+                    }
+                }
+            }
+
             let mut store = if g_store_path.exists() {
                 aiosh_core::pep_grant::PepGrantStore::load_from_path(&g_store_path).unwrap_or_else(|_| aiosh_core::pep_grant::PepGrantStore::new())
             } else {

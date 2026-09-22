@@ -49,6 +49,7 @@ def test_pep_help():
     assert "status" in res.stdout
     assert "report" in res.stdout
     assert "doc" in res.stdout
+    assert "grant" in res.stdout
     print("PASS: aiosh pep --help")
 
 
