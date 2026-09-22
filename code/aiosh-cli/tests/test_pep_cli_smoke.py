@@ -47,6 +47,7 @@ def test_pep_help():
     assert "rule-list" in res.stdout
     assert "rule-remove" in res.stdout
     assert "status" in res.stdout
+    assert "report" in res.stdout
     print("PASS: aiosh pep --help")
 
 
@@ -185,9 +186,79 @@ def test_pep_lifecycle():
     print("PASS: aiosh pep lifecycle and evaluation")
 
 
+def test_pep_security_policy_privilege_boundary():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        store = str(Path(tmpdir) / "pep_privilege.json")
+
+        # 1. Unprivileged caller attempting Permit on sys:* fails with code 2
+        res = run_aiosh(
+            "pep", "rule-add",
+            "--id", "r_sys_permit",
+            "--subject", "agent:worker",
+            "--resource", "sys:kernel:module",
+            "--action", "load",
+            "--effect", "permit",
+            "--store", store,
+            "--json",
+        )
+        assert res.returncode == 2, f"Expected 2 for unprivileged restricted Permit, got {res.returncode}"
+        data = parse_json_output(res)
+        assert data["code"] == 2
+        assert "POLICY_VIOLATION" in data["error"]["code"]
+
+        # 2. Privileged caller attempting Permit on sys:* succeeds with code 0
+        res = run_aiosh(
+            "pep", "rule-add",
+            "--id", "r_sys_permit",
+            "--subject", "agent:worker",
+            "--resource", "sys:kernel:module",
+            "--action", "load",
+            "--effect", "permit",
+            "--privileged",
+            "--store", store,
+            "--json",
+        )
+        assert res.returncode == 0, f"Expected 0 for privileged Permit, got {res.returncode}: {res.stderr}"
+
+        # 3. Unprivileged caller attempting Deny on sys:* succeeds with code 0
+        res = run_aiosh(
+            "pep", "rule-add",
+            "--id", "r_sys_deny",
+            "--subject", "agent:worker",
+            "--resource", "sys:kernel:module",
+            "--action", "unload",
+            "--effect", "deny",
+            "--store", store,
+            "--json",
+        )
+        assert res.returncode == 0, f"Expected 0 for unprivileged Deny, got {res.returncode}: {res.stderr}"
+
+    print("PASS: aiosh pep security policy privilege boundary")
+
+
+def test_pep_report_cli():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        store = str(Path(tmpdir) / "pep_store.json")
+        res = run_aiosh("pep", "report", "--store", store, "--json")
+        assert res.returncode == 0, f"Expected 0, got {res.returncode}: {res.stderr}"
+        data = parse_json_output(res)
+        assert data["code"] == 0
+        rep = data["data"]
+        assert rep["total_rules"] == 0
+        assert rep["is_healthy"] is True
+        assert rep["capacity_limit"] > 0
+        assert rep["capacity_utilization_percent"] == 0
+        assert "permit" in rep["rules_by_effect"]
+
+    print("PASS: aiosh pep report CLI integration")
+
+
 if __name__ == "__main__":
     test_pep_help()
     test_pep_unknown_subcommand()
     test_pep_path_hygiene()
     test_pep_lifecycle()
+    test_pep_security_policy_privilege_boundary()
+    test_pep_report_cli()
     print("=== All PEP CLI tests passed ===")
+

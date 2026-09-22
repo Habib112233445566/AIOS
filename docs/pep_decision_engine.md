@@ -391,6 +391,26 @@ The PEP Decision Engine is configured via `PepConfig` in `aiosh-core`, supportin
 - `T-02158`: [Automated Tests Hardening](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02158-automated-tests-hardening.md)
 - `T-02159`: [Automated Tests Documentation](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02159-automated-tests-documentation.md)
 - `T-02160`: [Automated Tests Verification & Evidence](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02160-automated-tests-verification-evidenc.md)
+- `T-02161`: [Security Policy Research](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02161-security-policy-research.md)
+- `T-02162`: [Security Policy Specification](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02162-security-policy-specification.md)
+- `T-02163`: [Security Policy Scaffold](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02163-security-policy-scaffold.md)
+- `T-02164`: [Security Policy Implementation](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02164-security-policy-implementation.md)
+- `T-02165`: [Security Policy Unit Tests](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02165-security-policy-unit-test.md)
+- `T-02166`: [Security Policy Integration](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02166-security-policy-integration.md)
+- `T-02167`: [Security Policy Security Review](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02167-security-policy-security-review.md)
+- `T-02168`: [Security Policy Hardening](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02168-security-policy-hardening.md)
+- `T-02169`: [Security Policy Documentation](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02169-security-policy-documentation.md)
+- `T-02170`: [Security Policy Verification & Evidence](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02170-security-policy-verification-evidenc.md)
+- `T-02171`: [Observability Research](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02171-observability-research.md)
+- `T-02172`: [Observability Specification](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02172-observability-specification.md)
+- `T-02173`: [Observability Scaffold](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02173-observability-scaffold.md)
+- `T-02174`: [Observability Implementation](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02174-observability-implementation.md)
+- `T-02175`: [Observability Unit Tests](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02175-observability-unit-test.md)
+- `T-02176`: [Observability Integration](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02176-observability-integration.md)
+- `T-02177`: [Observability Security Review](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02177-observability-security-review.md)
+- `T-02178`: [Observability Hardening](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02178-observability-hardening.md)
+- `T-02179`: [Observability Documentation](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02179-observability-documentation.md)
+- `T-02180`: [Observability Verification & Evidence](file:///c:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02180-observability-verification-evidenc.md)
 
 ---
 
@@ -423,6 +443,82 @@ python code/aiosh-mcp/tests/test_pep_decision_smoke.py
 ### 10.3 Constraints and Known Limitations
 1. `FirstApplicable` combines candidate rules sorted deterministically by rule ID. Rules with lower lexical IDs evaluate earlier.
 2. Single-query evaluation evaluates up to `MAX_PEP_RULES_PER_EVALUATION = 1000` matching candidate rules. Total registry capacity supports up to `MAX_RULES_IN_SERVICE = 5000` rules.
+
+---
+
+## 11. Security Policy Subsystem Reference (Sub-Epic 7)
+
+The PEP Security Policy subsystem (`aiosh_core::pep_security_policy`) provides governance over authorization enforcement modes, administrative authoring boundaries, obligation criticality, and temporal validity.
+
+### 11.1 Key Invariants (`PEPPOL1..PEPPOL6`)
+- **`PEPPOL1` (Enforcement Modes)**: Supports `Enforcing` (default, fail-closed), `Permissive` (dry-run mode allowing denied actions while preserving `effect: Deny` and injecting an audit warning), and `Disabled`.
+- **`PEPPOL2` (Administrative Privilege Governance)**: Rejects unprivileged additions of `Permit` rules targeting restricted resources (`sys:*`, `sec:*`, `kernel:*`) with `PEPPOL_ERR_PRIVILEGE`.
+- **`PEPPOL3` (Obligation Criticality)**: `Strict` criticality revokes permit decisions to `Deny` on obligation failure; `BestEffort` logs a warning audit obligation.
+- **`PEPPOL4` (Temporal Validity)**: Active window verification via `valid_from_epoch_secs` and `valid_until_epoch_secs`. Expired policies return default deny with `PEPPOL_ERR_TEMPORAL`.
+- **`PEPPOL5` (Atomic Persistence & Path Hygiene)**: Safe atomic file writes (`.tmp.<pid>`), symlink rejection, and 64 KiB read bounds.
+- **`PEPPOL6` (Audit Integration)**: Consequential policy mutations write immutable audit rows to the SQLite audit ring.
+
+### 11.2 Invocation Examples
+```bash
+# Add a restricted rule as privileged administrator
+aiosh pep rule-add --id r_admin --subject agent:admin --resource sys:kernel:module --action load --effect permit --privileged
+
+# Attempting to add a restricted permit rule without --privileged fails with exit code 2
+aiosh pep rule-add --id r_hack --subject agent:guest --resource sys:kernel:module --action load --effect permit
+# Output: security policy violation: PEPPOL_ERR_PRIVILEGE: unprivileged caller cannot add Permit rule for restricted resource 'sys:kernel:module'
+```
+
+### 11.3 Constraints and Known Limitations
+1. Unprivileged callers can create `Deny` rules on restricted resources to restrict access, but cannot create `Permit` rules on restricted resources without the `--privileged` flag or administrative capability grant.
+2. The default security policy enforces `Enforcing` mode and `Strict` obligation criticality.
+
+---
+
+## 12. Observability Subsystem Reference (Sub-Epic 8)
+
+The PEP Observability subsystem (`aiosh_core::pep_observability`) aggregates point-in-time state, capacity utilization metrics, rule effect distributions, obligation counts, and composite health status.
+
+### 12.1 Key Invariants (`PEPOBS1..PEPOBS6`)
+- **`PEPOBS1` (Point-in-Time Metrics Aggregation)**: Accurately reports total rules, counts categorized by decision effect (`permit`, `deny`, `indeterminate`, `not_applicable`), count of rules with obligations, counts broken down by obligation type (`audit_log`, `rate_limit`, `redact_fields`, `custom`), and distinct counts of unique subjects, resources, and actions.
+- **`PEPOBS2` (Capacity Utilization Bounds)**: Computes capacity utilization percentage `((total_rules * 100) / MAX_RULES_IN_SERVICE)` bounded strictly to `0..=100%`.
+- **`PEPOBS3` (Composite Health Threshold)**: Evaluates `is_healthy` as boolean `capacity_utilization_percent < PEP_HEALTH_UTILIZATION_THRESHOLD` (90%). At or above 90% utilization, health degrades to `false`.
+- **`PEPOBS4` (Fail-Closed Structural Invariant Validation)**: Calling `validate()` rejects corrupted or contradictory metrics (such as `sum(rules_by_effect) != total_rules` or `rules_with_obligations > total_rules`) with `PEPOBS_ERR_VALIDATION`.
+- **`PEPOBS5` (Telemetry Input Sanitization)**: Telemetry strings (store paths, timestamps) are sanitized by removing ASCII control characters and truncating to 256 characters (`MAX_PEPOBS_TEXT_LEN`).
+- **`PEPOBS6` (Deterministic Serialization & Audit Transparency)**: Lossless JSON roundtrip serialization (`to_json()` / `from_json()`) and immutable audit row emission on both CLI and MCP surfaces.
+
+### 12.2 Invocation Examples
+
+#### CLI Usage
+```bash
+# Generate human-readable PEP observability report
+aiosh pep report
+
+# Output structured JSON envelope
+aiosh pep report --json
+
+# Generate report against a custom policy store
+aiosh pep report --store /custom/path/pep_policies.json --json
+```
+
+#### MCP Tool Call
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "aios.pep.report",
+    "arguments": {
+      "store_path": ".aios/pep_policies.json"
+    }
+  }
+}
+```
+
+### 12.3 Constraints and Known Limitations
+1. Health status degrades when rule count exceeds 4,500 (90% of `MAX_RULES_IN_SERVICE = 5000`).
+2. Telemetry timestamps default to current UTC ISO 8601 when omitted or invalid.
+3. Observability queries are non-destructive and read-only, but still emit an audit event to maintain complete operational observability.
+
+
 
 
 

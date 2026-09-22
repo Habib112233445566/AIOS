@@ -98,6 +98,8 @@ pub mod pep_decision;
 pub mod pep_decision_service;
 pub mod pep_config;
 pub mod pep_security_policy;
+pub mod pep_observability;
+pub mod pep_doc;
 pub mod release;
 pub mod release_config;
 pub mod repo_health;
@@ -274,4 +276,15 @@ pub use pep_security_policy::{
     PEPPOL_ERR_IO, PEPPOL_ERR_PRIVILEGE, PEPPOL_ERR_TEMPORAL, PEPPOL_ERR_VALIDATION,
     validate_policy_path as validate_pep_security_policy_path,
 };
+pub use pep_observability::{
+    PepObservabilityReport, PEPOBS_ERR_VALIDATION, PEP_HEALTH_UTILIZATION_THRESHOLD,
+    sanitize_telemetry_text as sanitize_pep_telemetry_text,
+};
+pub use pep_doc::{
+    extract_utf8_snippet as extract_pep_doc_utf8_snippet, PepDocCategory, PepDocIndex,
+    PepDocSearchResult, PepDocSection, PepDocTopic, MAX_DOC_QUERY_LEN as MAX_PEP_DOC_QUERY_LEN,
+    MAX_DOC_SEARCH_RESULTS as MAX_PEP_DOC_SEARCH_RESULTS,
+    MAX_SNIPPET_LEN as MAX_PEP_DOC_SNIPPET_LEN, MAX_TOPIC_ID_LEN as MAX_PEP_DOC_TOPIC_ID_LEN,
+};
+
 

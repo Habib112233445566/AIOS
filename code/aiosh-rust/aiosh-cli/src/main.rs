@@ -221,7 +221,7 @@ fn main() {
         Some("capability") | Some("cap") => cmd_capability(&args[1..]),
         Some("pep") => cmd_pep(&args[1..]),
         Some("--help") | Some("-h") | None => {
-            println!("aiosh — AIOS shell CLI (Rust)\n\nUsage: aiosh <status|run|agent|audit|grant|pentest|classify|task|ci|release|backup|toolchain|doc|evidence|repo|secrets|triage|handoff|distro|image|package|service|session|layout|mod|hw|net|update|capability|pep> ...\n\n  aiosh task <status|done|block|unblock|skip|rebuild|check>  Task ledger control\n  aiosh ci <show|failures|check|config|metrics> [--file PATH]  CI smoke reports\n  aiosh release generate  Create bootable ISO\n  aiosh backup create  Create system snapshot zip\n  aiosh toolchain check [--config <path>]  Verify host environment against ToolchainManifest\n  aiosh toolchain show [--config <path>]   Display the resolved ToolchainManifest\n  aiosh doc <show|check|search>  Documentation Index Control\n  aiosh evidence <verify|hash|scan>   Evidence & Audit Trail Control\n  aiosh repo <health|check>  Repository Health Diagnostics\n  aiosh secrets <scan|check> [--config <path>]  Secrets & Access Hygiene Scanner\n  aiosh triage <list|show|record|resolve|ingest|check>  Regression Triage Manager\n  aiosh handoff <list|show|initiate|accept|reject|complete|cancel>  Agent Handoff Protocol Manager\n  aiosh distro <list|show|evaluate|recommend|policy|stats|check>  Linux Distro Selection & Justification Manager\n  aiosh image <list|show|plan|filter>  Linux Base Image Build & Packaging Manager\n  aiosh package <list|show|search|plan|apply|validate>  Linux Package Management & Store Control\n  aiosh service <validate|list|show|status|action|start|stop|restart|reload|order>  Init & Service Supervision Control\n  aiosh session <validate|list|show|status|create|action|activate|lock|unlock|terminate|config>  User Session Bootstrap Control\n  aiosh layout <list|show|validate|check|probe|diff|fstab|register|set-active|remove|import-fstab>  Filesystem Layout & Target Partitioning Manager\n  aiosh mod <list|show|blacklist|unblacklist|options|autoload|unautoload|preset|export>  Kernel Module Management\n  aiosh hw <scan|list|show|summary|verify>  Hardware Detection & Inventory Control\n  aiosh net <list|show|routes|dns|state|up|down>  Network Bootstrap & Interface Control\n  aiosh update <status|slots|check|apply|confirm|rollback>  System Update & Dual-Slot Control\n  aiosh capability <list|show|issue|attenuate|revoke|check|prune>  Capability & Zero-Ambient Authority Control\n  aiosh pep <evaluate|rule-add|rule-list|rule-remove|status>  PEP Decision Engine & Policy Control");
+            println!("aiosh — AIOS shell CLI (Rust)\n\nUsage: aiosh <status|run|agent|audit|grant|pentest|classify|task|ci|release|backup|toolchain|doc|evidence|repo|secrets|triage|handoff|distro|image|package|service|session|layout|mod|hw|net|update|capability|pep> ...\n\n  aiosh task <status|done|block|unblock|skip|rebuild|check>  Task ledger control\n  aiosh ci <show|failures|check|config|metrics> [--file PATH]  CI smoke reports\n  aiosh release generate  Create bootable ISO\n  aiosh backup create  Create system snapshot zip\n  aiosh toolchain check [--config <path>]  Verify host environment against ToolchainManifest\n  aiosh toolchain show [--config <path>]   Display the resolved ToolchainManifest\n  aiosh doc <show|check|search>  Documentation Index Control\n  aiosh evidence <verify|hash|scan>   Evidence & Audit Trail Control\n  aiosh repo <health|check>  Repository Health Diagnostics\n  aiosh secrets <scan|check> [--config <path>]  Secrets & Access Hygiene Scanner\n  aiosh triage <list|show|record|resolve|ingest|check>  Regression Triage Manager\n  aiosh handoff <list|show|initiate|accept|reject|complete|cancel>  Agent Handoff Protocol Manager\n  aiosh distro <list|show|evaluate|recommend|policy|stats|check>  Linux Distro Selection & Justification Manager\n  aiosh image <list|show|plan|filter>  Linux Base Image Build & Packaging Manager\n  aiosh package <list|show|search|plan|apply|validate>  Linux Package Management & Store Control\n  aiosh service <validate|list|show|status|action|start|stop|restart|reload|order>  Init & Service Supervision Control\n  aiosh session <validate|list|show|status|create|action|activate|lock|unlock|terminate|config>  User Session Bootstrap Control\n  aiosh layout <list|show|validate|check|probe|diff|fstab|register|set-active|remove|import-fstab>  Filesystem Layout & Target Partitioning Manager\n  aiosh mod <list|show|blacklist|unblacklist|options|autoload|unautoload|preset|export>  Kernel Module Management\n  aiosh hw <scan|list|show|summary|verify>  Hardware Detection & Inventory Control\n  aiosh net <list|show|routes|dns|state|up|down>  Network Bootstrap & Interface Control\n  aiosh update <status|slots|check|apply|confirm|rollback>  System Update & Dual-Slot Control\n  aiosh capability <list|show|issue|attenuate|revoke|check|prune>  Capability & Zero-Ambient Authority Control\n  aiosh pep <evaluate|rule-add|rule-list|rule-remove|status|report>  PEP Decision Engine & Policy Control");
             0
         }
         Some(other) => {
@@ -15052,6 +15052,19 @@ fn cmd_pep(args: &[String]) -> i32 {
                 description: desc,
             };
 
+            let is_privileged = parse_flag(rest, "--privileged").is_some();
+            let sec_policy = aiosh_core::pep_security_policy::PepSecurityPolicy::default();
+            if let Err(e) = sec_policy.validate_rule_addition(&rule, is_privileged) {
+                let msg = format!("security policy violation: {}", e);
+                classify_and_emit(&mut ctx, "pep", "rule-add", json!({ "error": &msg, "id": &id }), "failure", Some(&id), Some("Security policy rejected rule addition"), "operator", None);
+                if is_json {
+                    println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "POLICY_VIOLATION", "message": msg } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(&msg));
+                }
+                return 2;
+            }
+
             if let Err(e) = service.add_rule(rule.clone()) {
                 let msg = format!("failed to add rule: {}", e);
                 classify_and_emit(&mut ctx, "pep", "rule-add", json!({ "error": &msg, "id": &id }), "failure", Some(&id), Some("Add rule failed"), "operator", None);
@@ -15233,8 +15246,52 @@ fn cmd_pep(args: &[String]) -> i32 {
             }
             0
         }
+        Some("report") => {
+            let service = if store_path.exists() {
+                let (s, _recovered, _quarantine) = aiosh_core::pep_decision_service::PepDecisionService::load_or_recover(store_path);
+                s
+            } else {
+                aiosh_core::pep_decision_service::PepDecisionService::new()
+            };
+
+            let policy = aiosh_core::pep_security_policy::PepSecurityPolicy::default();
+            let report = aiosh_core::pep_observability::PepObservabilityReport::generate(&service, &policy, "");
+            if let Err(e) = report.validate() {
+                let msg = format!("Observability report validation failed: {}", e);
+                classify_and_emit(&mut ctx, "pep", "report", json!({ "error": &msg }), "failure", None, Some("Validation failed"), "operator", None);
+                if is_json {
+                    println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "VALIDATION_FAILED", "message": msg } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(&msg));
+                }
+                return 1;
+            }
+
+            let report_val = serde_json::to_value(&report).unwrap_or(json!({}));
+            classify_and_emit(&mut ctx, "pep", "report", report_val.clone(), "success", None, Some("PEP Decision Engine observability report"), "operator", None);
+
+            if is_json {
+                println!("{}", json!({ "code": 0, "data": report_val, "error": serde_json::Value::Null }));
+            } else {
+                println!("PEP Decision Engine Observability Report:\n  Generated at:          {}\n  Healthy:               {}\n  Total rules:           {}/{}\n  Capacity utilization:  {}%\n  Rules with obligations: {}\n  Unique subjects:       {}\n  Unique resources:      {}\n  Unique actions:        {}\n  Default algorithm:     {}\n  Enforcement mode:      {}\n  Obligation criticality: {}",
+                    report.generated_at,
+                    report.is_healthy,
+                    report.total_rules,
+                    report.capacity_limit,
+                    report.capacity_utilization_percent,
+                    report.rules_with_obligations,
+                    report.unique_subjects_count,
+                    report.unique_resources_count,
+                    report.unique_actions_count,
+                    report.default_algorithm,
+                    report.enforcement_mode,
+                    report.obligation_criticality,
+                );
+            }
+            0
+        }
         Some("--help") | Some("-h") | None => {
-            println!("aiosh pep — PEP Decision Engine & Policy Control\n\nUsage: aiosh pep <evaluate|rule-add|rule-list|rule-remove|status> [options]\n\nCommands:\n  evaluate                   Evaluate authorization request against policies\n  rule-add                   Add a new policy rule\n  rule-list                  List loaded policy rules\n  rule-remove <id>           Remove a policy rule by ID\n  status                     Display PEP Decision Engine status & metrics\n\nOptions:\n  --store <PATH>             Custom policy JSON store path\n  --json                     Output structured JSON envelope\n  -h, --help                 Display this help message");
+            println!("aiosh pep — PEP Decision Engine & Policy Control\n\nUsage: aiosh pep <evaluate|rule-add|rule-list|rule-remove|status|report> [options]\n\nCommands:\n  evaluate                   Evaluate authorization request against policies\n  rule-add                   Add a new policy rule\n  rule-list                  List loaded policy rules\n  rule-remove <id>           Remove a policy rule by ID\n  status                     Display PEP Decision Engine status & metrics\n  report                     Generate comprehensive PEP observability report\n\nOptions:\n  --store <PATH>             Custom policy JSON store path\n  --json                     Output structured JSON envelope\n  -h, --help                 Display this help message");
             0
         }
         Some(unknown) => {

@@ -101,6 +101,7 @@ def test_tool_registration():
     for expected in [
         "aios.pep.evaluate",
         "aios.pep.status",
+        "aios.pep.report",
         "aios.pep.rule_add",
         "aios.pep.rule_list",
         "aios.pep.rule_remove",
@@ -273,11 +274,25 @@ def test_pep_persistent_lifecycle():
     print("OK")
 
 
+def test_pep_observability_report():
+    print("TEST: PEP observability report ...", end=" ")
+    res = call_mcp_tool("aios.pep.report", {})
+    assert res.get("ok") is True, f"report failed: {res}"
+    report = res.get("report", {})
+    assert "total_rules" in report
+    assert "is_healthy" in report
+    assert "capacity_limit" in report
+    assert "capacity_utilization_percent" in report
+    assert "rules_by_effect" in report
+    print("OK")
+
+
 def main():
     print("=== PEP Decision Engine MCP Smoke Test ===")
     test_tool_registration()
     test_pep_evaluation()
     test_pep_persistent_lifecycle()
+    test_pep_observability_report()
     print("=== All PEP Decision Engine smoke tests passed ===")
 
 

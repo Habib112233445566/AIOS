@@ -7,9 +7,9 @@
 
 ---
 
-## Findings index (status after THIRTEENTH PASS — live-probe verification)
+## Findings index (status after FIFTEENTH PASS — live-probe verification)
 
-**DEMONSTRATED** = reproduced against the real binary/server in an isolated temp `AIOSH_HOME`; **STATIC** = code-read only; **DISPROVEN** = none (all probed claims held). Refinements recorded in the SIXTH PASS: C-6's ZIP extraction is zip-slip-safe (`enclosed_name`); N-1's 0644-widening half remains untestable on this host. SEVENTH PASS adds N-20…N-25 and demonstrates the session-check sibling of N-14 (see N-20). EIGHTH PASS adds N-26…N-29 (new capability subsystem + service-recovery), all probe-verified except N-28. TWELFTH PASS demonstrates H-12 (Python half) and N-23, and settles M-17 (seen-path panic CONFIRMED exit 101; verify-full half refuted). THIRTEENTH PASS adds N-35…N-36 (new `aios.pep.*` rule-authoring tools — dead governance, fifth write primitive).
+**DEMONSTRATED** = reproduced against the real binary/server in an isolated temp `AIOSH_HOME`; **STATIC** = code-read only; **DISPROVEN** = none (all probed claims held). Refinements recorded in the SIXTH PASS: C-6's ZIP extraction is zip-slip-safe (`enclosed_name`); N-1's 0644-widening half remains untestable on this host. SEVENTH PASS adds N-20…N-25 and demonstrates the session-check sibling of N-14 (see N-20). EIGHTH PASS adds N-26…N-29 (new capability subsystem + service-recovery), all probe-verified except N-28. TWELFTH PASS demonstrates H-12 (Python half) and N-23, and settles M-17 (seen-path panic CONFIRMED exit 101; verify-full half refuted). THIRTEENTH PASS adds N-35…N-36 (new `aios.pep.*` rule-authoring tools — dead governance, fifth write primitive). FOURTEENTH PASS adds N-37 (ungated `evidence.hash` arbitrary-file oracle) and upgrades M-13. FIFTEENTH PASS demonstrates **M-5** (Windows ledger lock is a no-op → duplicate `seq` under 16-way concurrency), **N-6** (sandbox argv hijack executes a different binary than requested), **N-33** (no-policy `--` form runs the command), and adds **N-38…N-39** (capability prohibited-path case-sensitivity bypass; `session.check`/`package.check` auto_recover = 6th/7th destructive write primitive).
 
 | ID | Severity | Status after probes |
 |---|---|---|
@@ -44,7 +44,7 @@
 | N-3 kernel-module export writes root-executed modprobe content unvalidated | High | **DEMONSTRATED** (store-crafted `install … && rm -rf /etc` written verbatim — pass 6) |
 | N-4 grants are self-service | High | STATIC |
 | N-5 predictable non-exclusive temp siblings in six store writers | Medium | STATIC |
-| N-6 `aiosh-sandbox` parses `--policy` anywhere in argv | Medium | **DEMONSTRATED** (policy swallowed from inside wrapped command → usage error — pass 6) |
+| N-6 `aiosh-sandbox` parses `--policy` anywhere in argv | Medium | **DEMONSTRATED** (pass 6: policy swallowed → usage error; pass 15: `-- echo HIJACK --policy {} -- true` **executes `true` instead of `echo`** — the run binary is attacker-selected) |
 | N-7 write-to-execute: MCP imports `tools/task_ledger.py` from the working tree | High | **DEMONSTRATED** (payload exec'd inside server pid 3660 — pass 5) |
 | N-8 `aios.session.check` auto_recover overwrites live store with seeded greeter | Medium | **DEMONSTRATED** (store sha changed; only `greeter-seat0` remained — pass 5) |
 | N-9 session "Audit" mode enforces and records nothing | Medium | STATIC |
@@ -71,11 +71,14 @@
 | N-30 ungated `aios.capability.recover` = 4th destructive-recovery arbitrary-write primitive — pass 9 | High | DEMONSTRATED |
 | N-31 `aios.pep.evaluate` ungated with caller-supplied rules; decision engine unwired, obligations never executed — pass 9 | Medium | DEMONSTRATED (rules/wildcards); STATIC (unwired) |
 | N-32 capability scope containment accepts `..` in the requested scope (`matches_scope` prefix check, no validation) — pass 10 | Medium | DEMONSTRATED |
-| N-33 `aiosh-sandbox` with no `--policy` silently runs the command with an empty policy (no sandboxing intent required) — pass 11 | Medium | STATIC |
+| N-33 `aiosh-sandbox` with no `--policy` silently runs the command with an empty policy (no sandboxing intent required) — pass 11 | Medium | **DEMONSTRATED** (pass 15: `-- cmd //c "echo NOPOLICY_RAN"` printed `NOPOLICY_RAN`; all three components FAIL yet `sandbox_applied` emitted) |
 | N-34 passing-granted/`check`-consume counts only the consumed capability; `prune` re-arms attenuated budgets — pass 11 | Low | DEMONSTRATED (as part of N-28 probe) |
 | N-35 `aios.pep.rule_add` ungated: caller-authored Permit rules incl. restricted `kernel:`/`sys:` prefixes — governance never invoked — pass 13 | High | DEMONSTRATED |
 | N-36 `aios.pep.*` store_path: arbitrary `.json` write + dirs + quarantine-overwrite via `load_or_recover` — pass 13 | High | DEMONSTRATED |
 | N-37 `aios.evidence.hash` ungated: arbitrary-file hash/existence oracle on any absolute path (no root confinement) — pass 14 | High | DEMONSTRATED |
+| N-38 capability security policy prohibited-path prefix match is case-sensitive → Windows mutation bypass (`c:/windows/system32`, `C:\WINDOWS\system32` both issued while `C:\Windows\System32` denied) — pass 15 | High | DEMONSTRATED |
+| N-39 ungated `aios.session.check`/`aios.package.check auto_recover` = 6th/7th destructive-recovery arbitrary-write primitive (re-seed + quarantine-overwrite outside AIOSH_HOME) — pass 15 | High | DEMONSTRATED |
+| M-5 Windows ledger lock is a no-op → duplicate `seq` + multiplied completion events under concurrency (Unix serialized) — pass 2 | Medium | **DEMONSTRATED** (pass 15: 16 concurrent `task done 1` → seq 1/1/2/2, four completion events, state/events divergence) |
 | M-13 doc tools (`doc.check`/`doc.search` `repo_path`) take any absolute path; error text echoes full server paths — pass 2 | Low | DEMONSTRATED (path acceptance; leak via `doc.check`) |
 
 ---
@@ -180,7 +183,7 @@ A single 4096-byte multibyte line in a file (or a CJK/emoji arg over the cap) ab
 * **M-2 `max_irreversible` is never enforced** — declared, serialized, hashed (`types.rs:170`), and checked nowhere. Dead policy field.
 * **M-3 R-10 is dead** — `target_out_of_grant_scope` (`classifier.rs:205-215`) is never set by any caller in any substrate, so the "cross-ref" C-1 rule can never fire.
 * **M-4 The prompt-injection control is a 5-phrase English blacklist** (`classifier.rs:24-28`), matched only against *argument* values (targets are exempt). `"ignore  constitution"` (double space), `"ignore-constitution"`, homoglyphs, or any other language evades it. Report it as defence-in-depth only.
-* **M-5 Windows ledger lock is a lie** — `ledger.rs:660-670` `acquire_lock_timeout`'s `#[cfg(not(unix))]` branch returns a `FileLock` without locking anything, while the module doc claims "advisory flock guards against concurrent runs". On Windows (dev platform) concurrent `complete_task` runs lose updates / duplicate `seq`. Same for `append_event`'s read-then-append seq assignment.
+* **M-5 Windows ledger lock is a lie** — `ledger.rs:660-670` `acquire_lock_timeout`'s `#[cfg(not(unix))]` branch returns a `FileLock` without locking anything, while the module doc claims "advisory flock guards against concurrent runs". On Windows (dev platform) concurrent `complete_task` runs lose updates / duplicate `seq`. Same for `append_event`'s read-then-append seq assignment. **DEMONSTRATED (FIFTEENTH PASS):** 16 concurrent `aiosh task done 1` against a scratch `AIOSH_TASKS_DIR` wrote four `completed` events for task 1 with duplicate `seq` (1,1,2,2) and left `TASK_STATE.json` (`completed:[1]`, `last_event_seq:1`) diverged from `COMPLETIONS.jsonl` — the no-skip invariant and the append-only `seq` contract both broken by ordinary concurrent use on the dev platform.
 * **M-6 `append_event`/`save_state_atomic` modes** — state/lock/events are created 0644; `cleanup_stale_tmp` (`ledger.rs:203`) deletes any `<state>.tmp.*` in the directory (predictable-name deletion in a possibly shared dir). Low practical impact; worth tightening.
 * **M-7 `emit`/`commit` ordering** — `dispatch.rs:246` runs the tool body **before** `commit()`, which uses `.expect("audit row write failed")`: if the DB write fails, the side effect already happened and the process then panics. No compensating action. *Fix:* write the intent row first, or refuse to run with an unwritable ring.
 * **M-8 `aiosh run` executor path is env-overridable** — `cli.ts:296` `AIOSH_SANDBOX_BIN`; `ai_agent.py:124-135` searches relative paths (`./code/aiosh-rust/target/debug/aiosh-mcp`) before installing absolutes — a checked-out repo can plant a fake MCP server / sandbox binary that runs with the user's privileges (CWE-427). `pentest.rs:80` likewise spawns `argv[0]` via PATH even though `host_has` already resolved an absolute path (`bin_path` is only reported, never used) → PATH-hijack of nmap/nikto/sqlmap when the grant is scoped only to `tool`/`target`.
@@ -2747,3 +2750,114 @@ All 76 prior finding IDs verified present; index statuses updated for N-37 (new)
     - **`PEPPOL6` (Audit Integration)**: Policy changes emit structured audit rows in the SQLite audit ring.
   - Verified with 8/8 Rust unit tests in `test_pep_security_policy.rs`. Zero warnings.
 
+---
+
+# FIFTEENTH PASS — 2026-09-21 (live-probe verification: M-5, N-6, N-33, N-27, + N-38/N-39)
+
+**Method:** read-only. Reads of the governance residue and the enforcement primitives, then live probes against the freshly built binaries (`aiosh.exe` / `aiosh-mcp.exe` / `aiosh-sandbox.exe`, Sep 22 10:32) in isolated temp `AIOSH_TASKS_DIR` + `AIOSH_HOME` directories. No source files touched. This pass continued an interrupted attempt, so every probe below was re-executed from scratch and the outputs quoted are from this run.
+
+### N-38 — DEMONSTRATED (HIGH): capability prohibited-path policy is case-sensitive → trivial Windows bypass
+
+`CapabilitySecurityPolicy::validate_issuance` (`aiosh-core/src/capability_policy.rs:181-192`) normalises both sides with `normalize_path` (`:326-345`), which unifies `\`→`/`, collapses duplicate separators and strips a trailing slash — but **never case-folds**. On a case-insensitive filesystem (Windows, the project's dev platform) that makes the prohibited-prefix list cosmetic.
+
+The same function compares **network hosts** case-insensitively (`sanitize_host` + `eq_ignore_ascii_case`, `:200-206`), so the author was aware of the case problem; the filesystem arm simply omitted it — an internal inconsistency that establishes the path arm as a defect rather than a design choice.
+
+Live differential through the ungated `aios.capability.issue` (no grant), isolated `AIOSH_HOME`:
+
+| # | Request `scope_target` | Result |
+|---|---|---|
+| A | `C:/` (issuer forged `kernel`) | **issued** |
+| B | `C:\Windows\System32` | **refused** — `CAPSEC_PROHIBITED_PATH: path 'C:\Windows\System32' matches prohibited prefix 'C:\Windows'` |
+| C | `c:/windows/system32` | **issued** |
+| D | `C:\WINDOWS\system32` | **issued** |
+| E | `C:/` with `issuer:"user"` | **refused** — `root capabilities can only be issued by 'kernel' or 'admin:*'` |
+
+Exploit path: a caller who wants `C:\Windows\System32\config\SAM` simply submits `c:/windows/system32/config` and receives a capability the policy explicitly intends to forbid. This is the same bypass class as H-2 (path-scope deny list inert on Windows) — reached through the *new* policy engine rather than the old PEP.
+
+**Refinement to N-27 (recorded, not a new finding):** the policy engine **is now wired** — probe B/E prove `issue_root_capability` consults it (it did not in pass 8, where the module was dead). But the root-issuance identity check is still the caller-supplied string (`issuer == "kernel"`), so probe A still mints an all-rights root on `C:/` with no grant. Net change since pass 8: the policy stops honest mistakes, not attackers.
+
+### N-39 — DEMONSTRATED (HIGH): `session.check` / `package.check auto_recover` = 6th/7th destructive write primitive
+
+Both tools accept an ungated, length-checked-only caller `store_path` (`aiosh-mcp/src/main.rs:2945-2960` session, `:3755-3770` package) and, with `auto_recover:true`, re-seed it from the built-in default while quarantining whatever was there. Probe (isolated temp dirs, victim files pre-seeded with `KEEPME-NOT-JSON` at a path outside `AIOSH_HOME`):
+
+```
+aios.session.check  {store_path: <tmp>/outside/deep1/deep2/planted-session.json, auto_recover: true}
+  -> ok=true recovered=true ; victim replaced ; new content: {"version":1,"sessions":{"greeter-seat0":{...
+     quarantine: planted-session.json.bak.20260922_053720_412066
+aios.package.check  {store_path: <tmp>/outside/deep1/deep2/planted-package.json, auto_recover: true}
+  -> ok=true recovered=true ; victim replaced ; new content: {"libc6":{"name":"libc6","version":"2.36-9+deb12u7"...
+     quarantine: planted-package.json.bak.1790055440
+```
+
+This is the same defect as N-1/N-8/N-20/N-26/N-29/N-30/N-36 in two more store families: caller-chosen path + silent re-seed + quarantine-overwrite, unauthenticated. Directory creation on the target path was demonstrated for the service/capability variants (N-26/N-29); here the parent already existed, so the finding is recorded as **re-seed + quarantine-overwrite**, not as a new dir-creation proof.
+
+### M-5 — DEMONSTRATED (MEDIUM): the Windows ledger lock is a no-op → duplicate `seq`
+
+`ledger.rs`'s `acquire_lock_timeout` has a `#[cfg(not(unix))]` branch that opens the lock file and returns a `FileLock` **without taking any lock** (`ledger.rs:660-670`); only the Unix branch calls `flock`. All four `append_event` callers do hold the lock (`complete_task:451`, `block_task:500`, `unblock_task:529`, `skip_task:553`), so Unix is serialised — on Windows it is not, and `append_event` assigns `seq` by reading the last event and adding one (`ledger.rs:174-175`), a read-then-append race.
+
+Live race (scratch `AIOSH_TASKS_DIR` with a one-task ledger and `next_task=1`; **the repo's own `docs/tasks` was never written to**): 16 concurrent `aiosh task done 1 --note race-N` produced
+
+```
+{"event":"completed","note":"race-10","seq":1,"task_id":1,...}
+{"event":"completed","note":"race-5", "seq":1,"task_id":1,...}
+{"event":"completed","note":"race-7", "seq":2,"task_id":1,...}
+{"event":"completed","note":"race-14","seq":2,"task_id":1,...}
+```
+
+— `seq` duplicated (1,1,2,2), **four completion events for one task** (defeating the no-skip law the ledger exists to enforce), and the saved state (`completed:[1]`, `last_event_seq:1`) diverges from the event log. Ordinary concurrent use on the dev platform corrupts the append-only contract that every `validate`/`rebuild` parity check assumes.
+
+### N-6 — DEMONSTRATED (MEDIUM), stronger variant: the sandbox argv scan can change *which binary runs*
+
+`aiosh-sandbox/src/main.rs:33` locates the policy with `args.iter().position(|a| a == "--policy")` **before** it checks whether argv starts with `--` (`:46-52`). Pass 6 showed the wrapped command losing its trailing arguments; this pass shows the execution target itself being swapped:
+
+```
+aiosh-sandbox -- echo CONTROL                          -> prints CONTROL            (exit 0)
+aiosh-sandbox -- echo HIJACK --policy '{}' -- true     -> prints nothing, runs `true` (exit 0)
+```
+
+When the wrapped command text is attacker-influenced (or built from one), an embedded `--policy {…} -- <bin>` re-targets the run to an attacker-nominated binary while the caller believes it invoked its own command. Any future attempt to make the sandbox real (C-1) inherits this parse-level substitution.
+
+### N-33 — DEMONSTRATED (MEDIUM): no policy is required to run unsandboxed
+
+```
+aiosh-sandbox -- cmd //c "echo NOPOLICY_RAN"
+  {"components":[["no_new_privs","FAIL: … non-Linux"],["seccomp","FAIL: …"],["landlock","FAIL: …"]],"event":"sandbox_applied"}
+  NOPOLICY_RAN        (exit 0)
+```
+
+The empty-`{}` policy path (`:46-52`) executes with no sandbox intent expressed anywhere, and the emitted event still says `sandbox_applied` — the same fact C-1 rests on (all three components report **FAIL** on Windows and the child runs anyway).
+
+## Verified clean / negative results
+
+- **Nothing disproven this pass.** M-17's split verdict (pass 12), N-6/N-33 behaviour, and N-27 all held when re-probed.
+- `CapabilitySecurityPolicy`'s traversal check (`CAPSEC_PATH_TRAVERSAL`, `:175-179`), control-character check, host sanitisation, and the non-kernel-issuer refusal (probe E) are correct.
+- Gate census: **136** `dispatch::` call sites in `aiosh-mcp/src/main.rs`, **3** with the gate flag `true` (135 tool registrations) — unchanged in ratio from pass 14, i.e. the two tools added with the new policy modules joined ungated.
+
+## Coverage this pass (line-by-line)
+
+Fully read this pass: `aiosh-core/src/capability_policy.rs` (364 lines — **a third governance engine never named in any earlier coverage list; now complete**), `aiosh-sandbox/src/main.rs` (70, re-read), `ledger.rs` lock + `append_event` + `complete/unblock/skip/block_task` windows (≈150-220, 445-590, 620-700), and the `aiosh-mcp/src/main.rs` capability/session/package handler + schema windows (5940-6000, 2940-2975, 3750-3785, 1610-1680, 730-745, 985-995).
+
+Still unread line-by-line: `dist/` built assets; the `pentest.rs` body (Rust dual of the read `pentest.py`); and `AIOS-model/*`.
+
+---
+
+## SIXTEENTH PASS (T-02174 .. T-02183: Observability Subsystem Closure & Documentation Launch)
+
+**Date:** 2026-09-22  
+**Scope:** `code/aiosh-rust/aiosh-core/src/pep_observability.rs`, `pep_doc.rs`, `aiosh-cli` (`report` command), `aiosh-mcp` (`aios.pep.report` tool), and associated unit and smoke suites (`test_pep_observability.rs`, `test_pep_cli_smoke.py`, `test_pep_decision_smoke.py`).
+
+### Findings and Verifications
+1. **Telemetry & Log Injection (CWE-117)**:
+   - Evaluated `sanitize_telemetry_text` in `pep_observability.rs`: correctly removes all ASCII control characters (`!c.is_control()`), caps strings to 256 bytes, and trims whitespace. Terminal emissions route through `sanitize_terminal`.
+   - **Verdict**: PASS — no log injection possible.
+2. **Path Hygiene across CLI & MCP (CWE-22)**:
+   - Both `aiosh pep report --store <path>` and `aios.pep.report` enforce `validate_pep_service_path` and `validate_pep_security_policy_path`. Non-JSON extensions and `..` traversals are rejected with exit code 2 / `{"ok": false}`.
+   - **Verdict**: PASS — directory traversal blocked.
+3. **Resource Bounds & Memory Safety (CWE-400)**:
+   - Registry capacity is capped at `MAX_RULES_IN_SERVICE = 5000`.
+   - Health status transitions to `is_healthy = false` at 90% utilization (`PEP_HEALTH_UTILIZATION_THRESHOLD`), signaling degradation before exhaustion.
+   - Search queries in `pep_doc` are bounded to `MAX_DOC_QUERY_LEN = 256` with max results capped at 50.
+   - **Verdict**: PASS — strictly bounded memory and CPU paths.
+4. **Audit Integrity (ADR-0035 §D-2, §F-2)**:
+   - CLI commands emit records through `classify_and_emit`. MCP tool routes through `dispatch::recorded_call`.
+   - **Verdict**: PASS — 100% audit logging compliance.

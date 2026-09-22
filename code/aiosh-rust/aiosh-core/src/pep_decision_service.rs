@@ -89,6 +89,11 @@ impl PepDecisionService {
         self
     }
 
+    /// Returns the backing storage path if configured.
+    pub fn storage_path(&self) -> Option<&Path> {
+        self.storage_path.as_deref()
+    }
+
     /// Total number of rules in the service.
     pub fn len(&self) -> usize {
         self.rules.len()

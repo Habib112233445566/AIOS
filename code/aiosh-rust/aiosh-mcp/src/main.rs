@@ -1865,6 +1865,19 @@ impl Server {
                 "additionalProperties": false
             }
         }));
+        tools.push(json!({
+            "name": "aios.pep.report",
+            "description": "Generate comprehensive PEP Decision Engine observability and health report",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "store_path": { "type": "string", "description": "Optional custom policy store path" },
+                    "policy_path": { "type": "string", "description": "Optional security policy path" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
         tools
     }
 
@@ -6459,6 +6472,9 @@ impl Server {
                         description: desc.clone(),
                     };
 
+                    let sec_policy = aiosh_core::pep_security_policy::PepSecurityPolicy::default();
+                    sec_policy.validate_rule_addition(&rule, false)?;
+
                     service.add_rule(rule.clone())?;
                     service.save_to_path(path)?;
 
@@ -6594,6 +6610,50 @@ impl Server {
                 dispatch::recorded_call(
                     &mut self.ring, &self.pep,
                     "aios.pep.status", "Get PEP status", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.pep.report" => {
+                let store_path_str = arguments.get("store_path").and_then(|v| v.as_str()).unwrap_or(".aios/pep_policies.json").to_string();
+                let policy_path_str = arguments.get("policy_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+                let f = move || -> Result<Value, String> {
+                    let path = std::path::Path::new(&store_path_str);
+                    aiosh_core::pep_decision_service::validate_pep_service_path(path)?;
+
+                    let (service, _rec, _quar) = if path.exists() {
+                        aiosh_core::pep_decision_service::PepDecisionService::load_or_recover(path)
+                    } else {
+                        (aiosh_core::pep_decision_service::PepDecisionService::new(), false, None)
+                    };
+
+                    let policy = if let Some(ref pol_str) = policy_path_str {
+                        let pol_path = std::path::Path::new(pol_str);
+                        aiosh_core::validate_pep_security_policy_path(pol_path)?;
+                        if pol_path.exists() {
+                            aiosh_core::pep_security_policy::PepSecurityPolicy::load_from_path(pol_path)?
+                        } else {
+                            aiosh_core::pep_security_policy::PepSecurityPolicy::default()
+                        }
+                    } else {
+                        aiosh_core::pep_security_policy::PepSecurityPolicy::default()
+                    };
+
+                    let report = aiosh_core::pep_observability::PepObservabilityReport::generate(&service, &policy, "");
+                    report.validate()?;
+
+                    let report_val = serde_json::to_value(&report)
+                        .map_err(|e| format!("Serialization error: {}", e))?;
+
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.pep.report",
+                        "report": report_val,
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.pep.report", "Get PEP observability report", arguments,
                     None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
                 )
             }
