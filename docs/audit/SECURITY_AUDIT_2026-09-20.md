@@ -3383,6 +3383,180 @@ A `PackagePolicyVerdict`/service verdict is the artifact a policy decision is ju
 
 ---
 
+# TWENTY-SECOND PASS — continuation of the contiguous read (2741 → 5286) + the framing region (6973–7575)
+
+**Method:** read-only. No source edits; no probe wrote outside a temp root; the repo's own `docs/tasks` was never touched. All probes ran with `AIOSH_HOME` and `AIOSH_TASKS_DIR` pointed at throwaway temp directories.
+
+**Line-number basis.** File is **10,159 lines** (re-measured this pass; unchanged since pass 21). Landmarks: `impl Server` `:30`, `fn call_tool` `:1901`, `fn call_task` `:6847`, helper functions `:6973-7443`, `fn main()` `:7445`, `#[cfg(test)]` `:7576`. Production code is therefore **1–7575**; tests are **7576–10159** (2,584 lines, still unread).
+
+## Coverage table — updated
+
+| Range | Lines | How | Status |
+|---|---|---|---|
+| `1–2740` | 2,740 | pass 21, four complete windows | **READ line-by-line** |
+| `2741–3586` | 846 | pass 22, one window, complete | **READ line-by-line** |
+| `3587–4436` | 850 | pass 22, one window, complete | **READ line-by-line** |
+| `4437–5286` | 850 | pass 22, one window, complete | **READ line-by-line** |
+| `6973–7575` | 603 | pass 22, one window, complete | **READ line-by-line** (separate region — see below) |
+| `6847–6888` | 42 | pass 22, targeted (`call_task` head) | READ, non-contiguous |
+| `5287–6972` | 1,686 | — | **NOT READ** |
+| `7576–10159` | 2,584 | — | **NOT READ** (test module) |
+
+**Contiguous growth this pass: 2741 → 5286.** Combined with pass 21, the file is now read line-by-line and gap-free across **1–5286** — 52% of the file, 70% of production code.
+
+**The pass-21 debt is paid.** That pass lost ~660 lines (2741→~3400) to a per-file token cap and refused to count them. This pass re-read **2741–5286** in three windows sized so each completed untruncated (`read_files` reported the exact last line of each), so those lines are now genuinely covered rather than inferred.
+
+**Second region, separately read and labelled as such.** `6973-7575` — every helper plus `main()` and the whole stdio/JSON-RPC framing — is **not contiguous** with 2741–5286; the 5287–6972 gap sits between them. It is listed as its own row precisely so the coverage claim stays honest. All of it was read in full: `validate_mcp_string`, `parse_mcp_scope`, `parse_mcp_right`, `row_to_json`, `resolve_fs_layout_service`, `check_kernel_module_path_bounds`, `resolve_kernel_module_service`, `save_kernel_module_service`, `resolve_network_service`, `resolve_update_service`, `resolve_hardware_service`, `parse_hardware_classes`, `read_layout_document_input`, `ensure_inline_payload_bounded`, `fs_layout_path_subjects`, `require_fs_layout_store_path`, `check_fs_layout_store_path_bounds`, `resolve_service_store`, the `MAX_LINE_BYTES`/`Line`/`read_line_capped` framing, and `fn main()`.
+
+**Resume marker for the next pass: start at line 5287** (handler bodies: the capability, PEP, hardware, network and update arm families, plus the rest of `call_task`). **Then** 7576–10159.
+
+## N-49 — the audit ring publishes grant tokens to an ungated reader (HIGH, STATIC)
+
+**Where:** `row_to_json` at `:7031` inserts every field of an `AuditRow` including `m.insert("grant_token".into(), json!(r.grant_token));` at **`:7044`**, and `row_to_json` is the serialiser used by **`aios.audit.tail`** (`arm :4817`, reads `:4818`). That tool is registered ungated and passes `false` for `require_grant` — confirmed in pass 20's runtime census (it is not among the ten gate-refusing tools).
+
+**Exploit path.** A caller with no grant calls `aios.audit.tail {"n": 50}` and receives up to 50 prior audit rows verbatim, each carrying the `grant_token` column of whatever gated operation was recorded — `aios.fs.read`, `aios.session.action`, `aios.session.create`, `aios.audit.rotate`, the `fs_layout` mutations, `backup.restore`. Those tokens are the credentials the gate exists to demand. So the ungated read tool is a **credential-harvesting primitive against the gated surface**, and it needs no exploit beyond the tool's documented function.
+
+**Why this is a read-path finding and not a restatement.** Line 182 of this report already records that the live audit DB is created `0644` while it stores full grant tokens (CWE-276), and lines 260-268 record that `emit()` copies a caller-supplied `grant_token` into the column unvalidated. Both are about *writing* or *file permissions*. Neither covers the fact that a **non-privileged caller of a live tool receives the column over MCP**. That is the disclosure that matters most here, because it needs no filesystem access at all.
+
+**Impact stated honestly.** Whether a harvested token is still *usable* depends on consumption semantics the gate enforces elsewhere (pass 17 established the gate does validate: it answers `unknown or revoked grant: x` for a forged one). A token that is single-use and already consumed is worthless; a token whose scope is time-bounded but not consumed is not. I did not run this live, because doing so would mean writing a real grant token into a temp ring and then echoing it — the static chain is unambiguous (`:7044` serialises the field; `:4817` is ungated; no arm strips the field before returning), so it is recorded STATIC rather than padded with a probe.
+
+## N-50 — arguments that are invalid, unknown or wrong-typed are silently replaced by defaults (LOW-MEDIUM, PARTLY DEMONSTRATED)
+
+A repeated pattern across sibling handlers: where one tool rejects a bad filter value, its sibling silently substitutes something else and still answers `ok:true`. Five instances, all cited:
+
+| Site | Input | Behaviour | Sibling that does it right |
+|---|---|---|---|
+| `:4818` | `aios.audit.tail {"n": "abc"}` | non-integer type is not rejected — `as_i64()` yields `None`, `.unwrap_or(10)` → **silently serves the default 10 rows** | every list tool: `package.list`/`session.list`/`service.list` reject `limit` outside `1..=10_000` |
+| `:3494` | `aios.session.list {"state": "actve"}` (typo) | unknown state → `_ => None` → **filter silently dropped**, unfiltered session list returned | `aios.service.list` returns `Err("unknown service state '…'")` |
+| `:3501` | `aios.session.list {"session_type": "xyz"}` | unknown type → `_ => None` → filter dropped | as above |
+| `:3869` | `aios.fs_layout.get {"profile": "minimal_containr"}` (typo) | `_ => …::standard_uefi()` → **returns a different layout than the one asked for, with `ok:true`** | `parse_hardware_classes` rejects an unrecognised class |
+| `:3930` | `aios.fs_layout.fstab` with a typo'd `profile` | same silent fallback → generates the **wrong fstab**, whose documented purpose is to be written to `/etc/fstab` | as above |
+
+**Why it matters despite the declared schemas.** `aios.fs_layout.get`/`fstab` declare `profile` with an `enum` of exactly two values, so a schema-*validating* client cannot send a typo. But the server does not validate arguments against its own declared schemas — there is no JSON-Schema enforcement anywhere in the framing (see the clean note below) — so the enum is advisory and the fallback is reachable by any caller. A caller who asked for the container layout and received the UEFI layout has no signal that it was substituted: `ok:true`, no warning field, no echo of the requested profile. For `fstab` specifically the consequence is a partitioning document generated for the wrong profile.
+
+**An instance in a gated tool:** `aios.fs.read` (`:4717-4718`) reads `HOME` and falls back to `/tmp` when it is unset — `let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());` — while the sibling `safe_roots` vector already lists `/tmp` unconditionally. So under a service context with no `HOME`, the two "safe roots" collapse to `/tmp` alone, and `/tmp` is world-writable and commonly holds temp credentials. The path check itself is a canonicalised string-prefix test, which is the correct shape; the weakness is the silent widening of what counts as safe.
+
+**Command and observed output (live, temp `AIOSH_HOME`; 25 rows seeded first):**
+
+```
+$ python _probe_p22.py
+--- audit.tail n=3: count=3 ok=True error=None
+--- audit.tail n=-1: count=1 ok=True error=None
+--- audit.tail n=9223372036854775807: count=27 ok=True error=None
+--- audit.tail n='abc' (string): count=10 ok=True error=None
+```
+
+**A hypothesis this probe DISPROVED, recorded rather than dropped.** I expected `n=-1` to defeat a bound and dump the whole table (SQLite `LIMIT -1` means *no limit*). It returned **1 row**. `n = i64::MAX` returned all 27 rows, which is simply what a very large `LIMIT` does and is not a defect. So **there is no unbounded-dump vector in `aios.audit.tail`** and no denial-of-service finding is claimed. What survives — and is what the row above records — is only that the argument is never validated and that a wrong *type* is silently defaulted. The `n` in the report's earlier "audit.tail exposes the ring" notes should not be read as an unbounded read.
+
+## N-51 — capability scope parsing conflates scope types and hardcodes a wildcard action set (MEDIUM, STATIC)
+
+**Where:** `parse_mcp_scope` (`:6983-7016`). Three declared `scope_type` values are collapsed into one variant with an unrestricted action list:
+
+```rust
+"tool" | "pentest" | "audit" => Ok(CapabilityScope::Tool {
+    tool_name: scope_target.to_string(),
+    allowed_actions: vec!["*".to_string()],   // :7006
+}),
+```
+
+Three distinct defects in nine lines:
+
+1. **Conflation.** `scope_type: "audit"` and `scope_type: "pentest"` — both *declared* in the tool schemas (`:1882` area, and the `capability.issue` schema) — are mapped to a **Tool** scope. A capability the operator believes is an *audit* capability is stored and enforced as a tool capability, so any downstream check that switches on the variant sees the wrong thing.
+2. **Hardcoded wildcard.** `allowed_actions: vec!["*"]` is not derived from the request at all: the caller cannot narrow it, and nothing validates it. Every `audit`/`pentest`/`tool` capability carries an all-actions grant.
+3. **Undeclared wire values accepted.** `:7011` accepts `"ipc"`, which appears in no tool schema for `scope_type`; `parse_mcp_right` (`:7018`) likewise accepts `"delete"`, absent from every declared `rights` enum. The parsers are more permissive than the contract they implement.
+
+**Reachability.** `parse_mcp_scope` is called from `:6044` (`aios.capability.issue`), `:6125` (`aios.capability.attenuate` narrowed scope) and `:6215` (`aios.capability.check`), with `parse_mcp_right` alongside at `:6047`, `:6130`, `:6216` — so all three are on the live capability surface, not dead helpers.
+
+**Status STATIC.** The parse is the whole proof — no runtime state is needed to see that `"audit"` yields `Tool { allowed_actions: ["*"] }`. Recorded separately from N-38/N-40 (case-folding in *path containment*) and N-43 (lexical path resolution): this is neither a comparison nor a path issue, it is a **type-conflation plus hardcoded over-grant** in the scope constructor.
+
+## N-52 — an environment variable selects a mutable store path, and the writer creates its parent directories (MEDIUM, STATIC)
+
+**Where:** `resolve_kernel_module_service` and `save_kernel_module_service` (`:7109`, `:7139`), plus a third read at `:5433`:
+
+```rust
+None => std::env::var("AIOSH_KERNEL_MODULE_STORE")
+            .unwrap_or_else(|_| ".aios/kernel_modules.json".into()),
+```
+
+and the save path then does:
+
+```rust
+if let Some(parent) = path.parent() { let _ = std::fs::create_dir_all(parent); }
+```
+
+**Failure trigger.** Every `aios.kernel_module.*` **mutation** (`blacklist`, `unblacklist`, `options`, `autoload`, `unautoload`, `preset.apply`) resolves its target through this function when the caller omits `store_path`. So the write location is chosen **by the server process environment**, not by the caller and not by configuration the caller must hold a grant to change: whoever sets `AIOSH_KERNEL_MODULE_STORE` for the MCP process — a launcher, a wrapper script, a compromised parent, any process that can influence how the server is started — redirects kernel-module configuration writes to a path of their choosing, and the writer creates the missing parent directories. Directory creation at an attacker-nominated path is the aggravating half: the failure is not a refusal, it is a successful write somewhere new.
+
+**Bounds are correctly applied** to the resolved value (`check_kernel_module_path_bounds` re-runs on the env-derived string, `:7112`), so length and control characters are rejected — this is a *path-selection* defect, not a validation bypass, and it is stated that way.
+
+**Status STATIC, not executed.** Demonstrating it means writing a kernel-module store at an environment-nominated location — a real write outside any temp root, which this pass must not perform. (With `AIOSH_KERNEL_MODULE_STORE` pointed *inside* a temp root the probe would be safe and would still prove the mechanism; recorded here so a future pass can run it deliberately rather than accidentally.)
+
+**Cross-reference, no new ID:** this is the **fourth** way the same codebase chooses a store location — caller-supplied (N-1 family), CWD-relative (`.aios/*.json`), hardcoded absolute (N-47), and now environment-supplied. N-47's table should be read together with this entry.
+
+## N-53 — a failed update-state load is converted into a fabricated default state (MEDIUM, STATIC)
+
+**Where:** `resolve_update_service` `:7202`.
+
+```rust
+match SystemUpdateService::load_state_from_dir(&state_dir, service_config.clone()) {
+    Ok(svc) => Ok(svc),
+    Err(_) => Ok(SystemUpdateService::new(
+        "1.0.0",
+        UpdateSlot::SlotA,
+        service_config,
+        "2026-09-20T12:00:00Z",
+    )),
+}
+```
+
+The error is **discarded** (`Err(_)`), and the substitute is not neutral: it asserts a specific version (`1.0.0`), a specific active slot (`SlotA`) and a specific timestamp that is a literal written into the source. `state_dir` is a caller-supplied argument on every update tool (and defaults to the hardcoded `/var/lib/aiosh/updates`, N-47).
+
+**Failure trigger.** Corrupt, truncated, replaced, or permission-denied update state does not surface as an error to the operator — it surfaces as a plausible-looking "we booted 1.0.0 from SlotA on 2026-09-20". For an A/B update engine whose whole job is deciding which slot boots and whether a boot is trustworthy, silently inventing state is worse than failing loudly. It also couples to the `confirm`/`rollback` state machine: pass 19 established those two are *refused* by the state machine before any write, but they are refused based on the state they are handed — and that state may be this fabrication rather than what is on disk.
+
+**Status STATIC.** Proven by the control flow above; demonstrating it would mean planting a corrupt update state directory and reading the fabricated values back, which is safe inside a temp root and is recorded as a candidate probe for the next pass.
+
+## N-54 — a missing or mistyped `store_path` silently becomes a brand-new store (LOW, STATIC)
+
+`resolve_fs_layout_service` returns a **fresh seeded default** when the caller's `store_path` does not exist (`:7083`), and `aios.fs_layout.list`/`get`/`probe`/`diff` use it; `resolve_kernel_module_service` does the same with `KernelModuleStore::new("default", …)` (`:7118`). The fs_layout helper documents this as deliberate ("a store path that does not exist yet yields the seeded default store … rather than an error").
+
+The consequence worth recording is the write half: the mutating tools (`register`/`set_active`/`remove`/`import_fstab`) then call `save_to_path(&store_path)`, so a **typo'd or unintended path does not fail — it is created and populated** with the seeded presets plus the mutation. Combined with N-52's `create_dir_all`, a mistyped path produces a new store tree rather than a diagnostic. The intent is documented, so this is recorded as LOW and as a *design consequence*, not a bug claim.
+
+## N-55 — sibling policy verdicts disagree about what a non-enforcing mode means (MEDIUM, STATIC)
+
+Two handlers answer the same question — "the policy prohibits this item; is it allowed?" — using **contradictory** mode logic:
+
+- `aios.package.policy` `:2913` — `allowed: policy.mode != PackagePolicyMode::Enforcing`
+- `aios.service.policy` `:3279` — `allowed: policy.mode == ServicePolicyMode::Audit`
+
+Because `ok` is set to `verdict.allowed` in both arms, the reported outcome differs by subsystem for the *same* mode:
+
+| Mode | prohibited **package** | prohibited **service** |
+|---|---|---|
+| `Enforcing` | `ok:false` (blocked) | `ok:false` (blocked) |
+| `Audit` | `ok:true` (allowed) | `ok:true` (allowed) |
+| `Permissive` | `ok:true` (allowed) | **`ok:false`** — reported as *not allowed* |
+
+A non-`Enforcing` mode is supposed to be non-blocking — that is what it is for. The service handler alone treats `Permissive` as blocking, so an operator running the whole host in permissive mode gets a *failure* from `aios.service.policy` for a prohibited service while `aios.package.policy` permits a prohibited package. An agent consuming these verdicts cannot learn one consistent rule from them. The two blocks are otherwise near-identical copies (same shape, same `fatal: true`, same fabricated `evaluated_at` constants of N-48), which is how the divergence survived: the logic was copied and then edited in one place.
+
+**Status STATIC.** Both lines are quoted above; no runtime state is required.
+
+## Refinements and corrections (no new IDs)
+
+- **C-6 refinement — `aios.backup.restore` is structurally outside the shared gate, and the code says so.** The arm (`:4758-4785`) does **not** call `recorded_call` at *all*; it invokes `release::restore_backup` directly with a hand-built `ReleaseCtx`, and the source carries the deliberation as a comment block (`:4773-4779`): "*Wait, restore_backup emits a row directly. If we just call it, we don't need recorded_call. Actually, let's just call it directly and return the Result.*" Two consequences C-6's entry should carry explicitly: (a) because `call_tool`'s gate is bypassed, this arm gets **no classifier verdict and no PEP gate** — the refusal path shown elsewhere in this file does not exist here; (b) `constitution_rev: "v0.0"` is **hardcoded** (`:4782`) instead of `self.constitution_rev`, so the restore's audit row records a fabricated constitution revision. (b) is new detail; (a) is the mechanism C-6 asserted and this pass confirms by reading the arm end-to-end.
+- **`aios.task` is served by a second enforcement path — observation, not a finding.** The `tools/call` branch special-cases `tool == "aios.task"` and routes to `server.call_task(&parsed)` instead of `call_tool`, so the task tool never touches `call_tool`'s arms at all. `call_task` (`:6847`) does apply a gate of its own (`dispatch::dispatch` for `metrics`, `:6853`), and pass 21's index already counts `aios.task` among the gated tools — so **no bypass is claimed here**. The recordable observation is duplication: `call_task` hardcodes the actor identity as string literals (`"agent:mcp@aiosh-mcp"`, `"agent:mcp"`) where `call_tool` uses the `dispatch::DEFAULT_ACTOR*` constants, so the two paths can drift apart on the one field that identifies who acted.
+- **The line-based gate census is unreliable and should not be quoted.** Re-running it this pass gives `dispatch::recorded_call` = 136 (a count that includes the test module), `, true,` = 5 and `, true, dispatch::DEFAULT_ACTOR_ID` = 3 — three different numbers for the same question, because the flag and the actor are frequently split across lines. Only pass 20's **runtime** census (146 tools registered, 10 refusing without a grant) is authoritative; the `require_grant` flag read directly off each arm is the second-best source. Recorded so no future pass re-derives a gate count from a grep.
+- **Verified clean in the framing — the transport is the best-hardened part of this file, and I found no defect in it.** `read_line_capped` (`:7401-7443`) enforces `MAX_LINE_BYTES = 1 MiB`, and on overflow it **drains through the newline before returning** so framing is preserved for subsequent requests instead of desynchronising the stream — it replies JSON-RPC `-32700` rather than dying. Parse errors likewise produce `-32700` and the loop continues. `main()` (`:7445`) bounds nothing else and needs to bound nothing else. Notably, `read_layout_document_input` (`:7281`) refuses a document *by type* via `read_bounded_text_file`, and its doc comment explains why: the server is **single-threaded**, so a FIFO named by `spec` previously blocked the entire request loop, and `/dev/zero` streamed until memory was exhausted. That is a previously-fixed unauthenticated transport DoS, fixed in the right place with the rationale written down. **No authentication, session identity, or rate control exists anywhere in the framing** — `initialize` accepts any client and every request carries `dispatch::DEFAULT_ACTOR_ID` — but that is the already-recorded "no per-caller authorization" finding (H-5's entry), not a new one, and it is stated here only so the framing's coverage is complete.
+- **Stretches that yielded nothing (recorded, not skipped):** `:6973-7002` (`validate_mcp_string` — length + control-character rejection, correctly written); `:7031-7069` (`row_to_json` — apart from N-49 the mapping is complete and lossless); `:7088-7098` (`check_kernel_module_path_bounds`); `:7149-7183` (`resolve_network_service` — three optional roots, each bounded before use, defaults `/sys/class/net`, `/proc/net`, `/etc/resolv.conf`); `:7211-7239` (`resolve_hardware_service`); `:7240-7280` (`parse_hardware_classes` — **rejects** an unrecognised class, the fail-closed sibling that N-50 contrasts against); `:7358-7392` (`check_fs_layout_store_path_bounds`, `resolve_service_store`). No defect found in any of them.
+
+## Coverage claim for this pass, stated precisely
+
+**Read line-by-line and gap-free this pass: 2741–5286.** Together with pass 21 that makes **1–5286 (52% of the file, 70% of production code) contiguously read**. Separately and in full: **6973–7575** (helpers, `main()`, framing) — a second region, explicitly *not* contiguous with the first. A 42-line targeted window of `call_task` (`:6847-6888`) is disclosed above and is not part of either claim.
+
+**NOT read: `5287-6972`** (1,686 lines — the capability, PEP, hardware, network and update handler arms, plus most of `call_task`) and **`7576-10159`** (2,584 lines of tests).
+
+**Resume marker: the next pass starts at line 5287**, then continues to 7576 and the test module.
+
+---
+
 ## 22. Post-Audit Addendum: Batch T-02194 through T-02205 Verification
 
 **Date:** 2026-09-22  
