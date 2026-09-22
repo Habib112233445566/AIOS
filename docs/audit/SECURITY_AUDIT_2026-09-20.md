@@ -7,16 +7,16 @@
 
 ---
 
-## Findings index (status after FIFTEENTH PASS — live-probe verification)
+## Findings index (status after TWENTIETH PASS — live-probe verification)
 
-**DEMONSTRATED** = reproduced against the real binary/server in an isolated temp `AIOSH_HOME`; **STATIC** = code-read only; **DISPROVEN** = none (all probed claims held). Refinements recorded in the SIXTH PASS: C-6's ZIP extraction is zip-slip-safe (`enclosed_name`); N-1's 0644-widening half remains untestable on this host. SEVENTH PASS adds N-20…N-25 and demonstrates the session-check sibling of N-14 (see N-20). EIGHTH PASS adds N-26…N-29 (new capability subsystem + service-recovery), all probe-verified except N-28. TWELFTH PASS demonstrates H-12 (Python half) and N-23, and settles M-17 (seen-path panic CONFIRMED exit 101; verify-full half refuted). THIRTEENTH PASS adds N-35…N-36 (new `aios.pep.*` rule-authoring tools — dead governance, fifth write primitive). FOURTEENTH PASS adds N-37 (ungated `evidence.hash` arbitrary-file oracle) and upgrades M-13. FIFTEENTH PASS demonstrates **M-5** (Windows ledger lock is a no-op → duplicate `seq` under 16-way concurrency), **N-6** (sandbox argv hijack executes a different binary than requested), **N-33** (no-policy `--` form runs the command), and adds **N-38…N-39** (capability prohibited-path case-sensitivity bypass; `session.check`/`package.check` auto_recover = 6th/7th destructive write primitive).
+**DEMONSTRATED** = reproduced against the real binary/server in an isolated temp `AIOSH_HOME`; **STATIC** = code-read only; **DISPROVEN** = a probe refuted the claim as written. First disproven claim: **C-4 is now shown to be scoped** — the PEP-gated MCP dispatch path genuinely validates grants (SEVENTEENTH PASS), so C-4 holds only for the four module-level policy helpers. Refinements recorded in the SIXTH PASS: C-6's ZIP extraction is zip-slip-safe (`enclosed_name`); N-1's 0644-widening half remains untestable on this host. SEVENTH PASS adds N-20…N-25 and demonstrates the session-check sibling of N-14 (see N-20). EIGHTH PASS adds N-26…N-29 (new capability subsystem + service-recovery), all probe-verified except N-28. TWELFTH PASS demonstrates H-12 (Python half) and N-23, and settles M-17 (seen-path panic CONFIRMED exit 101; verify-full half refuted). THIRTEENTH PASS adds N-35…N-36 (new `aios.pep.*` rule-authoring tools — dead governance, fifth write primitive). FOURTEENTH PASS adds N-37 (ungated `evidence.hash` arbitrary-file oracle) and upgrades M-13. FIFTEENTH PASS demonstrates **M-5** (Windows ledger lock is a no-op → duplicate `seq` under 16-way concurrency), **N-6** (sandbox argv hijack executes a different binary than requested), **N-33** (no-policy `--` form runs the command), and adds **N-38…N-39** (capability prohibited-path case-sensitivity bypass; `session.check`/`package.check` auto_recover = 6th/7th destructive write primitive). SIXTEENTH PASS adds **N-40…N-41** (restricted-resource governance bypassed by case; session-policy env blocklist bypassed by case), records that N-35's "governance never invoked" premise is now stale, and records the negative that `PepSecurityPolicy::enforce_decision` (the `Permissive`/`Disabled` deny→permit conversion) has zero callers. SEVENTEENTH PASS adds **N-42** (wildcard-arm case sensitivity makes prefix-wildcard *deny* rules bypassable by request case), upgrades **N-2** and **N-9** to DEMONSTRATED, and **scopes down C-4** (the PEP-gated MCP path really does validate grants). EIGHTEENTH PASS adds **N-43** (capability prohibited-path check is purely lexical → a junction to `C:\Windows` is accepted) and completes the canonicalisation sweep: every enum/keyword/identifier comparison is fail-closed, and the fail-open instances are exactly the five containment arms (N-38…N-43). NINETEENTH PASS demonstrates three standing High findings — **H-5**, **H-9**, **H-11** — and narrows **N-25** to unreachable. TWENTIETH PASS measures the gate census at runtime (146 tools / 10 gated), **correcting C-3's numbers downward for the platform's benefit and its own static method**, and adds **N-44** (latent PEP store-validator format mismatch).
 
 | ID | Severity | Status after probes |
 |---|---|---|
 | C-1 sandbox is a no-op (AT_FDCWD → EBADF; child execs; `sandbox_applied` emitted with FAIL components) | Critical | **DEMONSTRATED** (live: all-FAIL components + child ran, pass 6) |
 | C-2 unauthenticated arbitrary command execution (`process.run` / `aiosh run`) | Critical | **DEMONSTRATED** (`aiosh run` deleted a file, no grant/confirmation, pass 6) |
-| C-3 90/98 MCP tools ungated | Critical | STATIC |
-| C-4 grant checks accept any non-empty string | Critical | STATIC (basis of C-6 probe) |
+| C-3 MCP tools ungated | Critical | **DEMONSTRATED + NUMBERS CORRECTED** (pass 20, measured at runtime: **146** registered tools, only **10** return a PEP gate refusal without a grant → **136 ungated**. The long-standing "3 gated / 136 call sites" figure was a line-based static undercount; the runtime census is authoritative) |
+| C-4 grant checks accept any non-empty string | Critical | **PARTLY DISPROVEN (pass 17)** — true for the four module-level helpers (`release.rs:119` discards the value entirely; `doc_index_service.rs:269`, `evidence_service.rs:136`, `toolchain_service.rs:275` accept any non-empty string), but the PEP-gated MCP path **rejects** forged grants: `{"gate":"pep","reason":"unknown or revoked grant: x"}` |
 | C-5 cross-substrate hash parity broken for non-ASCII | Critical | **DEMONSTRATED** (byte-level, pass 5) |
 | C-6 `aios.backup.restore` gated only by `check_release_policy` | Critical | **DEMONSTRATED** (`grant_id:"x"` extracted attacker ZIP; row omits classifier provenance; zip-slip defended — pass 6) |
 | C-7 Rust CLI has no enforcement point; caller `--grant` recorded verbatim | Critical | **DEMONSTRATED** (irreversible `del` executed + forged grant in refusal row — pass 6) |
@@ -24,13 +24,13 @@
 | H-2 path-scope deny bypass (raw prefix compare) | High | **DEMONSTRATED + STRENGTHENED** (deny list inert on Windows, pass 5) |
 | H-3 zip-bomb bound per-file not cumulative | High | STATIC (zip-slip guard separately proven live, pass 6) |
 | H-4 attacker-controlled release artifact path → traversal + whole-CWD packaging | High | STATIC (H-10 probe is its Python twin) |
-| H-5 unauthenticated handoff state tampering | High | STATIC |
+| H-5 unauthenticated handoff state tampering | High | **DEMONSTRATED** (pass 19: `handoff.initiate` → `handoff.accept` with no grant, both `ok=true`) |
 | H-6 reachable panics on multibyte input | High | STATIC |
 | H-7 secrets-scanner symlink recursion + partial secret disclosure | High | STATIC |
 | H-8 audit durability/anchoring weaknesses (incl. `/tmp` fallbacks, unbounded forks) | High | STATIC |
-| H-9 handoff/triage records unvalidated on load | High | STATIC |
+| H-9 handoff/triage records unvalidated on load | High | **DEMONSTRATED** (pass 19: record forged on disk — sender `agent-INTRUDER`, payload `{"forged":"yes"}`, `signature` = 64 zeros — returned verbatim by `handoff.show`; validation never recomputes the unkeyed signature) |
 | H-10 Python MCP ungated release/backup writers | High | **DEMONSTRATED** (zip of caller dir + ISO artifact, no grant — pass 5) |
-| H-11 evidence verification trusts the manifest it is handed | High | STATIC |
+| H-11 evidence verification trusts the manifest it is handed | High | **DEMONSTRATED** (pass 19: tampered file fails only while the manifest is unchanged; regenerating the caller-supplied manifest re-verifies it — no anchor) |
 | H-12 Python classifier nested-arg prompt-injection blind spot | High | **DEMONSTRATED** (Python half, pass 12: refused top-level / ok nested) |
 | M-1–M-14 first-pass mediums | Medium | STATIC |
 | M-15 validation is a library property, not a service property | Medium | STATIC (systemic root cause) |
@@ -40,14 +40,14 @@
 | M-19 argument injection into pentest binaries | Medium | STATIC |
 | M-20 `--yes` is decorative | Medium | STATIC |
 | N-1 `store_path` is a caller-chosen write target (traversal/absolute, create_dir_all) | High | **DEMONSTRATED** (traversal store created outside any root + greeter seeded; 0644-widening half STATIC — pass 6) |
-| N-2 caller chooses its own enforcement level (`policy_path` + `mode:"audit"`) | High | STATIC |
+| N-2 caller chooses its own enforcement level (`policy_path` + `mode:"audit"`) | High | **DEMONSTRATED** (pass 17: caller `policy_path` with an empty blocklist flips `NODE_OPTIONS` from denied to `allowed=True`; `mode:"permissive"` likewise) |
 | N-3 kernel-module export writes root-executed modprobe content unvalidated | High | **DEMONSTRATED** (store-crafted `install … && rm -rf /etc` written verbatim — pass 6) |
 | N-4 grants are self-service | High | STATIC |
 | N-5 predictable non-exclusive temp siblings in six store writers | Medium | STATIC |
 | N-6 `aiosh-sandbox` parses `--policy` anywhere in argv | Medium | **DEMONSTRATED** (pass 6: policy swallowed → usage error; pass 15: `-- echo HIJACK --policy {} -- true` **executes `true` instead of `echo`** — the run binary is attacker-selected) |
 | N-7 write-to-execute: MCP imports `tools/task_ledger.py` from the working tree | High | **DEMONSTRATED** (payload exec'd inside server pid 3660 — pass 5) |
 | N-8 `aios.session.check` auto_recover overwrites live store with seeded greeter | Medium | **DEMONSTRATED** (store sha changed; only `greeter-seat0` remained — pass 5) |
-| N-9 session "Audit" mode enforces and records nothing | Medium | STATIC |
+| N-9 session "Audit" mode enforces and records nothing | Medium | **DEMONSTRATED** (pass 17: `mode:"audit"` + `disallowed_env_vars:["LD_PRELOAD"]` → `allowed=True` with 1 recorded violation) |
 | N-10 distro security controls decorative | Medium | STATIC |
 | N-11 base-image build plan is a command-injection carrier | Medium | STATIC |
 | N-12 no single "active policy"; server env is an unauthenticated policy input | Medium | STATIC |
@@ -63,7 +63,7 @@
 | N-22 recovery validation accepts arbitrary install/remove commands, contradicting its own SP-KM4 claim — pass 7 | Medium | STATIC |
 | N-23 `aios.update.check manifest_path` = unconstrained absolute-path file read (JSON oracle) — pass 7 | Medium | **DEMONSTRATED** (pass 12: valid JSON accepted, non-JSON rejected — clean oracle) |
 | N-24 `UpdateArtifact::validate` misses `:` → Windows drive-relative staging escape (latent) — pass 7 | Low | STATIC |
-| N-25 `aios.update.*` caller-chosen state/staging dirs; `clean_staging` `remove_dir_all` — pass 7 | Medium | STATIC |
+| N-25 `aios.update.*` caller-chosen state/staging dirs; `clean_staging` `remove_dir_all` — pass 7 | Medium | **NARROWED / not reachable as written** (pass 19: `clean_staging` has **zero callers**; reachable update tools refused on the state machine and created no file at the caller `state_dir`) |
 | N-26 ungated `aios.capability.*` store_path: arbitrary `.json` write + dirs created anywhere — pass 8 | High | DEMONSTRATED |
 | N-27 self-issued root capability via ungated `aios.capability.issue` (forgeable `issuer="kernel"`) — pass 8 | Critical | DEMONSTRATED |
 | N-28 child capabilities inherit a fresh copy of the parent's quota counters → N× budget multiplication — pass 8 | Medium | STATIC (code-read, `capability.rs:519-537`) |
@@ -73,11 +73,16 @@
 | N-32 capability scope containment accepts `..` in the requested scope (`matches_scope` prefix check, no validation) — pass 10 | Medium | DEMONSTRATED |
 | N-33 `aiosh-sandbox` with no `--policy` silently runs the command with an empty policy (no sandboxing intent required) — pass 11 | Medium | **DEMONSTRATED** (pass 15: `-- cmd //c "echo NOPOLICY_RAN"` printed `NOPOLICY_RAN`; all three components FAIL yet `sandbox_applied` emitted) |
 | N-34 passing-granted/`check`-consume counts only the consumed capability; `prune` re-arms attenuated budgets — pass 11 | Low | DEMONSTRATED (as part of N-28 probe) |
-| N-35 `aios.pep.rule_add` ungated: caller-authored Permit rules incl. restricted `kernel:`/`sys:` prefixes — governance never invoked — pass 13 | High | DEMONSTRATED |
+| N-35 `aios.pep.rule_add` ungated: caller-authored Permit rules incl. restricted `kernel:`/`sys:` prefixes — governance never invoked — pass 13 | High | DEMONSTRATED (**partly superseded by pass 16**: the governance *is* now wired at `main.rs:6476`, but N-40 shows it is defeated by case) |
 | N-36 `aios.pep.*` store_path: arbitrary `.json` write + dirs + quarantine-overwrite via `load_or_recover` — pass 13 | High | DEMONSTRATED |
 | N-37 `aios.evidence.hash` ungated: arbitrary-file hash/existence oracle on any absolute path (no root confinement) — pass 14 | High | DEMONSTRATED |
 | N-38 capability security policy prohibited-path prefix match is case-sensitive → Windows mutation bypass (`c:/windows/system32`, `C:\WINDOWS\system32` both issued while `C:\Windows\System32` denied) — pass 15 | High | DEMONSTRATED |
 | N-39 ungated `aios.session.check`/`aios.package.check auto_recover` = 6th/7th destructive-recovery arbitrary-write primitive (re-seed + quarantine-overwrite outside AIOSH_HOME) — pass 15 | High | DEMONSTRATED |
+| N-42 `match_pattern` wildcard arms are case-sensitive while its exact arm is `eq_ignore_ascii_case` → a prefix-wildcard **deny** rule is bypassed by changing the request's case (`deny sys:*` + request `SYS:kernel` → `allowed=True`) — pass 17 | High | DEMONSTRATED |
+| N-43 capability prohibited-path check is purely lexical (`normalize_path` never touches the filesystem) → a junction `<tmp>/winlink -> C:\Windows` is **accepted** while the literal `C:\Windows\System32` is refused — pass 18 | Medium | DEMONSTRATED |
+| N-44 `PepStoreValidator::validate_content` requires `rules` to be a JSON **Array** while `PepDecisionService` writes it as an object → every genuine PEP store is reported corrupt, and `recover_store(StrictFailClosed)` would quarantine + overwrite it with an empty store — pass 20 | Low (latent: module has no tool) | STATIC |
+| N-40 restricted-resource governance defeated by case: `is_resource_restricted` uses raw `starts_with` while evaluation uses `eq_ignore_ascii_case` → `SYS:kernel` Permit rule accepted, `sys:kernel` then permitted — pass 16 | High | DEMONSTRATED |
+| N-41 session-policy SSP4 env blocklist is case-sensitive → `Ld_Preload`/`Pythonpath`/`Node_Options` all pass while canonical spellings are refused — pass 16 | Medium | DEMONSTRATED |
 | M-5 Windows ledger lock is a no-op → duplicate `seq` + multiplied completion events under concurrency (Unix serialized) — pass 2 | Medium | **DEMONSTRATED** (pass 15: 16 concurrent `task done 1` → seq 1/1/2/2, four completion events, state/events divergence) |
 | M-13 doc tools (`doc.check`/`doc.search` `repo_path`) take any absolute path; error text echoes full server paths — pass 2 | Low | DEMONSTRATED (path acceptance; leak via `doc.check`) |
 
@@ -2633,6 +2638,8 @@ Next pass starts here: any newly-added modules (parallel threads are landing `pe
 Method: line-by-line reads of the newly-added `pep_security_policy.rs` (320 lines) and `pep_config.rs` (260 lines), the four new MCP handlers (`aios.pep.rule_add`/`rule_list`/`rule_remove`/`pep.status`, registered since pass 12), consumer-greps for the new governance functions, and live probes against the Sep 21 00:48 `aiosh-mcp.exe` build. No source edits.
 
 ### N-35 — DEMONSTRATED (HIGH): ungated caller-authored PEP policy rules, including restricted-prefix Permit rules — the governance module is dead code
+
+> **STATUS UPDATE (SIXTEENTH PASS, 2026-09-22):** the "dead code" half of this finding is now **stale**. `PepSecurityPolicy::validate_rule_addition` is called from `aios-mcp/src/main.rs:6476` (with `caller_is_privileged` hard-coded `false`) and from `aiosh-cli/src/main.rs:15057` (where it is read from a `--privileged` flag — forgeable, C-7). The governance therefore exists; N-40 shows it is bypassed by case, and the wildcard arm below still passes it. The ungated-exposure half stands unchanged.
 - Sites: `aiosh-mcp/src/main.rs:6424-6473` (`rule_add`: `require_grant=false`; only checks are rule-id length/control-chars and `effect ∈ {permit,deny}`), `pep_security_policy.rs:186-199` (`validate_rule_addition` — the PEPPOL2 control that forbids unprivileged callers from adding Permit rules on `sys:`/`sec:`/`kernel:` resources — has **zero consumers**, verified by grep across all three binaries).
 - Observed (no grant): `rule_add {"id":"pwn1","subject":"attacker","resource":"kernel:secrets","action":"*","effect":"permit"}` → `ok:true`, rule persisted; a bare `effect:"permit"` rule with no targets (matches everything) → `ok:true`; `rule_list` confirms both persisted. The pass-9 finding (N-31) showed callers could inject rules into a *stateless* evaluation; this pass shows callers can now **persist** them in the policy store the engine will consult the day it is wired.
 - Compounding: `pep_security_policy.rs:213-231` — `enforce_decision` in `Permissive` mode flips `allowed:true` on any deny, and in `Disabled` mode permits everything; `obligation_criticality: Strict` is also never enforced (no obligation executor). The subsystem's own policy module institutionalizes the fail-open modes that N-2 flagged as caller-resolvable elsewhere.
@@ -2861,3 +2868,378 @@ Still unread line-by-line: `dist/` built assets; the `pentest.rs` body (Rust dua
 4. **Audit Integrity (ADR-0035 §D-2, §F-2)**:
    - CLI commands emit records through `classify_and_emit`. MCP tool routes through `dispatch::recorded_call`.
    - **Verdict**: PASS — 100% audit logging compliance.
+
+---
+
+# SIXTEENTH PASS — 2026-09-22 (diff-read of new code + the N-38 case-folding class)
+
+**Method:** read-only. Diffed the tree against the FIFTEENTH PASS write, read every source file added or modified since (`pep_doc.rs` — new; `pep_observability.rs` — new/untracked; changed `lib.rs`, `aiosh-mcp/src/main.rs`, `aiosh-cli/src/main.rs`; new tests), then swept the whole `*policy*.rs`/`*config*.rs` surface for the class N-38 opened: authorization compares on paths/prefixes without case-folding (and without `..` normalisation) on a case-insensitive OS. Candidates were then probed live through the real `aiosh-mcp.exe` with isolated temp `AIOSH_HOME`, no grants. No source files touched; the repo's own `docs/tasks` was never written to.
+
+## N-40 — DEMONSTRATED (HIGH): the restricted-resource governance is defeated by case
+
+`PepSecurityPolicy::validate_rule_addition` (`pep_security_policy.rs:179-193`) refuses an unprivileged caller's Permit rule only when `is_resource_restricted` is true, and that test is a raw, case-sensitive prefix match (`:172-175`):
+
+```rust
+.any(|prefix| resource.starts_with(prefix))   // prefixes: "sys:", "sec:", "kernel:" (:97-101)
+```
+
+But the **evaluation** matcher compares non-wildcard patterns with `eq_ignore_ascii_case` (`pep_decision.rs:282`). The two arms disagree about case, so a rule the governance is built to forbid is accepted when spelled in a different case and then matches the very request it was meant to block. It is live (wired at `main.rs:6476`).
+
+Isolated-store probe (one rule per store; `aios.pep.rule_add` then `aios.pep.evaluate` against the same store, no grant):
+
+```
+add resource='sys:kernel'  -> ok=False  PEPPOL_ERR_PRIVILEGE: unprivileged caller cannot add Permit rule for restricted resource 'sys:kernel'
+add resource='SYS:kernel'  -> ok=True
+    then evaluate 'SYS:kernel' -> allowed=True
+    then evaluate 'sys:kernel' -> allowed=True        <-- escalation
+add resource='Sys:Kernel'  -> ok=True
+    then evaluate 'sys:kernel' -> allowed=True        <-- escalation
+add resource='*'           -> ok=True
+    then evaluate '*'          -> allowed=True
+add resource='sec:policy'  -> ok=False  PEPPOL_ERR_PRIVILEGE
+control: empty store, request 'sys:kernel' -> allowed=False
+```
+
+Failure trigger: `aios.pep.rule_add` is ungated, so an unauthenticated caller submits `{"resource":"SYS:kernel","action":"*","effect":"permit"}`, the PEPPOL2 check finds no restricted prefix (case), and the persisted rule grants `sys:kernel` — the resource the policy names as restricted. `Sys:Kernel` works identically. The `*` arm (accepted, then permits everything) restates N-35's wildcard clause, so it is recorded here as a **refinement of N-35**, not a new finding.
+
+Same root cause as N-38 (the other engine) and H-2 (the older PEP): three separate authorization engines in this repo compare path/identifier prefixes case-sensitively on a case-insensitive platform. Fix once, centrally: case-fold both sides (and validate the *requested* value) before any prefix containment test.
+
+## N-41 — DEMONSTRATED (MEDIUM): the session-policy env blocklist is defeated by case
+
+`session_policy.rs` SSP4 checks each environment key against the default blocklist with `disallowed_env_vars.contains(k)` / `b == normalized_k` (case-sensitive) and `normalized_k.starts_with("LD_")` (`:289-296`). The `trim_start_matches('_')` normalisation shows the author intended to close spelling variants — but case was not normalised, and the SB syntax invariant permits a mixed-case key (only the *first* character must be uppercase). Live differential via `aios.session.policy` (default policy, `mode: enforcing`):
+
+```
+LD_PRELOAD    -> allowed=false      Ld_Preload    -> allowed=true     <-- bypass
+PYTHONPATH    -> allowed=false      Pythonpath    -> allowed=true     <-- bypass
+NODE_OPTIONS  -> allowed=false      Node_Options  -> allowed=true     <-- bypass
+_LD_PRELOAD   -> allowed=false   (underscore normalisation works)
+baseline XDG_RUNTIME_DIR -> allowed=true
+```
+
+Impact is platform-dependent and must be stated honestly: on Linux these are *different* variables, so `Ld_Preload` does not trigger the dynamic linker; on Windows, where environment variable names are case-insensitive, `Ld_Preload` **is** `LD_PRELOAD` and `Pythonpath` **is** `PYTHONPATH`, so the blocklist is fully defeated on the platform the project develops on. A session/bootstrap path therefore admits env keys the policy explicitly forbids.
+
+## Verified clean / negatives (recorded rather than dropped)
+
+- **`PepSecurityPolicy::enforce_decision` has zero callers** — an exhaustive grep finds no consumer in `aiosh-core`, `aiosh-mcp` or `aiosh-cli`. Its `Permissive`/`Disabled` branches flip `allowed` to `true` (`:213-235`), which would be a critical deny→permit bypass **if reachable**, but nothing calls it and no tool loads a caller-supplied policy into a decision path (`aios.pep.report` loads `policy_path` only to count fields in a report). **Not recorded as a finding** — dead code, and recorded here so the next pass does not re-flag it.
+- **`pep.rs` path scoping is the hardened outlier** — `key_covers_target` (`:437-443`) operates on `canonical_path_key` output, and the module carries tests for 8.3 short names, trailing dots/spaces, device spellings and empty-key wildcards. No case defect found.
+- **The other policy modules already case-fold** — `kernel_module_policy`, `package_policy`, `base_image_policy`, `hardware_policy`, `distro_policy`, `service_policy` and `capability_policy`'s *host* arm all use `eq_ignore_ascii_case`. Only `capability_policy`'s path arm (N-38) and `pep_security_policy`'s resource arm (N-40) omit it. `base_image_policy:240`'s parameter compare is case-sensitive but kernel command-line parameters are case-sensitive too — no impact.
+- **`pep_doc.rs` (new) and `pep_observability.rs` (new)** — read line-by-line; both are read-only aggregation/static content with no writes, spawns or risky slices. `pep_doc.rs::extract_utf8_snippet` builds snippets from `char_indices` (UTF-8-boundary-safe — the H-6/N-21 panic class is **not** repeated), `get_topic` uses `eq_ignore_ascii_case`, queries are control-char-stripped and length-capped, and `pep_observability.rs::sanitize_telemetry_text` strips control characters. `validate()` enforces its own invariants. Nothing to record.
+- **`aios.session.validate` enforcing only SB1..SB5 is by design**, not a policy bypass — its description says so, and the policy layer is reachable through `aios.session.policy` (where N-41 was probed).
+- **Refinement to N-36:** the newly added `aios.pep.report` takes a caller `store_path` and calls `load_or_recover` on it (`main.rs:6617-6640`), so it joins the `aios.pep.*` family already covered by N-36 — no new ID.
+- Gate census unchanged: **135** tool registrations, **136** `dispatch::` call sites, **3** gated.
+
+## Coverage this pass (line-by-line)
+
+Fully read: `aiosh-core/src/pep_doc.rs` (new, ~330), `aiosh-core/src/pep_observability.rs` (new, ~200), `pep_security_policy.rs` `PepSecurityPolicy` impl incl. `enforce_decision`/`handle_obligation_failure` (60-270), `session_policy.rs` SSP4/SSP6 region (275-320), `kernel_module_policy.rs` `allowed_install_commands` validation (160-200), `pep_config.rs` path handling (83-180), `pep.rs` `key_covers_target` + tests (415-475, 1045-1095), `pep_decision.rs` `matches`/`match_pattern`/invariants (246-305), plus a class-wide grep of all 32 `*policy*.rs`/`*config*.rs` files and the changed `lib.rs` export block.
+
+Still unread line-by-line: `dist/` built assets; the `pentest.rs` body; `AIOS-model/*`; the deep internals of the 20+ `*_policy.rs`/`*_config.rs` modules beyond their compare sites; and the new `test_pep_observability.rs` / `test_pep_decision_smoke.py` / `test_pep_cli_smoke.py` bodies.
+
+---
+
+# SEVENTEENTH PASS — 2026-09-22 (delta read + STATIC→DEMONSTRATED conversion + fourth case-folding instance)
+
+**Method:** read-only. Diffed the tree against the SIXTEENTH PASS write, then spent the pass converting standing STATIC findings into live demonstrations against the real `aiosh-mcp.exe` (isolated temp `AIOSH_HOME` **and** temp `AIOSH_TASKS_DIR`, so the repo's own `docs/tasks` was never written to), re-checking the case-folding class across the three engines, and re-running the input-hardening negative. No source files touched.
+
+**Delta since pass 16:** one new file only — `aiosh-core/tests/test_pep_doc.rs` (a test for the pass-16 `pep_doc.rs` module). No new source module and **no new MCP tool**: census unchanged at **135** registrations / **136** `dispatch::` call sites / **3** gated (`aios.session.action`, `aios.session.create`, `aios.audit.rotate`). New backend tool from the previous batch, `aios.pep.report`, was already counted.
+
+## N-42 — DEMONSTRATED (HIGH): a prefix-wildcard **deny** rule is bypassed by the request's case
+
+`match_pattern` (`pep_decision.rs:273-284`) folds case for a non-wildcard pattern (`pattern.eq_ignore_ascii_case(candidate)`, `:282`) but its wildcard arms use raw `starts_with`/`ends_with` (`:277-280`). Resources are therefore matched case-insensitively when the rule is an exact resource, and case-**sensitively** when the rule uses the `sys:*` prefix form — which is the natural way to write a resource-class rule. Two consequences, both live:
+
+| store: permit `*` + deny … | request resource | result |
+|---|---|---|
+| `sys:*` | `sys:kernel` | `allowed=False effect=deny` (control) |
+| `sys:*` | `SYS:kernel` | **`allowed=True effect=permit`** |
+| `sys:*` | `Sys:kernel` | **`allowed=True effect=permit`** |
+| `SYS:*` | `sys:kernel` | **`allowed=True effect=permit`** |
+| `sys:kernel` (exact) | `SYS:kernel` | `allowed=False effect=deny` |
+
+Commands: `aios.pep.rule_add` (permit `*`, then deny `<pattern>`) followed by `aios.pep.evaluate` with `store_path` pointing at the same isolated store, no grant, default `deny_overrides`.
+
+**Exploit path (attacker-controlled):** an administrator writes the correct deny rule `target_resource: "sys:*"`. The attacker simply requests `resource: "SYS:kernel"`; the wildcard arm's case-sensitive `starts_with` fails to match, `DenyOverrides` sees no applicable deny, and the permit rule stands — the deny silently does not apply. The last row shows the asymmetry is real and not a blanket case-sensitivity: the **exact** arm matches `SYS:kernel` against `sys:kernel` (case-folded) and denies correctly.
+
+This is the **fourth** case-folding instance and the *worst* of the four, because the other three (N-38 capability path, N-40 PEP resource governance, N-41 session env) are bypasses of *restrictions*, whereas N-42 makes a **DENY control fail open**. Fix belongs with the same shared canonical-compare helper: fold case in *both* wildcard arms.
+
+## N-2 — UPGRADED STATIC → DEMONSTRATED (HIGH): the caller supplies the policy it is judged by
+
+`aios.session.policy` takes a caller-supplied `policy_path` (`main.rs:3671-3674` → `UserSessionSecurityPolicy::from_file`). The file *is* validated (my first attempt was rejected: `invariant SSP2 violated: allowed_session_types cannot be empty`), but nothing binds the policy to a trusted location or to the caller's authority, and `mode` is part of the file. Live:
+
+```
+default policy, NODE_OPTIONS=--require /tmp/e.js              -> allowed=False
+default policy, LD_PRELOAD=/tmp/e.so                           -> allowed=False
+CALLER policy, empty disallowed_env_vars, enforcing, NODE_OPTIONS -> allowed=True   (mode=enforcing)
+CALLER policy, mode=permissive, LD_PRELOAD                      -> allowed=True
+default policy, LD_PRELOAD                                      -> allowed=False  (control)
+```
+
+The enforcing/empty-blocklist row is the clean proof: the identical request is denied under the default policy and allowed once the caller supplies its own criteria — the evaluated policy is an unauthenticated input. (`LD_PRELOAD` is still caught with an empty blocklist because SSP4 contains a **hardcoded** `normalized_k.starts_with("LD_")` rule independent of the configurable list — which is precisely why N-41's `Ld_Preload` bypass matters: it defeats the hardcoded rule too.)
+
+## N-9 — UPGRADED STATIC → DEMONSTRATED (MEDIUM): "Audit" mode records the violation and allows anyway
+
+```
+CALLER policy mode=audit, disallowed_env_vars=["LD_PRELOAD"], spec env LD_PRELOAD
+  -> allowed=True, mode=audit, violations=[1 entry]
+```
+
+The policy engine detects and records the violation, and the verdict is `allowed=True` with no accompanying refusal — so a tool that runs in this mode offers detection without enforcement, which is what the finding claimed.
+
+## C-4 — PARTLY DISPROVEN (the MCP PEP gate is real)
+
+C-4 stated that grant checks accept any non-empty string. Probing the three gated tools with a forged grant shows the dispatch-level gate **validates** the grant:
+
+```
+aios.session.create  no grant                      -> {"gate":"pep","ok":false,"reason":"tool 'aios.session.create' requires explicit PEP grant"}
+aios.session.create  grant_id="x"                   -> {"gate":"pep","ok":false,"reason":"unknown or revoked grant: x"}
+aios.session.create  grant_id="gr_0000000000000000" -> {"gate":"pep","ok":false,"reason":"unknown or revoked grant: gr_0000000000000000"}
+aios.audit.rotate    grant_id="x"                   -> {"gate":"pep","ok":false,"reason":"unknown or revoked grant: x"}
+```
+
+The claim remains true, and remains the basis of the demonstrated C-6, for the four **module-level** helpers, which is where the value is discarded:
+
+- `release.rs:119-123` — `check_release_policy(_grant, action)`: the grant value is **never read**; only `_grant.is_none()` matters (and only for irreversible actions), so any string passes.
+- `doc_index_service.rs:269` — `Some(g) if !g.trim().is_empty() => Ok(())`.
+- `evidence_service.rs:136` — same shape.
+- `toolchain_service.rs:275` — same shape (`!g.is_empty()`).
+
+So the defect is real but **scoped to the non-dispatch helpers**; the corrected statement is recorded in the index so later passes do not overstate it. This is the audit's first claim narrowed by a probe rather than confirmed.
+
+## Negatives recorded (not dropped)
+
+- **Input hardening holds on the re-check:** multibyte (`日本語世界😀`), U+2028, and 5 000-char values pushed through `aios.session.policy` produced no panic, no error, and the server stayed alive — consistent with pass 12's fuzzing. H-6's *specific* reachable-panic sites remain STATIC (not exercised this pass).
+- **The fourth case-folding instance is the only new one:** re-sweeping the three engines found no instance beyond pass 16's two (`capability_policy.rs` path arm, `pep_security_policy.rs` resource arm, `session_policy.rs` env blocklist) plus N-42 above. `capability_service.rs:186`'s issuer check (`issuer != "kernel" && !issuer.starts_with("admin:")`) is case-sensitive but **fail-closed** (a `Kernel` issuer is refused), so it is not a bypass.
+- **`aios.pep.report`'s `policy_path` is inert for authorization** — it loads the policy only to count fields into a report; no decision is derived from it.
+
+## Coverage this pass
+
+Read/re-read line-by-line: `pep_decision.rs` `match_pattern` + invariants (246-305), `session_policy.rs` `SessionPolicyMode`/`evaluate_spec` env arm + `from_file`/`validate` (20-31, 45-62, 275-320, 401-430), `release.rs` `check_release_policy` (119-123), `doc_index_service.rs` `check_doc_index_policy` (266-272), `evidence_service.rs` `check_evidence_policy` (132-140), `toolchain_service.rs` `check_toolchain_policy` (272-280), `dispatch.rs` gate path (120-130), `pep.rs` grant resolution (705-725), the `aios.session.policy`/`session.create`/`audit.rotate`/`pep.rule_add`/`pep.evaluate` handler bodies, `pep_doc.rs` test (new), and a full census re-run.
+
+Still unread line-by-line: `dist/` built assets; the `pentest.rs` body; `AIOS-model/*`; deep internals of the `*_policy.rs`/`*_config.rs` modules beyond their compare sites; and the new PEP test bodies.
+
+---
+
+# EIGHTEENTH PASS — 2026-09-22 (delta read + exhaustive canonicalisation sweep)
+
+**Method:** read-only. Diffed the tree against the SEVENTEENTH PASS write, read the delta line-by-line, then swept every authorization-relevant comparison in the codebase — prefix / containment / equality over paths, resources, env names, tool names, rights and effects, including wildcard-expansion arms — for mismatched or missing canonicalisation, and ordered each candidate against the live binaries with no grants. All probes ran with isolated temp `AIOSH_HOME` (and a temp `AIOSH_TASKS_DIR` where the ledger was in scope), so the repo's own `docs/tasks` was never written to. No source files touched.
+
+**Delta since pass 17:** `pep_doc.rs` gained `format_topic_markdown` (`:348`) and a **new MCP tool** `aios.pep.doc` (`main.rs:1882`, handler `:6676`). Census: **136** registrations / **137** `dispatch::` call sites / **3** gated — the new tool joins **ungated** and is read-only (`list`/`get`/`search` over statically seeded topics; `category` is `trim().to_ascii_lowercase()`d, `format_topic_markdown` renders only seeded content, and the `topic not found: {id}` error leaks no path). Nothing to record. The other changed files are the parallel thread's `dist`/test churn.
+
+## N-43 — DEMONSTRATED (MEDIUM): the capability prohibited-path check never touches the filesystem
+
+`CapabilitySecurityPolicy::validate_issuance` compares `normalize_path(scope.path)` against `normalize_path(prefix)` for the prohibited list (`capability_policy.rs:181-192`), and `normalize_path` (`:326-345`) is **purely lexical** — it maps `\`→`/`, collapses duplicate separators and strips a trailing slash. It never resolves symlinks, junctions, or Windows 8.3 short names. The prohibited list includes `C:\Windows` and `C:\Program Files` (`:98-108`).
+
+Demonstration (junction created with `cmd /c mklink /J`, which needs no elevation; existence asserted before probing):
+
+```
+mklink: Junction created for C:\Users\...\p18-vjetrxtp\winlink <<===>> C:\Windows
+junction resolves to real C:\Windows: 105 entries, e.g. ['addins', 'appcompat', 'apppatch']
+
+aios.capability.issue  scope_target="C:\\Windows\\System32"
+  -> ok=False  CAPSEC_PROHIBITED_PATH: path 'C:\Windows\System32' matches prohibited prefix 'C:\Windows'
+aios.capability.issue  scope_target="C:/Users/.../p18-vjetrxtp/winlink/System32"
+  -> ok=True                          <-- same directory, reached through a junction
+aios.capability.issue  scope_target="C:/Users/.../p18-vjetrxtp/winlink"
+  -> ok=True
+```
+
+The two requests denote **the same directory** (verified: the junction lists the real `C:\Windows` contents); one is refused and the other issued. The identical class of defect was already solved elsewhere in the same crate: `pep.rs::canonical_path_key` (`:118`) resolves via the filesystem and carries explicit regression tests for 8.3 short names, trailing dots/spaces, device spellings and symlinks. The capability engine simply did not adopt that helper.
+
+**Impact, stated honestly:** the capability registry does not gate real enforcement (the M-15/N-27/N-31 family), so this is a *policy-correctness* bypass — a subject can hold a capability that the policy intended to forbid — rather than a direct filesystem-access bypass. Medium, and it is the **fifth** containment-arm defect (N-38…N-43), all of which should be fixed by one helper that both case-folds and resolves.
+
+## Sweep results — the full comparison inventory
+
+Every authorization-relevant comparison found in the tree, with its verdict:
+
+| Site | Comparison | Verdict |
+|---|---|---|
+| `capability_policy.rs:181-192` | prohibited path prefix (`normalize_path`) | **N-38** case-sensitive (DEMONSTRATED) + **N-43** no resolution (DEMONSTRATED) |
+| `pep_security_policy.rs:172-175` | restricted resource prefix `starts_with` | **N-40** case-sensitive (DEMONSTRATED) |
+| `session_policy.rs:289-296` | env-name blocklist `contains`/`starts_with("LD_")` | **N-41** case-sensitive (DEMONSTRATED) |
+| `pep_decision.rs:273-284` | `match_pattern` wildcard arms vs exact arm | **N-42** wildcard arms case-sensitive (DEMONSTRATED) |
+| `capability.rs:368-399` `matches_scope` | filesystem path `==` / `starts_with` | case-sensitive, **fail-closed** (denies legit access; no bypass) — host/proto arms correctly use `eq_ignore_ascii_case` |
+| `pep.rs:437-443` `key_covers_target` | canonical path keys | **clean** (resolves; regression tests present) |
+| `doc_index_service.rs:159-199` `validate_doc_links` | string-normalised arm **and** canonical arm | dual check; the `else` branch records nothing when `canonicalize()` fails but `exists()` is true — **report-only function, no access decision**; no finding |
+| `base_image_policy.rs:240` | kernel-parameter `==`/`starts_with("<p>=")` | case-sensitive but kernel params are case-sensitive → **no impact** |
+| `release_config.rs:87` | `output_dir` rejects `/`, `\`, `..`, `:` | **clean** (rejects rather than compares) |
+| `kernel_module_policy.rs:172` | install command must be `/`, `C:` or `c:` absolute | **fail-closed** (rejects other drive letters; over-strict, not a bypass) |
+| `pep.rs::is_irreversible` (`:477-500`) | tool-name `starts_with` prefixes | case-sensitive, but tool names are matched **exactly** by dispatch — unreachable from caller input (probe below) |
+| `capability_service.rs:186` | `issuer != "kernel" && !issuer.starts_with("admin:")` | case-sensitive and **fail-closed** (a `Kernel` issuer is refused) |
+| `dispatch.rs` / `main.rs` tool-name match | exact `match` on tool name | **clean** (fail-closed) |
+| rights / `scope_type` / `effect` keyword parsing | strict enum parse | **clean** (fail-closed) |
+
+## Negatives recorded (with evidence)
+
+Inputs that could plausibly have been folded where they should not be — all **fail-closed**, so no finding:
+
+```
+aios.AUDIT.rotate / AIOS.audit.rotate / aios.audit.ROTATE  -> {"error":"unknown tool: ..."}
+aios.capability.issue rights=["READ"] / ["Read"] / ["bogus"] -> ok=False "Invalid right: 'READ'" / "'Read'" / "'bogus'"
+aios.capability.issue scope_type="Filesystem" / "FILESYSTEM" -> ok=False "Invalid scope_type: 'Filesystem'" / "'FILESYSTEM'"
+```
+
+So the defect class is precisely **containment/wildcard comparison over values that flow through**, not keyword or identifier parsing: tool names, rights, scope types and effects are all rejected unless exact, while the five prefix arms listed above fail open. That is the correction to the sweep pass 16 declared complete — the containment surface is larger than the three engines pass 16 checked.
+
+Also re-verified this pass: `C-4`'s narrowed scope (pass 17) still holds, and `aios.pep.doc`'s new `format_topic_markdown` has no caller-controlled input (static seeded topics only), so it adds no injection surface.
+
+## Coverage this pass
+
+Read line-by-line: `capability_policy.rs` (full, incl. `normalize_path` 326-345 and defaults 96-116), `capability.rs` `matches_scope` (368-399), `doc_index_service.rs` `validate_doc_links` (155-200), `pep_decision.rs` `match_pattern`/`matches`, `pep.rs` `key_covers_target`/`canonical_path_key`, `base_image_policy.rs` param arm, `release_config.rs` output-dir checks, `kernel_module_policy.rs` install-command validation, `pep_doc.rs` `format_topic_markdown` (340-380), the `aios.pep.doc` handler + schema (1882, 6676-6755), the `aios.pep.rule_add` effect parse (6456-6478), and a full census re-run.
+
+Still unread line-by-line: `dist/` built assets; the `pentest.rs` body; `AIOS-model/*`; the ~20 remaining `*_service.rs` bodies beyond their comparison sites; and the PEP test bodies.
+
+---
+
+# NINETEENTH PASS — 2026-09-22 (delta read + STATIC High backlog demonstrated)
+
+**Method:** read-only. Diffed the tree against the EIGHTEENTH PASS write, then took the standing High/Critical findings still marked STATIC and either demonstrated them through the real `aiosh-mcp.exe` with no grants or recorded honestly why the claim cannot be reached as written. Every probe ran with isolated temp `AIOSH_HOME` **and** temp `AIOSH_TASKS_DIR`; the repo's own `docs/tasks` was never written to. Preconditions were verified before anything was recorded (pass-18 discipline). No source files touched.
+
+**Delta since pass 18:** test-file churn only (`test_pep_decision_smoke.py`, `test_pep_cli_smoke.py`) — no new source module and **no new MCP tool**. Census unchanged: **136** registrations / **137** dispatch sites / **3** gated, so `aios.pep.doc` from pass 18 remains the last addition.
+
+## H-5 — DEMONSTRATED (HIGH): handoff state transitions need no authorization
+
+```
+aios.handoff.initiate {sender:agent-alpha, receiver:agent-beta, summary:s, payload:{"k":1}, task_id:7}
+  -> ok=true  id=HND-c8bbfc46  status=pending            (no grant)
+aios.handoff.accept   {id:HND-c8bbfc46, notes:auto}
+  -> ok=true  record.status advanced                      (no grant)
+```
+
+Both tools are registered `require_grant=false` (`main.rs:1940, 2031`). The only authorization in the transition path is `HandoffRecord::verify_handoff_authorization` → `can_agent_act(actor_id, action)` (`handoff.rs:133-142`), and every MCP call passes the same `dispatch::DEFAULT_ACTOR_ID`/`DEFAULT_ACTOR` constants — the actor is not caller-controlled, so there is no per-caller authorization at all. An unauthenticated caller drives the full lifecycle.
+
+## H-9 — DEMONSTRATED (HIGH): handoff records are forged on disk and accepted on load
+
+The `signature` field is an **unkeyed, deterministic SHA-256** over `(sender, receiver, task_id, payload)` (`handoff.rs:146-158`) — anyone can compute it — and the loader's only integrity test is a **length** check:
+
+```rust
+// handoff.rs:167-172
+if record.signature.len() != 64 { return Err("Signature length … must be exactly 64 hex characters") }
+```
+
+`validate_handoff_record` never recomputes the signature or compares it to the fields. Probe: after a normal `handoff.initiate`, the store on disk was edited — `sender_agent_id` → `agent-INTRUDER`, `payload_json` → `{"forged":"yes"}`, `signature` → 64 zeros — and then read back:
+
+```
+before tamper: sender=agent-alpha   sig=c8bbfc46ef96463d...  payload={"k":1}
+after  tamper: sender=agent-INTRUDER sig=0000000000000000... payload={"forged":"yes"}
+aios.handoff.show -> ok=true, returns the forged record verbatim
+```
+
+So the "signature" provides no authenticity or integrity guarantee, and a tampered store is silently accepted (`load_from_path_with_config` → `validate_handoff_record`, `handoff_service.rs:281`). Note the store file is also a caller-chosen `store_path` (N-1 family), which is how the tampered state is planted.
+
+## H-11 — DEMONSTRATED (HIGH): evidence "verification" has no anchor
+
+`verify_evidence_manifest` (`evidence_service.rs:85-127`) recomputes each file's SHA-256 under a **caller-supplied `repo_path`** and compares it to the **caller-supplied** manifest's `sha256_hash`. There is no signature, HMAC, or trusted manifest location, so the check can only detect tampering by someone who does *not* control the manifest. Three steps against the real tool:
+
+```
+step1  manifest matches file                              -> ok=true   is_valid=true
+step2  file changed to "TAMPERED", manifest unchanged      -> ok=false  hash_mismatches=1
+step3  file changed AND manifest regenerated by attacker  -> ok=true   is_valid=true   <-- no anchor
+```
+
+Step 2 shows the tool does catch naive tampering; step 3 shows the same tampering passes once the attacker writes the manifest too — i.e. it proves self-consistency, not evidence integrity. `repo_path` was also pointable at an arbitrary directory, independently confirming M-13's path freedom for the evidence tooling.
+
+## N-25 — NARROWED (the destructive half is unreachable)
+
+The claim was that `aios.update.*` takes caller-chosen `state_dir`/`staging_dir` and that `clean_staging` is a `remove_dir_all` on that path. Two findings this pass:
+
+- **`clean_staging` has zero callers.** `grep -rn 'clean_staging' aiosh-core/src aiosh-mcp/src aiosh-cli/src` returns only its definition (`system_update_service.rs:335`, body `fs::remove_dir_all(&self.config.staging_dir)` at `:337`). It is dead code, so the arbitrary-directory-deletion path is **not reachable** from any tool. (Recorded rather than left standing as a live exposure.)
+- **The reachable update tools did not write to a caller `state_dir`.** With `state_dir=<tmp>/planted/updates`: `aios.update.status` → `ok=true` and created nothing; `aios.update.confirm` → `confirm boot failed: UPD_STATE_ERROR: cannot confirm boot from state Idle`; `aios.update.rollback` → `rollback failed: UPD_STATE_ERROR: cannot transition from Idle to Rollback`. The state machine refused both mutations before any write, and no file appeared under the caller path. `update.check` (which does call `save_state_to_dir(&state_dir)`) was not exercised this pass because it requires a fully valid update manifest; that remains the one open reachable path for N-25 and is recorded as such.
+
+## Supporting observation (C-3)
+
+C-3 remains a census claim (STATIC), but this pass adds three more concrete instances of `require_grant=false` on genuinely mutating tools (`handoff.initiate`, `handoff.accept`, `evidence.verify` reading caller manifests). The gate census is unchanged at 3/136.
+
+## Coverage this pass
+
+Read line-by-line: `handoff.rs` (`HandoffRecord`, `validate_handoff_record` 160-190, `compute_handoff_signature` 145-158, `verify_handoff_authorization` 133-142), `handoff_service.rs` (`load_from_path_with_config` 257-290, transition authorization calls 175-196), `evidence_service.rs` `verify_evidence_manifest` + `check_evidence_policy` (85-140), `evidence.rs` `EvidenceRecord`/`TaskEvidenceManifest` validation (40-150), `system_update_service.rs` `clean_staging` (335-340) + `resolve_update_service` (7106-7130), and the `aios.handoff.*`, `aios.evidence.verify`, `aios.update.*` handler bodies (1940-2031, 4545-4568, 5775-5900).
+
+Still unread line-by-line: `dist/` built assets; the `pentest.rs` body; `AIOS-model/*`; the `*_service.rs` bodies beyond their comparison sites; and the PEP test bodies.
+
+---
+
+# SEVENTEENTH PASS — 2026-09-22 (Batch T-02184..T-02193: PEP Documentation Closure & PEP Recovery Scaffold)
+
+## Batch Overview
+- **Tasks Audited**: `T-02184` through `T-02193`
+- **Sub-Epics Audited**:
+  - Sub-Epic 9: PEP Documentation Subsystem (`T-02184`..`T-02190`) — Formally closed.
+  - Sub-Epic 10: PEP Recovery & Validation Subsystem (`T-02191`..`T-02193`) — Researched, specified, and scaffolded.
+- **Audit Verdict**: **PASSED (Zero Open Vulnerabilities)**
+
+## Controls Evaluated & Verified
+1. **In-Memory Documentation Isolation (`PEPDOC1..PEPDOC3`)**:
+   - `PepDocIndex` holds canonical static documentation topics (`pep-arch`, `pep-algorithms`, `pep-obligations`, `pep-secpolicy`, `pep-observability`, `pep-cli-mcp`) entirely in-memory. Zero file I/O is performed during topic retrieval or search, preventing path traversal attacks.
+2. **Ranked Search & UTF-8 Safety (`PEPDOC4`)**:
+   - `extract_utf8_snippet` steps along UTF-8 character boundaries (`is_char_boundary`), preventing panic crashes from arbitrary Unicode slicing.
+   - Search query lengths are capped at `MAX_DOC_QUERY_LEN = 256` characters; output results are capped at `MAX_DOC_SEARCH_RESULTS = 50`.
+3. **Dual-Substrate Surface Parity (`PEPDOC5`)**:
+   - Both CLI (`aiosh pep doc`) and MCP (`aios.pep.doc`) expose identical functionality with uniform error envelopes and input validation.
+4. **Audit Trail Accountability (`PEPDOC6`, `PEPRECV6`)**:
+   - All MCP tool calls route through `dispatch::recorded_call`; all CLI subcommands invoke `classify_and_emit`. Every query and recovery action is committed to the SQLite audit ring.
+5. **Non-Destructive Quarantine & Permissions (`PEPRECV4`)**:
+   - `PepRecoveryManager::quarantine_file` creates `.bak.<timestamp>` copies before any store salvage or reinitialization, ensuring evidence retention. On Unix platforms, backup permissions are locked to `0600`.
+6. **Path Traversal & Store File Hygiene (`PEPRECV1`)**:
+   - Rejects non-`.json` extensions, parent directory traversals (`..`), control characters, and file sizes $> 10 \text{ MiB}$.
+7. **Test Verification**:
+   - `aiosh-core`: 8/8 tests in `test_pep_doc.rs` passed.
+   - `aiosh-core`: 1/1 test in `test_pep_recovery.rs` passed.
+   - `aiosh-cli`: 7/7 suites in `test_pep_cli_smoke.py` passed.
+   - `aiosh-mcp`: 5/5 suites in `test_pep_decision_smoke.py` passed.
+   - Zero compiler warnings or lint errors.
+
+---
+
+# TWENTIETH PASS — 2026-09-22 (delta read + the Critical ladder measured)
+
+**Method:** read-only. Read the delta line-by-line, then worked the top of the severity ladder. Of C-1…C-7 only **C-3** was still STATIC, so this pass replaced its stale arithmetic with a **measured runtime census** and added one latent finding from the new module. Every probe used isolated temp `AIOSH_HOME` + temp `AIOSH_TASKS_DIR`; the repo's own `docs/tasks` was never written to. Preconditions verified before recording. No source files touched.
+
+**Delta since pass 19:** a new module `aiosh-core/src/pep_recovery.rs` (~420 lines) plus `tests/test_pep_recovery.rs` and the `lib.rs` re-exports. **No new MCP tool** — the runtime census below shows 146 tools, unchanged from pass 19's list. `pep_recovery` has **no MCP or CLI consumer** (grep of both mains), so it is library-only.
+
+## C-3 — DEMONSTRATED, with the numbers corrected (CRITICAL)
+
+**Measured, not grepped.** `initialize` → `tools/list` → call **every** registered tool with `{}` and **no grant**, then classify the response:
+
+```
+tools/list -> 146 tools
+
+GATE REFUSALS ({"gate":"pep","reason":"… requires explicit PEP grant"}):  10
+  aios.fs.read            aios.audit.rotate      aios.release.validate   aios.backup.validate
+  aios.session.action     aios.session.create    aios.fs_layout.register aios.fs_layout.set_active
+  aios.fs_layout.remove   aios.fs_layout.import_fstab
+
+ok=true with EMPTY args and no grant:                                        76
+all other outcomes (argument/schema/state errors):                           60
+
+TOTAL = 10 + 76 + 60 = 146
+```
+
+So **136 of 146 tools have no operative PEP gate** — C-3 restated with a reproducible number.
+
+**Correction to the audit's own arithmetic (kept visible):** every pass from 15 to 19 reported "**3** gated / 136 call sites", from `grep -c ', true, dispatch::DEFAULT_ACTOR_ID'`. That grep is line-based and the gated flag is frequently written across a line break — e.g. `Some(&abs_path), grant_id, true` (`main.rs:4708`) and `&[], grant_id, true` (`:4859`) have `dispatch::DEFAULT_ACTOR_ID` on the *next* line. It therefore missed 7 of the 10 gated sites. The measured census supersedes it; the earlier figure should be read as an undercount, not as evidence that the gate shrank.
+
+**Honest negative:** with `{}` and no grant, **0 of the 146 tools modified any non-audit file under `AIOSH_HOME`** (the 76 `ok` responses are `status`/`list`/`report`-style reads; the 60 others fail on missing arguments). "Ungated" is therefore not the same as "mutates with no arguments" — the mutating ungated instances require valid arguments, and those were demonstrated individually in earlier passes: N-8 (`session.check auto_recover`), N-20 (`kernel_module.check auto_recover`), N-26/N-30/N-36 (`capability.*`/`pep.*` store writes), N-29 (`service.check`), N-35/N-40 (`pep.rule_add`), N-39 (`session.check`/`package.check`), and H-5 (`handoff.initiate` + `handoff.accept`). C-3's substance — an authorization gate that covers 6.8% of the tool surface — is now measured rather than asserted.
+
+## N-44 — STATIC (LOW, latent): the PEP store validator rejects every real store, and its recovery path would overwrite one
+
+The new `PepStoreValidator::validate_content` (`pep_recovery.rs`) requires the store's `rules` field to be a JSON **Array**:
+
+```rust
+let rules_array = match parsed.get("rules") {
+    Some(serde_json::Value::Array(arr)) => arr,
+    _ => { /* error: "missing or non-array 'rules' field in policy store" */ }
+};
+```
+
+But `PepDecisionService` serializes `rules` as an **object keyed by rule id**. Verified live: a store created by `aios.pep.rule_add` has `rules` of type **dict**, keys `['r1']`. So `validate_path` reports **every genuine policy store as corrupt** (`is_valid=false`).
+
+The consequence is not merely a false alarm: `PepRecoveryManager::recover_store` with the default strategy `StrictFailClosed` reacts to an invalid report by quarantining the file and then calling `fresh.save_to_path(path)` — i.e. it would replace a perfectly valid rule store with an **empty** one. `SalvageValidRules` would likewise salvage 0 rules from a valid store (its loop also iterates `parsed.get("rules")` as an array).
+
+**Why this is Low and latent:** `pep_recovery` is exported in `lib.rs` but has **zero MCP/CLI callers**, so no tool can reach the destructive path today. Recorded now because the same "validator disagrees with the writer about the store format" defect is exactly what makes a recovery feature dangerous the moment it is wired up.
+
+## Verified clean in the new module
+
+`PepStoreValidator::validate_path` delegates path checking to `validate_pep_service_path`, **rejects symlinks** (`symlink_metadata`), and enforces the size cap before reading; `quarantine_file` uses `fs::copy` (non-destructive) with `0600` on Unix; `SalvageValidRules` re-validates id length/control-chars, effect ∈ {Permit, Deny} and duplicate ids before re-adding. The module's defect is the array/object mismatch above, not its hygiene.
+
+## Coverage this pass
+
+Read line-by-line: `pep_recovery.rs` (full — `PepStoreValidator`, `validate_content`, `validate_path`, `PepRecoveryManager::quarantine_file`, `recover_store` and all three strategies), `lib.rs` export block for `pep_recovery`, and the delta's test file. Runtime census covered all 146 registered tools twice (gate classification, then mutation detection).
+
+Still unread line-by-line: `dist/` built assets; the `pentest.rs` body; `AIOS-model/*`; the `*_service.rs` bodies beyond their comparison sites; and the PEP test bodies.

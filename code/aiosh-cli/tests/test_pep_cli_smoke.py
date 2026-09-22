@@ -48,6 +48,7 @@ def test_pep_help():
     assert "rule-remove" in res.stdout
     assert "status" in res.stdout
     assert "report" in res.stdout
+    assert "doc" in res.stdout
     print("PASS: aiosh pep --help")
 
 
@@ -253,6 +254,36 @@ def test_pep_report_cli():
     print("PASS: aiosh pep report CLI integration")
 
 
+def test_pep_doc_cli():
+    # 1. doc list
+    res = run_aiosh("pep", "doc", "list", "--json")
+    assert res.returncode == 0, f"doc list failed: {res.stderr}"
+    data = parse_json_output(res)
+    assert data["code"] == 0
+    assert data["data"]["count"] >= 6
+    topic_ids = {t["id"] for t in data["data"]["topics"]}
+    assert "pep-arch" in topic_ids
+    assert "pep-algorithms" in topic_ids
+
+    # 2. doc show
+    res_show = run_aiosh("pep", "doc", "show", "pep-arch", "--json")
+    assert res_show.returncode == 0, f"doc show failed: {res_show.stderr}"
+    data_show = parse_json_output(res_show)
+    assert data_show["code"] == 0
+    assert data_show["data"]["id"] == "pep-arch"
+    assert len(data_show["data"]["sections"]) >= 1
+
+    # 3. doc search
+    res_search = run_aiosh("pep", "doc", "search", "DenyOverrides", "--json")
+    assert res_search.returncode == 0, f"doc search failed: {res_search.stderr}"
+    data_search = parse_json_output(res_search)
+    assert data_search["code"] == 0
+    assert data_search["data"]["count"] >= 1
+    assert data_search["data"]["results"][0]["topic_id"] == "pep-algorithms"
+
+    print("PASS: aiosh pep doc CLI integration")
+
+
 if __name__ == "__main__":
     test_pep_help()
     test_pep_unknown_subcommand()
@@ -260,5 +291,6 @@ if __name__ == "__main__":
     test_pep_lifecycle()
     test_pep_security_policy_privilege_boundary()
     test_pep_report_cli()
+    test_pep_doc_cli()
     print("=== All PEP CLI tests passed ===")
 

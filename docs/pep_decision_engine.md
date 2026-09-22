@@ -518,6 +518,74 @@ aiosh pep report --store /custom/path/pep_policies.json --json
 2. Telemetry timestamps default to current UTC ISO 8601 when omitted or invalid.
 3. Observability queries are non-destructive and read-only, but still emit an audit event to maintain complete operational observability.
 
+---
+
+## 13. Documentation Subsystem Reference (Sub-Epic 9)
+
+The PEP Documentation subsystem (`aiosh_core::pep_doc`) provides an integrated, offline, zero-dependency reference and topic-query index embedded within the AIOS Security Kernel. It enables autonomous agents, human operators, and security auditors to inspect policy structures, evaluation semantics, combining algorithms, obligation types, and security controls directly from CLI and MCP interfaces.
+
+### 13.1 Key Invariants (`PEPDOC1..PEPDOC6`)
+- **`PEPDOC1` (Comprehensive In-Memory Schema)**: Models documentation as structured `PepDocTopic`, `PepDocCategory`, and `PepDocSection` types with unique slug IDs, markdown-formatted bodies, semantic tags, examples, and normative references.
+- **`PEPDOC2` (Deterministic Taxonomy & Categories)**: Enforces six canonical categories: `Architecture`, `Evaluation`, `Policy`, `Observability`, `Security`, and `Reference`.
+- **`PEPDOC3` (Canonical Seed Topics)**: Pre-seeds six comprehensive canonical topics on startup:
+  1. `pep-arch`: PEP Architecture & Evaluation Flow
+  2. `pep-algorithms`: Rule Combining Algorithms (`DenyOverrides`, `PermitOverrides`, `FirstApplicable`)
+  3. `pep-obligations`: Post-Decision Obligations (`audit_log`, `rate_limit`, `redact_fields`, `custom`)
+  4. `pep-secpolicy`: Administrative Privilege Governance & Security Policies (`PEPPOL1..PEPPOL6`)
+  5. `pep-observability`: Telemetry, Metrics & Capacity Health (`PEPOBS1..PEPOBS6`)
+  6. `pep-cli-mcp`: Dual Substrate CLI & MCP Reference Guide
+- **`PEPDOC4` (Ranked Relevance Search)**: Implements weighted scoring (Title: 10, ID: 8, Summary: 5, Tag: 4, Content: 2) with bounded query length (`MAX_DOC_QUERY_LEN = 256`), result capping (`MAX_DOC_SEARCH_RESULTS = 50`), and UTF-8 safe snippet extraction (`MAX_SNIPPET_LEN = 160`).
+- **`PEPDOC5` (Dual Substrate Parity)**: Exposes identical functionality across `aiosh pep doc` (CLI) and `aios.pep.doc` (MCP tool).
+- **`PEPDOC6` (Fail-Closed Input Sanitization & Audit Invariant)**: Strips control characters, strictly rejects malformed query strings, and records all queries to the SQLite audit ring buffer.
+
+### 13.2 Invocation Examples
+
+#### CLI Usage
+```bash
+# List all available documentation topics
+aiosh pep doc list
+
+# Filter topics by category
+aiosh pep doc list --category architecture
+
+# Display full documentation topic in rendered Markdown
+aiosh pep doc show pep-arch
+
+# Search topics by keyword or concept
+aiosh pep doc search DenyOverrides
+
+# Search with structured JSON output
+aiosh pep doc search DenyOverrides --json
+```
+
+#### MCP Tool Call
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "aios.pep.doc",
+    "arguments": {
+      "action": "search",
+      "query": "DenyOverrides"
+    }
+  }
+}
+```
+
+### 13.3 Constraints and Known Limitations
+1. Documentation topics are held in-memory; dynamic updates to topics require rebuilding or reloading the binary.
+2. Search queries are capped at 256 characters; search results return at most 50 ranked matches.
+3. Snippet generation is UTF-8 safe but strictly truncates beyond 160 characters.
+
+### 13.4 Task Evidence References
+- [T-02184: Implementation Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02184-documentation-implementation.md)
+- [T-02185: Unit Test Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02185-documentation-unit-test.md)
+- [T-02186: Integration Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02186-documentation-integration.md)
+- [T-02187: Security Review Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02187-documentation-security-review.md)
+- [T-02188: Hardening Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02188-documentation-hardening.md)
+- [T-02189: Documentation Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02189-documentation-documentation.md)
+- [T-02190: Verification Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02190-documentation-verification-evidenc.md)
+
 
 
 

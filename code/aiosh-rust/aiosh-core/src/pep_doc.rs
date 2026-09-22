@@ -343,4 +343,39 @@ impl PepDocIndex {
         results.truncate(MAX_DOC_SEARCH_RESULTS);
         results
     }
+
+    /// Formats a topic as readable Markdown.
+    pub fn format_topic_markdown(topic: &PepDocTopic) -> String {
+        let mut out = String::new();
+        out.push_str(&format!("# {}\n\n", topic.title));
+        out.push_str(&format!(
+            "**ID:** `{}` | **Category:** `{}`\n\n",
+            topic.id,
+            topic.category.as_str()
+        ));
+        out.push_str(&format!("{}\n\n", topic.summary));
+
+        for section in &topic.sections {
+            out.push_str(&format!("## {}\n\n", section.title));
+            out.push_str(&format!("{}\n\n", section.content.trim()));
+        }
+
+        if !topic.examples.is_empty() {
+            out.push_str("## Examples\n\n");
+            for ex in &topic.examples {
+                out.push_str(&format!("- `{}`\n", ex));
+            }
+            out.push('\n');
+        }
+
+        if !topic.references.is_empty() {
+            out.push_str("## References\n\n");
+            for r in &topic.references {
+                out.push_str(&format!("- {}\n", r));
+            }
+            out.push('\n');
+        }
+
+        out
+    }
 }

@@ -221,7 +221,7 @@ fn main() {
         Some("capability") | Some("cap") => cmd_capability(&args[1..]),
         Some("pep") => cmd_pep(&args[1..]),
         Some("--help") | Some("-h") | None => {
-            println!("aiosh — AIOS shell CLI (Rust)\n\nUsage: aiosh <status|run|agent|audit|grant|pentest|classify|task|ci|release|backup|toolchain|doc|evidence|repo|secrets|triage|handoff|distro|image|package|service|session|layout|mod|hw|net|update|capability|pep> ...\n\n  aiosh task <status|done|block|unblock|skip|rebuild|check>  Task ledger control\n  aiosh ci <show|failures|check|config|metrics> [--file PATH]  CI smoke reports\n  aiosh release generate  Create bootable ISO\n  aiosh backup create  Create system snapshot zip\n  aiosh toolchain check [--config <path>]  Verify host environment against ToolchainManifest\n  aiosh toolchain show [--config <path>]   Display the resolved ToolchainManifest\n  aiosh doc <show|check|search>  Documentation Index Control\n  aiosh evidence <verify|hash|scan>   Evidence & Audit Trail Control\n  aiosh repo <health|check>  Repository Health Diagnostics\n  aiosh secrets <scan|check> [--config <path>]  Secrets & Access Hygiene Scanner\n  aiosh triage <list|show|record|resolve|ingest|check>  Regression Triage Manager\n  aiosh handoff <list|show|initiate|accept|reject|complete|cancel>  Agent Handoff Protocol Manager\n  aiosh distro <list|show|evaluate|recommend|policy|stats|check>  Linux Distro Selection & Justification Manager\n  aiosh image <list|show|plan|filter>  Linux Base Image Build & Packaging Manager\n  aiosh package <list|show|search|plan|apply|validate>  Linux Package Management & Store Control\n  aiosh service <validate|list|show|status|action|start|stop|restart|reload|order>  Init & Service Supervision Control\n  aiosh session <validate|list|show|status|create|action|activate|lock|unlock|terminate|config>  User Session Bootstrap Control\n  aiosh layout <list|show|validate|check|probe|diff|fstab|register|set-active|remove|import-fstab>  Filesystem Layout & Target Partitioning Manager\n  aiosh mod <list|show|blacklist|unblacklist|options|autoload|unautoload|preset|export>  Kernel Module Management\n  aiosh hw <scan|list|show|summary|verify>  Hardware Detection & Inventory Control\n  aiosh net <list|show|routes|dns|state|up|down>  Network Bootstrap & Interface Control\n  aiosh update <status|slots|check|apply|confirm|rollback>  System Update & Dual-Slot Control\n  aiosh capability <list|show|issue|attenuate|revoke|check|prune>  Capability & Zero-Ambient Authority Control\n  aiosh pep <evaluate|rule-add|rule-list|rule-remove|status|report>  PEP Decision Engine & Policy Control");
+            println!("aiosh — AIOS shell CLI (Rust)\n\nUsage: aiosh <status|run|agent|audit|grant|pentest|classify|task|ci|release|backup|toolchain|doc|evidence|repo|secrets|triage|handoff|distro|image|package|service|session|layout|mod|hw|net|update|capability|pep> ...\n\n  aiosh task <status|done|block|unblock|skip|rebuild|check>  Task ledger control\n  aiosh ci <show|failures|check|config|metrics> [--file PATH]  CI smoke reports\n  aiosh release generate  Create bootable ISO\n  aiosh backup create  Create system snapshot zip\n  aiosh toolchain check [--config <path>]  Verify host environment against ToolchainManifest\n  aiosh toolchain show [--config <path>]   Display the resolved ToolchainManifest\n  aiosh doc <show|check|search>  Documentation Index Control\n  aiosh evidence <verify|hash|scan>   Evidence & Audit Trail Control\n  aiosh repo <health|check>  Repository Health Diagnostics\n  aiosh secrets <scan|check> [--config <path>]  Secrets & Access Hygiene Scanner\n  aiosh triage <list|show|record|resolve|ingest|check>  Regression Triage Manager\n  aiosh handoff <list|show|initiate|accept|reject|complete|cancel>  Agent Handoff Protocol Manager\n  aiosh distro <list|show|evaluate|recommend|policy|stats|check>  Linux Distro Selection & Justification Manager\n  aiosh image <list|show|plan|filter>  Linux Base Image Build & Packaging Manager\n  aiosh package <list|show|search|plan|apply|validate>  Linux Package Management & Store Control\n  aiosh service <validate|list|show|status|action|start|stop|restart|reload|order>  Init & Service Supervision Control\n  aiosh session <validate|list|show|status|create|action|activate|lock|unlock|terminate|config>  User Session Bootstrap Control\n  aiosh layout <list|show|validate|check|probe|diff|fstab|register|set-active|remove|import-fstab>  Filesystem Layout & Target Partitioning Manager\n  aiosh mod <list|show|blacklist|unblacklist|options|autoload|unautoload|preset|export>  Kernel Module Management\n  aiosh hw <scan|list|show|summary|verify>  Hardware Detection & Inventory Control\n  aiosh net <list|show|routes|dns|state|up|down>  Network Bootstrap & Interface Control\n  aiosh update <status|slots|check|apply|confirm|rollback>  System Update & Dual-Slot Control\n  aiosh capability <list|show|issue|attenuate|revoke|check|prune>  Capability & Zero-Ambient Authority Control\n  aiosh pep <evaluate|rule-add|rule-list|rule-remove|status|report|doc>  PEP Decision Engine & Policy Control");
             0
         }
         Some(other) => {
@@ -15290,8 +15290,132 @@ fn cmd_pep(args: &[String]) -> i32 {
             }
             0
         }
+        Some("doc") => {
+            let doc_args = if args.len() > 1 { &args[1..] } else { &[] };
+            let mut doc_sub = None;
+            let mut topic_id = None;
+            let mut query = None;
+            let mut is_doc_json = false;
+
+            let mut i = 0;
+            while i < doc_args.len() {
+                match doc_args[i].as_str() {
+                    "--json" => is_doc_json = true,
+                    "list" => doc_sub = Some("list"),
+                    "show" | "get" => {
+                        doc_sub = Some("show");
+                        if i + 1 < doc_args.len() && !doc_args[i + 1].starts_with("--") {
+                            i += 1;
+                            topic_id = Some(doc_args[i].clone());
+                        }
+                    }
+                    "search" => {
+                        doc_sub = Some("search");
+                        if i + 1 < doc_args.len() && !doc_args[i + 1].starts_with("--") {
+                            i += 1;
+                            query = Some(doc_args[i].clone());
+                        }
+                    }
+                    other if doc_sub.is_none() && !other.starts_with("--") => {
+                        doc_sub = Some(other);
+                    }
+                    _ => {}
+                }
+                i += 1;
+            }
+
+            let index = aiosh_core::pep_doc::PepDocIndex::new();
+            match doc_sub {
+                Some("list") | None => {
+                    let topics = index.list_topics();
+                    let topic_list: Vec<Value> = topics
+                        .into_iter()
+                        .map(|t| json!({
+                            "id": t.id,
+                            "title": t.title,
+                            "category": t.category.as_str(),
+                            "summary": t.summary,
+                            "tags": t.tags,
+                        }))
+                        .collect();
+                    classify_and_emit(&mut ctx, "pep", "doc.list", json!({ "count": topic_list.len() }), "success", None, Some("List PEP documentation topics"), "operator", None);
+                    if is_doc_json {
+                        println!("{}", json!({ "code": 0, "data": { "count": topic_list.len(), "topics": topic_list }, "error": serde_json::Value::Null }));
+                    } else {
+                        println!("PEP Decision Engine Documentation Topics ({} topics):\n", topic_list.len());
+                        for t in &topic_list {
+                            println!("  {} [{}]: {}", t["id"].as_str().unwrap_or(""), t["category"].as_str().unwrap_or(""), t["title"].as_str().unwrap_or(""));
+                            println!("    {}\n", t["summary"].as_str().unwrap_or(""));
+                        }
+                    }
+                    0
+                }
+                Some("show") => {
+                    let tid = match topic_id {
+                        Some(t) => t,
+                        None => {
+                            let msg = "usage: aiosh pep doc show <topic_id> [--json]";
+                            classify_and_emit(&mut ctx, "pep", "doc.show", json!({ "error": msg }), "failure", None, Some("Missing topic_id"), "operator", None);
+                            if is_doc_json {
+                                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENTS", "message": msg } }));
+                            } else {
+                                eprintln!("{}", sanitize_terminal(msg));
+                            }
+                            return 2;
+                        }
+                    };
+                    match index.get_topic(&tid) {
+                        Some(topic) => {
+                            let md = aiosh_core::pep_doc::PepDocIndex::format_topic_markdown(topic);
+                            classify_and_emit(&mut ctx, "pep", "doc.show", json!({ "topic_id": &tid }), "success", Some(&tid), Some("Show PEP documentation topic"), "operator", None);
+                            if is_doc_json {
+                                println!("{}", json!({ "code": 0, "data": topic, "error": serde_json::Value::Null }));
+                            } else {
+                                println!("{}", md);
+                            }
+                            0
+                        }
+                        None => {
+                            let msg = format!("documentation topic not found: {}", tid);
+                            classify_and_emit(&mut ctx, "pep", "doc.show", json!({ "error": &msg }), "failure", Some(&tid), Some("Topic not found"), "operator", None);
+                            if is_doc_json {
+                                println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "NOT_FOUND", "message": msg } }));
+                            } else {
+                                eprintln!("{}", sanitize_terminal(&msg));
+                            }
+                            1
+                        }
+                    }
+                }
+                Some("search") => {
+                    let q = query.unwrap_or_default();
+                    let results = index.search(&q);
+                    classify_and_emit(&mut ctx, "pep", "doc.search", json!({ "query": &q, "count": results.len() }), "success", None, Some("Search PEP documentation"), "operator", None);
+                    if is_doc_json {
+                        println!("{}", json!({ "code": 0, "data": { "query": q, "count": results.len(), "results": results }, "error": serde_json::Value::Null }));
+                    } else {
+                        println!("Search Results for '{}' ({} matches):\n", q, results.len());
+                        for r in &results {
+                            println!("  {} (score: {}) - {}", r.topic_id, r.score, r.title);
+                            println!("    {}\n", r.snippet);
+                        }
+                    }
+                    0
+                }
+                Some(unknown) => {
+                    let msg = format!("unknown pep doc action: {}", unknown);
+                    classify_and_emit(&mut ctx, "pep", "doc", json!({ "error": &msg }), "failure", None, Some("Unknown doc action"), "operator", None);
+                    if is_doc_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "UNKNOWN_ACTION", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    2
+                }
+            }
+        }
         Some("--help") | Some("-h") | None => {
-            println!("aiosh pep — PEP Decision Engine & Policy Control\n\nUsage: aiosh pep <evaluate|rule-add|rule-list|rule-remove|status|report> [options]\n\nCommands:\n  evaluate                   Evaluate authorization request against policies\n  rule-add                   Add a new policy rule\n  rule-list                  List loaded policy rules\n  rule-remove <id>           Remove a policy rule by ID\n  status                     Display PEP Decision Engine status & metrics\n  report                     Generate comprehensive PEP observability report\n\nOptions:\n  --store <PATH>             Custom policy JSON store path\n  --json                     Output structured JSON envelope\n  -h, --help                 Display this help message");
+            println!("aiosh pep — PEP Decision Engine & Policy Control\n\nUsage: aiosh pep <evaluate|rule-add|rule-list|rule-remove|status|report|doc> [options]\n\nCommands:\n  evaluate                   Evaluate authorization request against policies\n  rule-add                   Add a new policy rule\n  rule-list                  List loaded policy rules\n  rule-remove <id>           Remove a policy rule by ID\n  status                     Display PEP Decision Engine status & metrics\n  report                     Generate comprehensive PEP observability report\n  doc <list|show|search>     Query embedded PEP documentation & help\n\nOptions:\n  --store <PATH>             Custom policy JSON store path\n  --json                     Output structured JSON envelope\n  -h, --help                 Display this help message");
             0
         }
         Some(unknown) => {

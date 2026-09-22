@@ -105,6 +105,7 @@ def test_tool_registration():
         "aios.pep.rule_add",
         "aios.pep.rule_list",
         "aios.pep.rule_remove",
+        "aios.pep.doc",
     ]:
         assert expected in tool_names, f"{expected} missing from tools/list"
     print("OK")
@@ -287,12 +288,41 @@ def test_pep_observability_report():
     print("OK")
 
 
+def test_pep_doc_mcp():
+    print("TEST: PEP MCP documentation tool (list, get, search) ...", end=" ")
+
+    # 1. List topics
+    res_list = call_mcp_tool("aios.pep.doc", {"action": "list"})
+    assert res_list.get("ok") is True, f"doc list failed: {res_list}"
+    assert res_list.get("count", 0) >= 6, f"expected >=6 topics, got {res_list.get('count')}"
+    topic_ids = [t["id"] for t in res_list.get("topics", [])]
+    assert "pep-arch" in topic_ids, f"missing pep-arch: {topic_ids}"
+
+    # 2. Get specific topic
+    res_get = call_mcp_tool("aios.pep.doc", {"action": "get", "topic_id": "pep-arch"})
+    assert res_get.get("ok") is True, f"doc get failed: {res_get}"
+    assert res_get.get("topic", {}).get("id") == "pep-arch"
+    assert "Architecture" in res_get.get("topic", {}).get("title", "")
+
+    # 3. Search topics
+    res_search = call_mcp_tool("aios.pep.doc", {"action": "search", "query": "DenyOverrides"})
+    assert res_search.get("ok") is True, f"doc search failed: {res_search}"
+    assert res_search.get("count", 0) >= 1, f"expected matches for DenyOverrides, got {res_search}"
+
+    # 4. Unknown topic returns ok=False
+    res_unknown = call_mcp_tool("aios.pep.doc", {"action": "get", "topic_id": "nonexistent-topic-xyz"})
+    assert res_unknown.get("ok") is False, f"expected ok=False for unknown topic: {res_unknown}"
+
+    print("OK")
+
+
 def main():
     print("=== PEP Decision Engine MCP Smoke Test ===")
     test_tool_registration()
     test_pep_evaluation()
     test_pep_persistent_lifecycle()
     test_pep_observability_report()
+    test_pep_doc_mcp()
     print("=== All PEP Decision Engine smoke tests passed ===")
 
 

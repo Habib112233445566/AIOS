@@ -100,6 +100,7 @@ pub mod pep_config;
 pub mod pep_security_policy;
 pub mod pep_observability;
 pub mod pep_doc;
+pub mod pep_recovery;
 pub mod release;
 pub mod release_config;
 pub mod repo_health;
@@ -285,6 +286,13 @@ pub use pep_doc::{
     PepDocSearchResult, PepDocSection, PepDocTopic, MAX_DOC_QUERY_LEN as MAX_PEP_DOC_QUERY_LEN,
     MAX_DOC_SEARCH_RESULTS as MAX_PEP_DOC_SEARCH_RESULTS,
     MAX_SNIPPET_LEN as MAX_PEP_DOC_SNIPPET_LEN, MAX_TOPIC_ID_LEN as MAX_PEP_DOC_TOPIC_ID_LEN,
+};
+pub use pep_recovery::{
+    PepIssueSeverity, PepRecoveryManager, PepRecoveryResult, PepRecoveryStrategy,
+    PepStoreValidator, PepValidationIssue, PepValidationReport,
+    PEPRECV_ERR_CAPACITY, PEPRECV_ERR_CHECKSUM, PEPRECV_ERR_DUPLICATE_ID,
+    PEPRECV_ERR_FILE_SIZE, PEPRECV_ERR_IO, PEPRECV_ERR_PARSE,
+    PEPRECV_ERR_PATH_TRAVERSAL, PEPRECV_ERR_RULE_SYNTAX,
 };
 
 

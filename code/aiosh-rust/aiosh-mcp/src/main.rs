@@ -1878,6 +1878,22 @@ impl Server {
                 "additionalProperties": false
             }
         }));
+        tools.push(json!({
+            "name": "aios.pep.doc",
+            "description": "Query PEP Decision Engine documentation, list topics, get details, or search topics",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "action": { "type": "string", "enum": ["list", "get", "search"], "description": "Documentation action to perform" },
+                    "topic_id": { "type": "string", "description": "Topic identifier for 'get' action" },
+                    "query": { "type": "string", "description": "Search query for 'search' action" },
+                    "category": { "type": "string", "description": "Optional category filter for 'list' action" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "required": ["action"],
+                "additionalProperties": false
+            }
+        }));
         tools
     }
 
@@ -6654,6 +6670,86 @@ impl Server {
                 dispatch::recorded_call(
                     &mut self.ring, &self.pep,
                     "aios.pep.report", "Get PEP observability report", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.pep.doc" => {
+                let action = arguments
+                    .get("action")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let topic_id_opt = arguments.get("topic_id").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let query_opt = arguments.get("query").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let category_opt = arguments.get("category").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+                let f = move || -> Result<Value, String> {
+                    let index = aiosh_core::pep_doc::PepDocIndex::new();
+                    match action.as_str() {
+                        "list" => {
+                            let topics = if let Some(ref cat_str) = category_opt {
+                                let cat_norm = cat_str.trim().to_ascii_lowercase();
+                                let cat = match cat_norm.as_str() {
+                                    "architecture" => aiosh_core::pep_doc::PepDocCategory::Architecture,
+                                    "evaluation" => aiosh_core::pep_doc::PepDocCategory::Evaluation,
+                                    "policy" => aiosh_core::pep_doc::PepDocCategory::Policy,
+                                    "observability" => aiosh_core::pep_doc::PepDocCategory::Observability,
+                                    "security" => aiosh_core::pep_doc::PepDocCategory::Security,
+                                    "reference" => aiosh_core::pep_doc::PepDocCategory::Reference,
+                                    _ => return Err(format!("invalid category: {}", cat_str)),
+                                };
+                                index.list_by_category(cat)
+                            } else {
+                                index.list_topics()
+                            };
+                            let topic_summaries: Vec<Value> = topics
+                                .into_iter()
+                                .map(|t| json!({
+                                    "id": t.id,
+                                    "title": t.title,
+                                    "category": t.category.as_str(),
+                                    "summary": t.summary,
+                                    "tags": t.tags
+                                }))
+                                .collect();
+                            Ok(json!({
+                                "ok": true,
+                                "tool": "aios.pep.doc",
+                                "action": "list",
+                                "count": topic_summaries.len(),
+                                "topics": topic_summaries
+                            }))
+                        }
+                        "get" => {
+                            let topic_id = topic_id_opt.as_deref().ok_or_else(|| "missing required parameter: topic_id".to_string())?;
+                            let topic = index.get_topic(topic_id).ok_or_else(|| format!("topic not found: {}", topic_id))?;
+                            let markdown = aiosh_core::pep_doc::PepDocIndex::format_topic_markdown(topic);
+                            Ok(json!({
+                                "ok": true,
+                                "tool": "aios.pep.doc",
+                                "action": "get",
+                                "topic": topic,
+                                "markdown": markdown
+                            }))
+                        }
+                        "search" => {
+                            let query = query_opt.as_deref().ok_or_else(|| "missing required parameter: query".to_string())?;
+                            let results = index.search(query);
+                            Ok(json!({
+                                "ok": true,
+                                "tool": "aios.pep.doc",
+                                "action": "search",
+                                "query": query,
+                                "count": results.len(),
+                                "results": results
+                            }))
+                        }
+                        _ => Err(format!("unknown action: {}", action)),
+                    }
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.pep.doc", "Query PEP documentation", arguments,
                     None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
                 )
             }
