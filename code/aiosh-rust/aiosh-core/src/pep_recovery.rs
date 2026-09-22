@@ -197,6 +197,41 @@ impl PepStoreValidator {
                         });
                         rule_valid = false;
                     }
+
+                    // Semantic checks on targets
+                    if let Some(ref s) = rule.target_subject {
+                        if s.len() > 256 || s.chars().any(|c| c.is_control()) {
+                            issues.push(PepValidationIssue {
+                                rule_id: Some(rule.id.clone()),
+                                code: PEPRECV_ERR_RULE_SYNTAX.to_string(),
+                                message: format!("rule '{}' has invalid target_subject (length > 256 or control chars)", rule.id),
+                                severity: PepIssueSeverity::Error,
+                            });
+                            rule_valid = false;
+                        }
+                    }
+                    if let Some(ref r) = rule.target_resource {
+                        if r.len() > 1024 || r.chars().any(|c| c.is_control()) || r.contains("..") {
+                            issues.push(PepValidationIssue {
+                                rule_id: Some(rule.id.clone()),
+                                code: PEPRECV_ERR_RULE_SYNTAX.to_string(),
+                                message: format!("rule '{}' has invalid target_resource (length > 1024, traversal '..', or control chars)", rule.id),
+                                severity: PepIssueSeverity::Error,
+                            });
+                            rule_valid = false;
+                        }
+                    }
+                    if let Some(ref a) = rule.target_action {
+                        if a.len() > 64 || a.chars().any(|c| c.is_control()) {
+                            issues.push(PepValidationIssue {
+                                rule_id: Some(rule.id.clone()),
+                                code: PEPRECV_ERR_RULE_SYNTAX.to_string(),
+                                message: format!("rule '{}' has invalid target_action (length > 64 or control chars)", rule.id),
+                                severity: PepIssueSeverity::Error,
+                            });
+                            rule_valid = false;
+                        }
+                    }
                 }
                 Err(e) => {
                     issues.push(PepValidationIssue {
@@ -380,20 +415,25 @@ impl PepRecoveryManager {
                 let mut seen_ids = std::collections::HashSet::new();
                 for rule_val in rules_to_salvage {
                     if let Ok(rule) = serde_json::from_value::<PepPolicyRule>((*rule_val).clone()) {
-                            if !rule.id.is_empty()
-                                && rule.id.len() <= 128
-                                && !rule.id.chars().any(|c| c.is_control())
-                                && (rule.effect == PepDecisionEffect::Permit || rule.effect == PepDecisionEffect::Deny)
-                                && seen_ids.insert(rule.id.clone())
-                            {
-                                if salvaged_service.add_rule(rule).is_ok() {
-                                    salvaged_count += 1;
-                                    continue;
-                                }
+                        let valid_targets = rule.target_subject.as_ref().map_or(true, |s| s.len() <= 256 && !s.chars().any(|c| c.is_control()))
+                            && rule.target_resource.as_ref().map_or(true, |r| r.len() <= 1024 && !r.chars().any(|c| c.is_control()) && !r.contains(".."))
+                            && rule.target_action.as_ref().map_or(true, |a| a.len() <= 64 && !a.chars().any(|c| c.is_control()));
+
+                        if !rule.id.is_empty()
+                            && rule.id.len() <= 128
+                            && !rule.id.chars().any(|c| c.is_control())
+                            && (rule.effect == PepDecisionEffect::Permit || rule.effect == PepDecisionEffect::Deny)
+                            && valid_targets
+                            && seen_ids.insert(rule.id.clone())
+                        {
+                            if salvaged_service.add_rule(rule).is_ok() {
+                                salvaged_count += 1;
+                                continue;
                             }
                         }
-                        dropped_count += 1;
                     }
+                    dropped_count += 1;
+                }
 
                 salvaged_service.save_to_path(path)
                     .map_err(|e| format!("{}: failed to write salvaged store: {}", PEPRECV_ERR_IO, e))?;

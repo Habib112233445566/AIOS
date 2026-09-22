@@ -586,6 +586,87 @@ aiosh pep doc search DenyOverrides --json
 - [T-02189: Documentation Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02189-documentation-documentation.md)
 - [T-02190: Verification Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02190-documentation-verification-evidenc.md)
 
+---
+
+## 14. Recovery & Validation Subsystem Reference
+
+### 14.1 Overview & Invariants (`PEPRECV1..PEPRECV6`)
+
+The Recovery & Validation Subsystem (`pep_recovery.rs`) provides deterministic offline and online integrity inspection, corrupt rule store quarantine, and resilient policy salvage capabilities.
+
+| Invariant | Name | Formal Rule |
+|---|---|---|
+| **`PEPRECV1`** | **Comprehensive Structural & Semantic Validation** | Inspects both JSON format and semantic integrity: rule IDs, action/subject/resource bounds, control-character exclusion, and absence of `..` traversal tokens. |
+| **`PEPRECV2`** | **Dual Representation Support** | Natively validates and processes both JSON Array (`rules: [...]`) and JSON Object map (`rules: { "id": {...} }`) schemas with total parity. |
+| **`PEPRECV3`** | **Deterministic Recovery Strategies** | Supports `dry_run` (read-only audit), `salvage` (extract valid rules, drop malformed ones, quarantine corrupt source), and `strict_fail_closed` (quarantine corrupt store, reset to clean default empty state). |
+| **`PEPRECV4`** | **Atomic Staging & Hardened Quarantine** | Store updates use atomic swap (`.tmp` + rename with rollback cleanup). Backups are created with timestamped names and mode `0600` on Unix. |
+| **`PEPRECV5`** | **Dual Substrate Integration** | Fully integrated into operator CLI (`aiosh pep validate`, `aiosh pep recover`) and agent MCP (`aios.pep.validate`, `aios.pep.recover`). |
+| **`PEPRECV6`** | **Zero-Silent-Failure & Audit Gating** | All operations return structured JSON result envelopes with explicit diagnostic issue codes (`PEPRECV_ERR_*`). MCP invocations record audit entries in the persistent SQLite ring. |
+
+### 14.2 Invocation Examples
+
+#### CLI Usage
+```bash
+# Validate policy store file integrity
+aiosh pep validate /etc/aios/pep_policy.json
+
+# Perform a dry-run recovery audit (no changes written)
+aiosh pep recover /etc/aios/pep_policy.json --dry-run
+
+# Salvage valid rules from corrupted store with timestamped backup
+aiosh pep recover /etc/aios/pep_policy.json --strategy salvage --backup
+
+# Enforce strict fail-closed recovery (quarantine corrupt store, start fresh)
+aiosh pep recover /etc/aios/pep_policy.json --strategy fail_closed
+```
+
+#### MCP Tool Invocations
+```json
+// Tool: aios.pep.validate
+{
+  "method": "tools/call",
+  "params": {
+    "name": "aios.pep.validate",
+    "arguments": {
+      "store_path": "pep_policy.json"
+    }
+  }
+}
+
+// Tool: aios.pep.recover
+{
+  "method": "tools/call",
+  "params": {
+    "name": "aios.pep.recover",
+    "arguments": {
+      "store_path": "pep_policy.json",
+      "strategy": "salvage",
+      "dry_run": false,
+      "backup": true
+    }
+  }
+}
+```
+
+### 14.3 Constraints and Known Limitations
+1. Store file sizes are strictly capped at 10 MiB (`MAX_PEP_SERVICE_STORE_SIZE = 10 * 1024 * 1024`). Larger files are rejected without deserialization.
+2. Rule capacity is capped at 5,000 rules (`MAX_RULES_IN_SERVICE = 5000`).
+3. Salvage strategy drops invalid rules; any rules missing required fields or containing control characters will not be preserved in the salvaged output.
+4. Quarantine backups are created in the same parent directory as the target store.
+
+### 14.4 Task Evidence References
+- [T-02191: Research Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02191-recovery-validation-research.md)
+- [T-02192: Specification Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02192-recovery-validation-specification.md)
+- [T-02193: Scaffold Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02193-recovery-validation-scaffold.md)
+- [T-02194: Implementation Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02194-recovery-validation-implementation.md)
+- [T-02195: Unit Test Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02195-recovery-validation-unit-test.md)
+- [T-02196: Integration Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02196-recovery-validation-integration.md)
+- [T-02197: Security Review Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02197-recovery-validation-security-review.md)
+- [T-02198: Hardening Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02198-recovery-validation-hardening.md)
+- [T-02199: Documentation Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02199-recovery-validation-documentation.md)
+- [T-02200: Verification Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02200-recovery-validation-verification-evidenc.md)
+
+
 
 
 

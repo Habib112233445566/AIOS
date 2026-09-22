@@ -106,6 +106,8 @@ def test_tool_registration():
         "aios.pep.rule_list",
         "aios.pep.rule_remove",
         "aios.pep.doc",
+        "aios.pep.validate",
+        "aios.pep.recover",
     ]:
         assert expected in tool_names, f"{expected} missing from tools/list"
     print("OK")
@@ -316,6 +318,42 @@ def test_pep_doc_mcp():
     print("OK")
 
 
+def test_pep_recovery_mcp():
+    print("TEST: PEP MCP recovery & validation tools (validate, recover) ...", end=" ")
+    import tempfile
+    import os
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        store_path = os.path.join(tmpdir, "pep_store.json")
+
+        # 1. Validate empty store
+        with open(store_path, "w") as f:
+            f.write('{"rules": []}')
+        res_val = call_mcp_tool("aios.pep.validate", {"store_path": store_path})
+        assert res_val.get("ok") is True, f"validate failed: {res_val}"
+        assert res_val.get("report", {}).get("is_valid") is True
+
+        # 2. Corrupt store validation
+        with open(store_path, "w") as f:
+            f.write('{"rules": [{"id": "bad", "target_resource": "fs:/../etc/passwd"}]}')
+        res_bad = call_mcp_tool("aios.pep.validate", {"store_path": store_path})
+        assert res_bad.get("ok") is False, f"expected ok=False on bad store: {res_bad}"
+        assert res_bad.get("report", {}).get("is_valid") is False
+
+        # 3. Recover with salvage strategy
+        res_rec = call_mcp_tool("aios.pep.recover", {"store_path": store_path, "strategy": "salvage_valid_rules"})
+        assert res_rec.get("ok") is True, f"recover failed: {res_rec}"
+        assert res_rec.get("result", {}).get("success") is True
+        assert res_rec.get("result", {}).get("quarantine_path") is not None
+
+        # 4. Valid after recovery
+        res_after = call_mcp_tool("aios.pep.validate", {"store_path": store_path})
+        assert res_after.get("ok") is True
+        assert res_after.get("report", {}).get("is_valid") is True
+
+    print("OK")
+
+
 def main():
     print("=== PEP Decision Engine MCP Smoke Test ===")
     test_tool_registration()
@@ -323,6 +361,7 @@ def main():
     test_pep_persistent_lifecycle()
     test_pep_observability_report()
     test_pep_doc_mcp()
+    test_pep_recovery_mcp()
     print("=== All PEP Decision Engine smoke tests passed ===")
 
 

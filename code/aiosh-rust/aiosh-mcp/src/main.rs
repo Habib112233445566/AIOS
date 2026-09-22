@@ -1894,6 +1894,37 @@ impl Server {
                 "additionalProperties": false
             }
         }));
+        tools.push(json!({
+            "name": "aios.pep.validate",
+            "description": "Validate PEP policy store file schema, rule syntax, and capacity constraints",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "store_path": { "type": "string", "description": "Path to PEP policy JSON store file" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "required": ["store_path"],
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.pep.recover",
+            "description": "Recover corrupted PEP policy store file using salvage or fail-closed strategies",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "store_path": { "type": "string", "description": "Path to PEP policy JSON store file" },
+                    "strategy": {
+                        "type": "string",
+                        "enum": ["strict_fail_closed", "salvage_valid_rules", "dry_run"],
+                        "description": "Recovery strategy (default: strict_fail_closed)"
+                    },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "required": ["store_path"],
+                "additionalProperties": false
+            }
+        }));
         tools
     }
 
@@ -6750,6 +6781,53 @@ impl Server {
                 dispatch::recorded_call(
                     &mut self.ring, &self.pep,
                     "aios.pep.doc", "Query PEP documentation", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.pep.validate" => {
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = move || -> Result<Value, String> {
+                    let path_str = store_path_opt.as_ref().ok_or_else(|| "missing required parameter: store_path".to_string())?;
+                    let path = std::path::Path::new(path_str);
+                    let report = aiosh_core::pep_recovery::PepStoreValidator::validate_path(path)?;
+                    Ok(json!({
+                        "ok": report.is_valid,
+                        "tool": "aios.pep.validate",
+                        "report": report
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.pep.validate", "Validate PEP policy store", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.pep.recover" => {
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let strategy_str = arguments
+                    .get("strategy")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("strict_fail_closed")
+                    .to_string();
+                let f = move || -> Result<Value, String> {
+                    let path_str = store_path_opt.as_ref().ok_or_else(|| "missing required parameter: store_path".to_string())?;
+                    let strategy = match strategy_str.as_str() {
+                        "strict_fail_closed" => aiosh_core::pep_recovery::PepRecoveryStrategy::StrictFailClosed,
+                        "salvage_valid_rules" => aiosh_core::pep_recovery::PepRecoveryStrategy::SalvageValidRules,
+                        "dry_run" => aiosh_core::pep_recovery::PepRecoveryStrategy::DryRun,
+                        other => return Err(format!("unknown recovery strategy: {}", other)),
+                    };
+                    let path = std::path::Path::new(path_str);
+                    let res = aiosh_core::pep_recovery::PepRecoveryManager::recover_store(path, strategy)?;
+                    Ok(json!({
+                        "ok": res.success,
+                        "tool": "aios.pep.recover",
+                        "result": res
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.pep.recover", "Recover PEP policy store", arguments,
                     None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
                 )
             }

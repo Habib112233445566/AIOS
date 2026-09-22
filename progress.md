@@ -1,5 +1,19 @@
 # Progress Log
 
+## 2026-09-22 — T-02191..T-02200: PEP Decision Engine Recovery & Validation CLOSED & Entire PEP Epic FINALIZED (100/100 tasks)
+
+**What shipped:**
+- Completed Sub-Epic 10 (PEP Decision Engine Recovery & Validation, T-02191..T-02200):
+  - Invariants `PEPRECV1..PEPRECV6`: Comprehensive structural & semantic rule validation, array & map representation parity, deterministic salvage and fail-closed strategies, atomic swap with mode 0600 quarantine.
+  - Implemented `PepStoreValidator` and `PepRecoveryManager` in `code/aiosh-rust/aiosh-core/src/pep_recovery.rs`.
+  - Operator CLI subcommands in `aiosh-cli`: `aiosh pep validate` and `aiosh pep recover`.
+  - Agent MCP tools in `aiosh-mcp`: `aios.pep.validate` and `aios.pep.recover`.
+  - Unit tests in `code/aiosh-rust/aiosh-core/tests/test_pep_recovery.rs` (8/8 PASS).
+  - Integration smoke tests in `code/aiosh-cli/tests/test_pep_cli_smoke.py` and `code/aiosh-mcp/tests/test_pep_decision_smoke.py` (ALL PASS).
+  - Complete security review against threats ABUSE-01..ABUSE-08, hardening with size caps and error envelopes, and Section 14 added to `docs/pep_decision_engine.md`.
+- **Milestone: PEP Decision Engine Epic Formally CLOSED (100/100 tasks: T-02101..T-02200)**.
+- Next task pointer advances to **T-02201** launching the **Grant Lifecycle Epic** (`Phase 2 — Security Kernel & PEP Fabric / Grant Lifecycle / data model: Research`).
+
 ## 2026-09-19 — T-01617..T-01626: Kernel Module Core Service CLOSED & CLI Surface Implemented (10/10 tasks)
 
 **What shipped:**

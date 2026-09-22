@@ -284,6 +284,43 @@ def test_pep_doc_cli():
     print("PASS: aiosh pep doc CLI integration")
 
 
+def test_pep_recovery_cli():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        store = str(Path(tmpdir) / "pep_store.json")
+
+        # 1. Validate empty/fresh store -> code 0
+        with open(store, "w") as f:
+            f.write('{"rules": []}')
+        res_val = run_aiosh("pep", "validate", "--store", store, "--json")
+        assert res_val.returncode == 0, f"Expected 0, got {res_val.returncode}: {res_val.stderr}"
+        d_val = parse_json_output(res_val)
+        assert d_val["code"] == 0
+        assert d_val["data"]["is_valid"] is True
+
+        # 2. Corrupted store validation -> code 2
+        with open(store, "w") as f:
+            f.write('{"rules": [{"id": "bad", "target_resource": "fs:/../etc/passwd"}]}')
+        res_bad = run_aiosh("pep", "validate", "--store", store, "--json")
+        assert res_bad.returncode == 2, f"Expected 2 on bad store, got {res_bad.returncode}"
+        d_bad = parse_json_output(res_bad)
+        assert d_bad["code"] == 2
+        assert d_bad["data"]["is_valid"] is False
+
+        # 3. Salvage recovery -> code 0
+        res_rec = run_aiosh("pep", "recover", "--store", store, "--salvage", "--json")
+        assert res_rec.returncode == 0, f"Expected 0 on salvage, got {res_rec.returncode}: {res_rec.stderr}"
+        d_rec = parse_json_output(res_rec)
+        assert d_rec["code"] == 0
+        assert d_rec["data"]["success"] is True
+
+        # 4. Store is now valid again
+        res_after = run_aiosh("pep", "validate", "--store", store, "--json")
+        assert res_after.returncode == 0
+        assert parse_json_output(res_after)["data"]["is_valid"] is True
+
+    print("PASS: aiosh pep recovery & validation CLI integration")
+
+
 if __name__ == "__main__":
     test_pep_help()
     test_pep_unknown_subcommand()
@@ -292,5 +329,6 @@ if __name__ == "__main__":
     test_pep_security_policy_privilege_boundary()
     test_pep_report_cli()
     test_pep_doc_cli()
+    test_pep_recovery_cli()
     print("=== All PEP CLI tests passed ===")
 

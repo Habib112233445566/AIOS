@@ -15414,8 +15414,142 @@ fn cmd_pep(args: &[String]) -> i32 {
                 }
             }
         }
+        Some("validate") => {
+            let mut val_store_path: Option<String> = None;
+            let mut is_val_json = false;
+            let mut i = 1;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "--store" | "-s" => {
+                        if i + 1 < args.len() {
+                            i += 1;
+                            val_store_path = Some(args[i].clone());
+                        }
+                    }
+                    "--json" => is_val_json = true,
+                    other if val_store_path.is_none() && !other.starts_with("--") => {
+                        val_store_path = Some(other.to_string());
+                    }
+                    _ => {}
+                }
+                i += 1;
+            }
+
+            let path_str = val_store_path.unwrap_or_else(|| store_path.to_string_lossy().to_string());
+            let path = std::path::Path::new(&path_str);
+            match aiosh_core::pep_recovery::PepStoreValidator::validate_path(path) {
+                Ok(report) => {
+                    classify_and_emit(
+                        &mut ctx, "pep", "validate",
+                        json!({ "store_path": path_str, "is_valid": report.is_valid, "total_rules": report.total_rules_scanned, "corrupt_rules": report.corrupt_rules_count }),
+                        if report.is_valid { "success" } else { "failure" },
+                        Some(&path_str), Some("Validate PEP policy store"), "operator", None,
+                    );
+                    let exit_code = if report.is_valid { 0 } else { 2 };
+                    if is_val_json {
+                        println!("{}", json!({ "code": exit_code, "data": report, "error": if report.is_valid { serde_json::Value::Null } else { json!({ "code": "VALIDATION_FAILED", "message": "Policy store validation failed", "issues": report.issues }) } }));
+                    } else if report.is_valid {
+                        println!("VALID: PEP policy store {:?} is healthy ({} valid rules, sha256: {})", path, report.valid_rules_count, report.sha256_checksum.unwrap_or_default());
+                    } else {
+                        eprintln!("INVALID: PEP policy store {:?} failed validation ({} issues detected):", path, report.issues.len());
+                        for issue in &report.issues {
+                            eprintln!("  [{}] {}", issue.code, issue.message);
+                        }
+                    }
+                    exit_code
+                }
+                Err(e) => {
+                    classify_and_emit(&mut ctx, "pep", "validate", json!({ "store_path": path_str, "error": &e }), "failure", Some(&path_str), Some("Validation error"), "operator", None);
+                    if is_val_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "IO_ERROR", "message": e } }));
+                    } else {
+                        eprintln!("ERROR: {}", sanitize_terminal(&e));
+                    }
+                    2
+                }
+            }
+        }
+        Some("recover") => {
+            let mut rec_store_path: Option<String> = None;
+            let mut strategy_str = "strict_fail_closed".to_string();
+            let mut is_rec_json = false;
+            let mut i = 1;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "--store" | "-s" => {
+                        if i + 1 < args.len() {
+                            i += 1;
+                            rec_store_path = Some(args[i].clone());
+                        }
+                    }
+                    "--strategy" => {
+                        if i + 1 < args.len() {
+                            i += 1;
+                            strategy_str = args[i].clone();
+                        }
+                    }
+                    "--salvage" => strategy_str = "salvage_valid_rules".to_string(),
+                    "--dry-run" => strategy_str = "dry_run".to_string(),
+                    "--json" => is_rec_json = true,
+                    other if rec_store_path.is_none() && !other.starts_with("--") => {
+                        rec_store_path = Some(other.to_string());
+                    }
+                    _ => {}
+                }
+                i += 1;
+            }
+
+            let strategy = match strategy_str.to_ascii_lowercase().as_str() {
+                "strict" | "strict_fail_closed" => aiosh_core::pep_recovery::PepRecoveryStrategy::StrictFailClosed,
+                "salvage" | "salvage_valid_rules" => aiosh_core::pep_recovery::PepRecoveryStrategy::SalvageValidRules,
+                "dry_run" | "dry-run" => aiosh_core::pep_recovery::PepRecoveryStrategy::DryRun,
+                other => {
+                    let msg = format!("unknown recovery strategy: {}", other);
+                    if is_rec_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_STRATEGY", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    return 2;
+                }
+            };
+
+            let path_str = rec_store_path.unwrap_or_else(|| store_path.to_string_lossy().to_string());
+            let path = std::path::Path::new(&path_str);
+            match aiosh_core::pep_recovery::PepRecoveryManager::recover_store(path, strategy) {
+                Ok(res) => {
+                    classify_and_emit(
+                        &mut ctx, "pep", "recover",
+                        json!({ "store_path": path_str, "strategy": strategy_str, "success": res.success, "salvaged": res.rules_salvaged, "dropped": res.rules_dropped, "quarantine_path": res.quarantine_path }),
+                        if res.success { "success" } else { "failure" },
+                        Some(&path_str), Some("Recover PEP policy store"), "operator", None,
+                    );
+                    let exit_code = if res.success { 0 } else { 1 };
+                    if is_rec_json {
+                        println!("{}", json!({ "code": exit_code, "data": res, "error": if res.success { serde_json::Value::Null } else { json!({ "code": "RECOVERY_FAILED", "message": res.message }) } }));
+                    } else if res.success {
+                        println!("RECOVERED: {}", res.message);
+                        if let Some(ref q) = res.quarantine_path {
+                            println!("  Quarantine backup created: {}", q);
+                        }
+                    } else {
+                        eprintln!("RECOVERY INCOMPLETE: {}", res.message);
+                    }
+                    exit_code
+                }
+                Err(e) => {
+                    classify_and_emit(&mut ctx, "pep", "recover", json!({ "store_path": path_str, "error": &e }), "failure", Some(&path_str), Some("Recovery error"), "operator", None);
+                    if is_rec_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "IO_ERROR", "message": e } }));
+                    } else {
+                        eprintln!("ERROR: {}", sanitize_terminal(&e));
+                    }
+                    2
+                }
+            }
+        }
         Some("--help") | Some("-h") | None => {
-            println!("aiosh pep — PEP Decision Engine & Policy Control\n\nUsage: aiosh pep <evaluate|rule-add|rule-list|rule-remove|status|report|doc> [options]\n\nCommands:\n  evaluate                   Evaluate authorization request against policies\n  rule-add                   Add a new policy rule\n  rule-list                  List loaded policy rules\n  rule-remove <id>           Remove a policy rule by ID\n  status                     Display PEP Decision Engine status & metrics\n  report                     Generate comprehensive PEP observability report\n  doc <list|show|search>     Query embedded PEP documentation & help\n\nOptions:\n  --store <PATH>             Custom policy JSON store path\n  --json                     Output structured JSON envelope\n  -h, --help                 Display this help message");
+            println!("aiosh pep — PEP Decision Engine & Policy Control\n\nUsage: aiosh pep <evaluate|rule-add|rule-list|rule-remove|status|report|doc|validate|recover> [options]\n\nCommands:\n  evaluate                   Evaluate authorization request against policies\n  rule-add                   Add a new policy rule\n  rule-list                  List loaded policy rules\n  rule-remove <id>           Remove a policy rule by ID\n  status                     Display PEP Decision Engine status & metrics\n  report                     Generate comprehensive PEP observability report\n  doc <list|show|search>     Query embedded PEP documentation & help\n  validate <path>            Validate policy store schema, constraints & capacity\n  recover <path>             Recover corrupted policy store (salvage or fail-closed)\n\nOptions:\n  --store <PATH>             Custom policy JSON store path\n  --strategy <STRAT>         Recovery strategy: strict_fail_closed, salvage_valid_rules, dry_run\n  --salvage                  Shorthand for --strategy salvage_valid_rules\n  --dry-run                  Shorthand for --strategy dry_run\n  --json                     Output structured JSON envelope\n  -h, --help                 Display this help message");
             0
         }
         Some(unknown) => {

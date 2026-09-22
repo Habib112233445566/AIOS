@@ -203,8 +203,10 @@ impl PepDecisionService {
         fs::write(&tmp_path, serialized)
             .map_err(|e| format!("{}: failed to write temporary file {:?}: {}", PEPSERV_ERR_IO, tmp_path, e))?;
 
-        fs::rename(&tmp_path, path)
-            .map_err(|e| format!("{}: atomic rename failed: {}", PEPSERV_ERR_IO, e))?;
+        if let Err(e) = fs::rename(&tmp_path, path) {
+            let _ = fs::remove_file(&tmp_path);
+            return Err(format!("{}: atomic rename failed: {}", PEPSERV_ERR_IO, e));
+        }
 
         Ok(())
     }

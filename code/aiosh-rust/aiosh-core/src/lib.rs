@@ -101,6 +101,7 @@ pub mod pep_security_policy;
 pub mod pep_observability;
 pub mod pep_doc;
 pub mod pep_recovery;
+pub mod pep_grant;
 pub mod release;
 pub mod release_config;
 pub mod repo_health;
