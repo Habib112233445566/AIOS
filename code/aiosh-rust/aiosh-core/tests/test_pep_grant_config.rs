@@ -146,3 +146,31 @@ fn test_pep_grant_config_from_env() {
     std::env::remove_var("AIOSH_PEP_GRANT_AUTO_SWEEP");
     std::env::remove_var("AIOSH_PEP_GRANT_CASCADE_REVOCATION");
 }
+
+#[test]
+fn test_pep_grant_config_hardening_checks() {
+    let mut config = PepGrantConfig::default();
+
+    // Control characters rejection
+    config.store_path = PathBuf::from("in\nvalid.json");
+    let err = config.validate().unwrap_err();
+    assert!(err.contains(GRANTCONF_ERR_VALIDATION));
+    assert!(err.contains("control characters"));
+
+    // Excessive length rejection (>1024 chars)
+    let long_name = "a".repeat(1025) + ".json";
+    config.store_path = PathBuf::from(long_name);
+    let err = config.validate().unwrap_err();
+    assert!(err.contains(GRANTCONF_ERR_VALIDATION));
+    assert!(err.contains("exceeds 1024 characters"));
+
+    // Nonexistent file on from_path
+    let bogus_path = PathBuf::from("does_not_exist_config.json");
+    let err = PepGrantConfig::from_path(&bogus_path).unwrap_err();
+    assert!(err.contains(aiosh_core::pep_grant_config::GRANTCONF_ERR_IO));
+
+    // Malformed JSON on from_json
+    let err = PepGrantConfig::from_json("{ not valid json }").unwrap_err();
+    assert!(err.contains(aiosh_core::pep_grant_config::GRANTCONF_ERR_PARSE));
+}
+

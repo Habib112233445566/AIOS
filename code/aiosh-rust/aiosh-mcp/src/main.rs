@@ -2041,14 +2041,22 @@ impl Server {
     }
 
 fn validate_and_open_grant_store(path_str: Option<&str>) -> Result<(std::path::PathBuf, aiosh_core::pep_grant::PepGrantStore), String> {
-    let path = path_str.unwrap_or("pep_grants.json");
-    let p = std::path::PathBuf::from(path);
+    let p = match path_str {
+        Some(s) => std::path::PathBuf::from(s),
+        None => match aiosh_core::pep_grant_config::PepGrantConfig::from_env() {
+            Ok(cfg) => cfg.store_path,
+            Err(_) => std::path::PathBuf::from("pep_grants.json"),
+        },
+    };
     aiosh_core::pep_decision_service::validate_pep_service_path(&p)
         .map_err(|e| format!("invalid store path: {}", e))?;
     if p.exists() {
         if let Ok(meta) = std::fs::metadata(&p) {
-            if meta.len() > 16 * 1024 * 1024 {
-                return Err(format!("grant store file exceeds 16 MiB size cap: {} bytes", meta.len()));
+            let max_bytes = aiosh_core::pep_grant_config::PepGrantConfig::from_env()
+                .map(|c| c.max_store_bytes)
+                .unwrap_or(16 * 1024 * 1024);
+            if meta.len() > max_bytes {
+                return Err(format!("grant store file exceeds size cap ({} bytes): {} bytes", max_bytes, meta.len()));
             }
         }
         let store = aiosh_core::pep_grant::PepGrantStore::load_from_path(&p)?;
@@ -2059,17 +2067,33 @@ fn validate_and_open_grant_store(path_str: Option<&str>) -> Result<(std::path::P
 }
 
 fn validate_and_open_grant_service(path_str: Option<&str>) -> Result<(std::path::PathBuf, aiosh_core::pep_grant_service::PepGrantService), String> {
-    let path = path_str.unwrap_or("pep_grants.json");
-    let p = std::path::PathBuf::from(path);
+    let p = match path_str {
+        Some(s) => std::path::PathBuf::from(s),
+        None => match aiosh_core::pep_grant_config::PepGrantConfig::from_env() {
+            Ok(cfg) => cfg.store_path,
+            Err(_) => std::path::PathBuf::from("pep_grants.json"),
+        },
+    };
     aiosh_core::pep_decision_service::validate_pep_service_path(&p)
         .map_err(|e| format!("invalid store path: {}", e))?;
     if p.exists() {
         if let Ok(meta) = std::fs::metadata(&p) {
-            if meta.len() > 16 * 1024 * 1024 {
-                return Err(format!("grant store file exceeds 16 MiB size cap: {} bytes", meta.len()));
+            let max_bytes = aiosh_core::pep_grant_config::PepGrantConfig::from_env()
+                .map(|c| c.max_store_bytes)
+                .unwrap_or(16 * 1024 * 1024);
+            if meta.len() > max_bytes {
+                return Err(format!("grant store file exceeds size cap ({} bytes): {} bytes", max_bytes, meta.len()));
             }
         }
-        let service = aiosh_core::pep_grant_service::PepGrantService::load_from_path(&p)?;
+        let mut service = aiosh_core::pep_grant_service::PepGrantService::load_from_path(&p)?;
+        let cfg = aiosh_core::pep_grant_config::PepGrantConfig::from_env().unwrap_or_default();
+        if cfg.auto_sweep_on_load {
+            let now = chrono::Utc::now().to_rfc3339();
+            let swept = service.sweep_expired(&now).unwrap_or(0);
+            if swept > 0 {
+                let _ = service.save_to_path(&p);
+            }
+        }
         Ok((p, service))
     } else {
         Ok((p.clone(), aiosh_core::pep_grant_service::PepGrantService::new().with_storage_path(p)))

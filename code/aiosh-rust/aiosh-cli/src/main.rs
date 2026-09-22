@@ -15700,8 +15700,9 @@ fn cmd_pep(args: &[String]) -> i32 {
                 i += 1;
             }
 
+            let grant_cfg = aiosh_core::pep_grant_config::PepGrantConfig::from_env().unwrap_or_default();
             let g_store_path = custom_store.map(std::path::PathBuf::from).unwrap_or_else(|| {
-                store_path.with_file_name("pep_grants.json")
+                grant_cfg.store_path.clone()
             });
 
             if let Err(e) = aiosh_core::pep_decision_service::validate_pep_service_path(&g_store_path) {
@@ -15720,8 +15721,8 @@ fn cmd_pep(args: &[String]) -> i32 {
 
             if g_store_path.exists() {
                 if let Ok(meta) = std::fs::metadata(&g_store_path) {
-                    if meta.len() > 16 * 1024 * 1024 {
-                        let msg = format!("grant store file exceeds 16 MiB size cap: {} bytes", meta.len());
+                    if meta.len() > grant_cfg.max_store_bytes {
+                        let msg = format!("grant store file exceeds size cap ({} bytes): {} bytes", grant_cfg.max_store_bytes, meta.len());
                         classify_and_emit(
                             &mut ctx, "pep", "grant", json!({ "error": &msg }),
                             "failure", None, Some("Grant store size cap exceeded"), "operator", None,
@@ -16065,9 +16066,7 @@ fn cmd_pep(args: &[String]) -> i32 {
                     if let Some(max_b) = max_bytes_opt {
                         grant.constraints.max_bytes = Some(max_b);
                     }
-                    if let Some(d) = depth_opt {
-                        grant.constraints.max_delegation_depth = d;
-                    }
+                    grant.constraints.max_delegation_depth = depth_opt.unwrap_or(grant_cfg.default_max_delegation_depth);
 
                     if let Err(e) = grant.validate() {
                         let msg = format!("grant validation failed: {}", e);

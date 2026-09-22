@@ -1159,6 +1159,68 @@ Evaluates all active grants against the current UTC timestamp, transitioning any
 - [T-02239: MCP Surface Documentation Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02239-mcp-api-surface-documentation.md)
 - [T-02240: MCP Surface Verification Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02240-mcp-api-surface-verification-evidenc.md)
 
+---
+
+## 19. Grant Lifecycle Configuration Reference
+
+The Grant Lifecycle configuration subsystem (`PepGrantConfig`) coordinates default behaviors, store path locations, resource caps, and delegation constraints across both the CLI (`aiosh pep grant`) and MCP (`aios.pep.grant.*`) surfaces.
+
+### 19.1 Configuration Precedence
+Configuration settings are resolved using a strict 4-tier precedence model:
+1. **Explicit Invocations**: CLI flags (`--store`, `--max-depth`) or MCP arguments (`store_path`, `max_delegation_depth`).
+2. **Environment Overrides**: Subsystem environment variables (`AIOSH_PEP_GRANT_*`).
+3. **Configuration File**: Persistent JSON document specified via `AIOSH_PEP_GRANT_CONFIG` or `.aios/pep_grant_config.json`.
+4. **Compiled Defaults**: Safe built-in defaults (`PepGrantConfig::default()`).
+
+### 19.2 Schema & Invariants (`GRANTCONF1..GRANTCONF6`)
+
+```rust
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PepGrantConfig {
+    pub version: String,
+    pub store_path: PathBuf,
+    pub max_store_bytes: u64,
+    pub max_grants: usize,
+    pub default_max_delegation_depth: u32,
+    pub auto_sweep_on_load: bool,
+    pub cascade_revocation_by_default: bool,
+}
+```
+
+| Invariant | Name | Description | Bounds / Rules |
+|---|---|---|---|
+| **`GRANTCONF1`** | **Path Hygiene** | Prevents directory traversal and dangerous filenames | $\le 1024$ chars, no `..`, `.json` extension, no control chars |
+| **`GRANTCONF2`** | **Store Sizing** | Limits maximum allowable backing store file size | $1\text{ KiB} \le \text{size} \le 100\text{ MiB}$ (Default: $10\text{ MiB}$) |
+| **`GRANTCONF3`** | **Registry Bounds** | Caps total tracked grants in service memory | $1 \le \text{grants} \le 50,000$ (Default: $5,000$) |
+| **`GRANTCONF4`** | **Delegation Depth** | Maximum permissible delegation depth for issued grants | $1 \le \text{depth} \le 10$ (Default: $3$) |
+| **`GRANTCONF5`** | **Lifecycle Automations** | Controls automatic sweep and cascade behaviors | Boolean flags (Default: sweep=true, cascade=false) |
+| **`GRANTCONF6`** | **Atomic Persistence** | Ensures atomic disk writes and bounds config reading | Read cap $64\text{ KiB}$, symlinks rejected, write via `.tmp.<pid>` |
+
+### 19.3 Environment Variables Reference
+
+| Variable | Type | Default | Description |
+|---|---|---|---|
+| `AIOSH_PEP_GRANT_CONFIG` | Path | None | Path to persistent configuration JSON file |
+| `AIOSH_PEP_GRANT_STORE_PATH` | Path | `.aios/pep_grants.json` | Path to backing grant store JSON |
+| `AIOSH_PEP_GRANT_MAX_GRANTS` | Integer | `5000` | Maximum number of active grants |
+| `AIOSH_PEP_GRANT_MAX_STORE_BYTES` | Integer | `10485760` (10 MiB) | Maximum size of grant store file |
+| `AIOSH_PEP_GRANT_MAX_DELEGATION_DEPTH` | Integer | `3` | Default delegation depth for issued grants |
+| `AIOSH_PEP_GRANT_AUTO_SWEEP` | Boolean | `true` | Automatically sweep expired grants on service load |
+| `AIOSH_PEP_GRANT_CASCADE_REVOCATION` | Boolean | `false` | Cascade grant revocation by default |
+
+### 19.4 Task Evidence References
+- [T-02241: Configuration Research Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02241-configuration-research.md)
+- [T-02242: Configuration Specification Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02242-configuration-specification.md)
+- [T-02243: Configuration Scaffold Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02243-configuration-scaffold.md)
+- [T-02244: Configuration Implementation Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02244-configuration-implementation.md)
+- [T-02245: Configuration Unit Test Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02245-configuration-unit-test.md)
+- [T-02246: Configuration Integration Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02246-configuration-integration.md)
+- [T-02247: Configuration Security Review Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02247-configuration-security-review.md)
+- [T-02248: Configuration Hardening Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02248-configuration-hardening.md)
+- [T-02249: Configuration Documentation Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02249-configuration-documentation.md)
+- [T-02250: Configuration Verification Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02250-configuration-verification-evidenc.md)
+
+
 
 
 

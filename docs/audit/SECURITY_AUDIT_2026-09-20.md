@@ -4877,3 +4877,40 @@ Tasks completed: **T-02236 through T-02245** (10 tasks sequentially executed und
 - Compiler hygiene: Zero compiler warnings across all workspace crates.
 - Security status: **CLEAN & VERIFIED**. Pointer advances to `T-02246`.
 
+---
+
+# ADDENDUM 27 — 2026-09-23: Grant Lifecycle Sub-Epic 5 Configuration Closure & Sub-Epic 6 Automated Tests Launch (T-02246..T-02255)
+
+## 1. Scope & Progress
+Tasks completed: **T-02246 through T-02255** (10 tasks sequentially executed under strict No-Skip governance):
+- **T-02246..T-02250 (Sub-Epic 5: Configuration Subsystem Closure)**:
+  - T-02246: Production integration of `PepGrantConfig` with MCP (`Server::validate_and_open_grant_store` / `validate_and_open_grant_service`) and CLI (`cmd_pep grant`).
+  - T-02247: Security review analyzing configuration abuse vectors: symlink following, environment hijacking, directory traversal, and memory exhaustion.
+  - T-02248: Security hardening: enforced canonical path validation, 64 KiB configuration read cap, atomic temporary file replacement, and fail-safe defaults.
+  - T-02249: System documentation: added Section 19 to `docs/pep_decision_engine.md` detailing configuration schema, env var mappings, CLI flags, and evidence links.
+  - T-02250: Milestone verification and formal Sub-Epic 5 closure (workspace clean, 0 warnings, full grant test suite green).
+- **T-02251..T-02255 (Sub-Epic 6: Automated Tests Subsystem Launch)**:
+  - T-02251: Research into automated test prior art, capability security invariants, scale constraints, and formalized test vectors `AUTOGRANT1..AUTOGRANT8`.
+  - T-02252: Complete technical specification for automated testing covering scale issuance, deep attenuation hierarchy, branching cascade revocation, mass temporal sweeping, atomic persistence recovery, adversarial fuzzing, concurrency safety, and cross-substrate serialization.
+  - T-02253: Module skeleton and fixture scaffolding in `code/aiosh-rust/aiosh-core/tests/test_pep_grant_automated.rs` using `MockPepGrantEnv` with hermetic temp directories.
+  - T-02254: Full implementation of all 8 automated integration test vectors in `test_pep_grant_automated.rs`.
+  - T-02255: Standalone unit test execution and regression verification (9/9 automated tests PASS in 0.05s, 40/40 total grant tests PASS, 0 warnings).
+
+## 2. Invariants & Controls Audited
+1. **High-Volume Scale & Indexing (`AUTOGRANT1`)**: Verified sub-millisecond point lookups and precise secondary multi-index reconstruction over 1,000 synthetic grants across 50 subjects.
+2. **Monotonic Delegation & Attenuation (`AUTOGRANT2`)**: Verified strict monotonicity across 7 levels of attenuation; unauthorized right expansions and delegation depth overflows fail closed.
+3. **Branching Cascade Revocation Invariant (`AUTOGRANT3`)**: Verified that revoking an intermediate parent in a complex branching DAG cascades strictly to all transitive descendants without affecting sibling or ancestor nodes.
+4. **Mass Temporal Expiration Sweeping (`AUTOGRANT4`)**: Swept 200 mixed temporal grants; accurately transitioned expired grants to terminal `Expired` state with complete idempotency.
+5. **Atomic Disk Persistence & Reload (`AUTOGRANT5`)**: Verified that write operations save cleanly and reload into fresh instances with exact state fidelity and reconstructed secondary indexes.
+6. **Adversarial & Boundary Hardening (`AUTOGRANT6`)**: Confirmed rejection of control chars in IDs, oversized IDs (> 128 chars), illegal path traversal in subjects (`../../`), excessive delegation depths (> 8), empty right sets, invalid FSM state jumps, and storage path traversal.
+7. **Thread-Safe Concurrency Pattern (`AUTOGRANT7`)**: Verified multi-threaded concurrent readers (4 threads) and writers (2 threads) wrapped in `Arc<RwLock<PepGrantService>>` execute without deadlocks or corruptions.
+8. **Cross-Substrate Serialization Interoperability (`AUTOGRANT8`)**: Verified snake_case JSON schema compatibility across MCP, CLI, and Core store representations.
+
+## 3. Audit Certification
+- Rust automated tests: `test_pep_grant_automated` (9/9 PASS in 0.05s).
+- Full grant test suite: 40/40 tests PASS (`test_pep_grant`, `test_pep_grant_service`, `test_pep_grant_config`, `test_pep_grant_automated`).
+- Python smoke tests: `test_pep_decision_smoke.py` (7/7 PASS).
+- Workspace compiler hygiene: 0 errors, 0 warnings across all workspace crates.
+- Task ledger state: 2,255 completed, 0 orphans, valid state.
+- Security status: **CLEAN & VERIFIED**. Pointer advances to `T-02256`.
+
