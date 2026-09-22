@@ -1,5 +1,20 @@
 # Progress Log
 
+## 2026-09-22 — T-02201..T-02210: Grant Lifecycle Data Model CLOSED (Invariants PEPGRANT1..PEPGRANT6, 10/10 tasks)
+
+**What shipped:**
+- Completed Sub-Epic 1 (Grant Lifecycle Data Model, T-02201..T-02210):
+  - Invariants `PEPGRANT1..PEPGRANT6`: Finite State Machine (`Requested`, `Active`, `Suspended`, `Revoked`, `Expired`), strict identifier & hygiene validation, delegation & attenuation calculus, temporal & volumetric quota governance, authoritative cascade revocation, atomic JSON persistence (`.tmp.<pid>.<nonce>`).
+  - Implemented `PepGrant`, `PepGrantState`, `PepGrantConstraints`, `PepGrantRevocation`, and `PepGrantStore` in `code/aiosh-rust/aiosh-core/src/pep_grant.rs`.
+  - Operator CLI surface in `aiosh-cli`: `aiosh pep grant list`, `inspect`, `validate`, `revoke` with recursive `--cascade` support.
+  - Agent MCP surface in `aiosh-mcp`: `aios.pep.grant.list`, `inspect`, `validate`, `revoke` registered in tool manifest and routed through `dispatch::recorded_call` with immutable SQLite audit row emission.
+  - Standalone unit test suite in `code/aiosh-rust/aiosh-core/tests/test_pep_grant.rs` (10/10 tests PASS).
+  - Integration smoke tests in `code/aiosh-cli/tests/test_pep_cli_smoke.py` and `code/aiosh-mcp/tests/test_pep_decision_smoke.py` (100% PASS).
+  - Hardening bounds (`MAX_GRANTS_IN_STORE = 5000`, `MAX_GRANT_STORE_SIZE = 10 MiB`, `MAX_DELEGATION_DEPTH_LIMIT = 8`, metadata bounds).
+  - Section 15 added to system reference `docs/pep_decision_engine.md`.
+- **Milestone: Grant Lifecycle Sub-Epic 1 (Data Model) CLOSED — 10/10 tasks**.
+- Next task pointer advances to **T-02211** (`Phase 2 — Security Kernel & PEP Fabric / Grant Lifecycle / core service: Research`).
+
 ## 2026-09-22 — T-02191..T-02200: PEP Decision Engine Recovery & Validation CLOSED & Entire PEP Epic FINALIZED (100/100 tasks)
 
 **What shipped:**

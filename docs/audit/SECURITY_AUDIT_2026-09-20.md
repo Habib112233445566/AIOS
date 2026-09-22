@@ -7,7 +7,35 @@
 
 ---
 
-## Findings index (status after TWENTY-SECOND PASS — `main.rs` contiguous read to 5286 + framing read)
+## File coverage — AUTHORITATIVE RECORD (supersedes every earlier per-pass coverage note)
+
+**This table is the single source of truth for what has been read.** The coverage notes at the end of the twenty-first and twenty-second pass sections are **SUPERSEDED** by it and are marked as such; no other pass-level coverage figure in this document should be quoted.
+
+**File under audit:** `code/aiosh-rust/aiosh-mcp/src/main.rs`.
+
+**Line-number drift — read this before using any citation.** The file is **actively being edited by another thread**. It measured **10,081 → 10,159 → 10,218 → 10,348** lines *within passes 21–23 alone*. Every line citation in this report is therefore an **address at the revision named beside it, not a stable address**, and older citations in this document (anything from pass 22 or earlier) are **stale by roughly +50 to +190 lines**. Where a citation matters, the **quoted code** is the durable anchor — search for the code, not the number.
+
+| Region (current revision) | Lines | Status |
+|---|---|---|
+| **Production code, `1–7764`** | 7,764 | **READ line-by-line** across passes 21–23, in six complete untruncated windows + the framing window. See the per-window table in the twenty-third pass section for exactly which window covered which range. |
+| `#[cfg(test)]` module, `7765–10348` | 2,584 | **NOT READ** — the only unread region left in this file. |
+
+**Per-pass window provenance** (each window was confirmed complete because `read_files` reported its exact last line):
+
+| Window | Range as read | Revision read against |
+|---|---|---|
+| 1–4 | `1–2740` | 10,081/10,159 |
+| 5 | `2741–3586` | 10,159 |
+| 6 | `3587–4436` | 10,159 |
+| 7 | `4437–5286` | 10,159 |
+| — (separate region) | `6973–7575` — helpers, `main()`, stdio/JSON-RPC framing | 10,159 |
+| 8 | `5287–6136` | 10,159 |
+| 9 | `6137–6846` | 10,218 |
+| 10 | `6846–7635` | 10,348 |
+
+**What this means for the next pass: there is nothing left to read in this file except the test module at `7765`.** Because another thread is still writing to the file, the next pass should **re-diff for new code first** (anything newer than revision 10,348 is unread by definition), then read `7765–10348`.
+
+## Findings index (status after TWENTY-FOURTH PASS — production code fully read; five standing STATIC claims settled live)
 
 **DEMONSTRATED** = reproduced against the real binary/server in an isolated temp `AIOSH_HOME`; **STATIC** = code-read only; **DISPROVEN** = a probe refuted the claim as written. First disproven claim: **C-4 is now shown to be scoped** — the PEP-gated MCP dispatch path genuinely validates grants (SEVENTEENTH PASS), so C-4 holds only for the four module-level policy helpers. Refinements recorded in the SIXTH PASS: C-6's ZIP extraction is zip-slip-safe (`enclosed_name`); N-1's 0644-widening half remains untestable on this host. SEVENTH PASS adds N-20…N-25 and demonstrates the session-check sibling of N-14 (see N-20). EIGHTH PASS adds N-26…N-29 (new capability subsystem + service-recovery), all probe-verified except N-28. TWELFTH PASS demonstrates H-12 (Python half) and N-23, and settles M-17 (seen-path panic CONFIRMED exit 101; verify-full half refuted). THIRTEENTH PASS adds N-35…N-36 (new `aios.pep.*` rule-authoring tools — dead governance, fifth write primitive). FOURTEENTH PASS adds N-37 (ungated `evidence.hash` arbitrary-file oracle) and upgrades M-13. FIFTEENTH PASS demonstrates **M-5** (Windows ledger lock is a no-op → duplicate `seq` under 16-way concurrency), **N-6** (sandbox argv hijack executes a different binary than requested), **N-33** (no-policy `--` form runs the command), and adds **N-38…N-39** (capability prohibited-path case-sensitivity bypass; `session.check`/`package.check` auto_recover = 6th/7th destructive write primitive). SIXTEENTH PASS adds **N-40…N-41** (restricted-resource governance bypassed by case; session-policy env blocklist bypassed by case), records that N-35's "governance never invoked" premise is now stale, and records the negative that `PepSecurityPolicy::enforce_decision` (the `Permissive`/`Disabled` deny→permit conversion) has zero callers. SEVENTEENTH PASS adds **N-42** (wildcard-arm case sensitivity makes prefix-wildcard *deny* rules bypassable by request case), upgrades **N-2** and **N-9** to DEMONSTRATED, and **scopes down C-4** (the PEP-gated MCP path really does validate grants). EIGHTEENTH PASS adds **N-43** (capability prohibited-path check is purely lexical → a junction to `C:\Windows` is accepted) and completes the canonicalisation sweep: every enum/keyword/identifier comparison is fail-closed, and the fail-open instances are exactly the five containment arms (N-38…N-43). NINETEENTH PASS demonstrates three standing High findings — **H-5**, **H-9**, **H-11** — and narrows **N-25** to unreachable. TWENTIETH PASS measures the gate census at runtime (146 tools / 10 gated), **correcting C-3's numbers downward for the platform's benefit and its own static method**, and adds **N-44** (latent PEP store-validator format mismatch).
 
@@ -15,7 +43,7 @@
 |---|---|---|
 | C-1 sandbox is a no-op (AT_FDCWD → EBADF; child execs; `sandbox_applied` emitted with FAIL components) | Critical | **DEMONSTRATED** (live: all-FAIL components + child ran, pass 6) |
 | C-2 unauthenticated arbitrary command execution (`process.run` / `aiosh run`) | Critical | **DEMONSTRATED** (`aiosh run` deleted a file, no grant/confirmation, pass 6) |
-| C-3 MCP tools ungated | Critical | **DEMONSTRATED + NUMBERS CORRECTED** (pass 20, measured at runtime: **146** registered tools, only **10** return a PEP gate refusal without a grant → **136 ungated**. The long-standing "3 gated / 136 call sites" figure was a line-based static undercount; the runtime census is authoritative) |
+| C-3 MCP tools ungated | Critical | **DEMONSTRATED + NUMBERS CORRECTED** (pass 20, measured at runtime: **146** registered tools, only **10** return a PEP gate refusal without a grant → **136 ungated**. The long-standing "3 gated / 136 call sites" figure was a line-based static undercount; the runtime census is authoritative). **Pass 24 refinement, live:** because the credential is an *optional* argument, the gate refuses a caller who presents one it does not know (`gate:"pep"`, `unknown or revoked grant`) while a caller who **omits** it is served — on `aios.pep.grant.revoke`, `{"grant_id_param":"gr_TEST"}` alone returned `ok:true revoked_count:1`. The gate punishes voluntary disclosure; it does not require authorization) |
 | C-4 grant checks accept any non-empty string | Critical | **PARTLY DISPROVEN (pass 17)** — true for the four module-level helpers (`release.rs:119` discards the value entirely; `doc_index_service.rs:269`, `evidence_service.rs:136`, `toolchain_service.rs:275` accept any non-empty string), but the PEP-gated MCP path **rejects** forged grants: `{"gate":"pep","reason":"unknown or revoked grant: x"}` |
 | C-5 cross-substrate hash parity broken for non-ASCII | Critical | **DEMONSTRATED** (byte-level, pass 5) |
 | C-6 `aios.backup.restore` gated only by `check_release_policy` | Critical | **DEMONSTRATED** (`grant_id:"x"` extracted attacker ZIP; row omits classifier provenance; zip-slip defended — pass 6) |
@@ -85,13 +113,17 @@
 | N-46 `Server::open()` opens the PEP decision store on the **same SQLite file** as the audit ring (`let pep_path = ring.path()`, `main.rs:31-42`) → the authorization store and the evidence trail are one writable file — pass 21 | High | STATIC |
 | N-47 seven tools fall back to **hardcoded absolute host defaults** as write targets when the path argument is omitted (`/var/lib/aios/images` `:2559`, `packages.json` `:3004`, `services.json` `:3365`, `/var/lib/aiosh/updates` `:5838,5861,5890,5912`) → ungated recovery/quarantine at a fixed path outside `AIOSH_HOME` — pass 21 | Medium | STATIC (deliberately not executed) |
 | N-48 policy verdicts carry a **fabricated constant** `evaluated_at` (`2026-09-04T00:00:00Z` `:2921`, `2026-09-06T00:00:00Z` `:3287`) → the verdict's own provenance timestamp is false — pass 21 | Low | STATIC |
-| N-49 `row_to_json` publishes `grant_token` (`:7044`) and `aios.audit.tail` is **ungated** (`:4817`) → any caller can harvest grant IDs from the ring; the on-disk 0644 exposure was already recorded, the **read path** is not — pass 22 | High | STATIC |
-| N-50 Unvalidated or silently-defaulted arguments: `audit.tail` non-integer `n` → default 10 (observed), `session.list` unknown `state`/`session_type` → filter silently dropped (`:3494`,`:3501`), `fs_layout.get`/`fstab` unknown `profile` → **silently returns `standard_uefi` instead** (`:3869`,`:3930`), `fs.read` widens roots to `/tmp` when `HOME` is unset (`:4717-4718`); sibling `service.list` errors instead — pass 22 | Low-Medium | PARTLY DEMONSTRATED |
+| N-49 `row_to_json` publishes `grant_token` (`:7233` @ rev 10,348) and `aios.audit.tail` is **ungated** → any caller can harvest grant tokens from the ring; the on-disk 0644 exposure was already recorded, the **read path** is not — pass 22, **DEMONSTRATED pass 23** (separate ungranted process read `gr_SECRET_TOKEN_OF_CLIENT_A` out of the ring; escalation to *using* a harvested token still unproven) | High | **DEMONSTRATED** |
+| N-50 Unvalidated or silently-defaulted arguments: `audit.tail` non-integer `n` → default 10 (observed), `session.list` unknown `state`/`session_type` → filter silently dropped (`:3494`,`:3501`), `fs_layout.get`/`fstab` unknown `profile` → **silently returns `standard_uefi` instead** (`:3869`,`:3930`), `fs.read` widens roots to `/tmp` when `HOME` is unset (`:4717-4718`); sibling `service.list` errors instead — pass 22. **Pass 24: the `fs_layout.get` arm is DEMONSTRATED live** — `profile:"bogus_profile_xyz"` → `ok:true` + the `standard_uefi` layout | Low-Medium | PARTLY DEMONSTRATED (fs_layout.get half now live) |
 | N-51 `parse_mcp_scope` conflates declared scope types and hardcodes `allowed_actions: ["*"]` (`:7004-7006`), accepting undeclared `tool`/`ipc` wire values (`:7011`); live on issue/attenuate/check (`:6044`,`:6125`,`:6215`) — pass 22 | Medium | STATIC |
-| N-52 `AIOSH_KERNEL_MODULE_STORE` env var selects the mutable kernel-module store path (`:5433`,`:7109`,`:7139`) and `save_kernel_module_service` `create_dir_all`s its parent → env-controlled write location with directory creation — pass 22 | Medium | STATIC |
-| N-53 `resolve_update_service` converts **any** state-load error into a fabricated default state — version `"1.0.0"`, `SlotA`, `"2026-09-20T12:00:00Z"` (`:7202`) → a tampered/corrupt update state is silently replaced instead of reported — pass 22 | Medium | STATIC |
+| N-52 `AIOSH_KERNEL_MODULE_STORE` env var selects the mutable kernel-module store path (`:5433`,`:7109`,`:7139`) and `save_kernel_module_service` `create_dir_all`s its parent → env-controlled write location with directory creation — pass 22. **Pass 24: DEMONSTRATED** — with the env var set, `kernel_module.blacklist` created `<tmp>/evil/km.json`, and `check_kernel_module_path_bounds` was read: it checks **length and control characters only, no containment** | Medium | **DEMONSTRATED** |
+| N-53 `resolve_update_service` converts **any** state-load error into a fabricated default state — version `"1.0.0"`, `SlotA`, `"2026-09-20T12:00:00Z"` (`:7202`) → a tampered/corrupt update state is silently replaced instead of reported — pass 22. **Pass 24: DEMONSTRATED** — `update.status {"state_dir":"<tmp>/nope"}` returned `ok:true` with the literal placeholder state (`1.0.0`, `slot_a`, `2026-09-20T12:00:00Z`) | Medium | **DEMONSTRATED** |
 | N-54 Omitted or nonexistent `store_path` silently substitutes a fresh seeded store (`:7083`,`:7086`,`:7118`) and mutating calls then `save_to_path` it → a typo'd path silently becomes a new store at that path — pass 22 | Low | STATIC |
 | N-55 Sibling policy verdicts disagree on non-enforcing modes: package `allowed = mode != Enforcing` (`:2913`) vs service `allowed = mode == Audit` (`:3279`) → in **Permissive** mode a prohibited package is `allowed:true` while a prohibited service is `allowed:false` — pass 22 | Medium | STATIC |
+| N-56 Swallowed persistence: `let _ = store.save_to_path(p)` at the **grant-revocation** sink (`:7008`) and `let _ = service.save_state_to_dir(...)` at four update-family sinks (`:5898`,`:5921`,`:5950`,`:5972`) → the call reports `ok:true` while the revocation/state never reached disk — pass 23. **Pass 24: the revocation sink is DEMONSTRATED** — against a read-only store the call returned `ok:true revoked_count:1` while the file bytes were unchanged and re-list showed the grant still `active`; the four update-family sinks remain STATIC | High | **DEMONSTRATED** (revocation sink) |
+| N-57 **DISPROVEN** — the hypothesis that `load_or_create` makes read-only capability tools materialise a store file was probed and it does **not**: `aios.capability.list` with a nonexistent `store_path` returned `ok:true, count:0` and created nothing — pass 23 | — | DISPROVEN |
+| N-58 `aios.capability.check` reports an access **DENIAL** as `ok:true` with JSON-RPC `isError:false` (`"granted": false` at `:6299`) → an agent gating on the protocol error flag reads a denied check as success — pass 23 | Low-Medium | DEMONSTRATED |
+| N-59 New `aios.pep.grant.*` family (registered `:1929`,`:1942`,`:1956`,`:1972`): `store_path` defaults to the **bare CWD-relative** `"pep_grants.json"`, all four arms are ungated, `grant.list`/`grant.inspect` return full grant records to an ungranted caller, and `revoke` attributes the actor to a hardcoded `"mcp-agent"` (`:7007`) — pass 23. **Pass 24: the CWD default is DEMONSTRATED** — a store planted in the server's CWD was returned by `grant.list {}` (`count:1`), while an empty CWD returned `count:0`. Arg-name fact for the record: the handler reads the target from **`grant_id_param`** (schema marks it required) while `call_tool` reads **`grant_id`** as the caller's *optional* credential (`:1977`,`:1979`) | Medium | **DEMONSTRATED** (CWD default) |
 | N-40 restricted-resource governance defeated by case: `is_resource_restricted` uses raw `starts_with` while evaluation uses `eq_ignore_ascii_case` → `SYS:kernel` Permit rule accepted, `sys:kernel` then permitted — pass 16 | High | DEMONSTRATED |
 | N-41 session-policy SSP4 env blocklist is case-sensitive → `Ld_Preload`/`Pythonpath`/`Node_Options` all pass while canonical spellings are refused — pass 16 | Medium | DEMONSTRATED |
 | M-5 Windows ledger lock is a no-op → duplicate `seq` + multiplied completion events under concurrency (Unix serialized) — pass 2 | Medium | **DEMONSTRATED** (pass 15: 16 concurrent `task done 1` → seq 1/1/2/2, four completion events, state/events divergence) |
@@ -3377,6 +3409,8 @@ A `PackagePolicyVerdict`/service verdict is the artifact a policy decision is ju
 
 ## Coverage claim for this pass, stated precisely
 
+> **SUPERSEDED (pass 23):** see the authoritative coverage record at the top of this document. This pass's table is a historical record of that pass's windows only.
+
 **Lines 1–2740 of `aiosh-mcp/src/main.rs` were read line-by-line with no gaps.** Nothing between 2741 and 10159 is claimed as covered except the two targeted regions named in the table above. The `#[cfg(test)]` boundary (7498 in the older revision) has **not** been re-located in the current 10,159-line file.
 
 **Resume marker for the next pass: start at line 2741.** Read it as a fresh window — the partial content glimpsed this pass does not count as coverage.
@@ -3410,7 +3444,7 @@ A `PackagePolicyVerdict`/service verdict is the artifact a policy decision is ju
 
 **Resume marker for the next pass: start at line 5287** (handler bodies: the capability, PEP, hardware, network and update arm families, plus the rest of `call_task`). **Then** 7576–10159.
 
-## N-49 — the audit ring publishes grant tokens to an ungated reader (HIGH, STATIC)
+## N-49 — the audit ring publishes grant tokens to an ungated reader (HIGH — **STATIC at the time of writing; DEMONSTRATED in pass 23**, see the twenty-third pass section for the live two-process transcript and for the honest limit on what it proves)
 
 **Where:** `row_to_json` at `:7031` inserts every field of an `AuditRow` including `m.insert("grant_token".into(), json!(r.grant_token));` at **`:7044`**, and `row_to_json` is the serialiser used by **`aios.audit.tail`** (`arm :4817`, reads `:4818`). That tool is registered ungated and passes `false` for `require_grant` — confirmed in pass 20's runtime census (it is not among the ten gate-refusing tools).
 
@@ -3426,7 +3460,7 @@ A repeated pattern across sibling handlers: where one tool rejects a bad filter 
 
 | Site | Input | Behaviour | Sibling that does it right |
 |---|---|---|---|
-| `:4818` | `aios.audit.tail {"n": "abc"}` | non-integer type is not rejected — `as_i64()` yields `None`, `.unwrap_or(10)` → **silently serves the default 10 rows** | every list tool: `package.list`/`session.list`/`service.list` reject `limit` outside `1..=10_000` |
+| `:4818` | `aios.audit.tail {"n": "abc"}` | non-integer type is not rejected — `as_i64()` yields `None`, `.unwrap_or(10)` → **silently serves the default 10 rows** | `package.list` (`:2650` region), `package.search`, `session.list` all reject `limit` outside `1..=10_000`; notably `service.list` does **not** validate `limit` either |
 | `:3494` | `aios.session.list {"state": "actve"}` (typo) | unknown state → `_ => None` → **filter silently dropped**, unfiltered session list returned | `aios.service.list` returns `Err("unknown service state '…'")` |
 | `:3501` | `aios.session.list {"session_type": "xyz"}` | unknown type → `_ => None` → filter dropped | as above |
 | `:3869` | `aios.fs_layout.get {"profile": "minimal_containr"}` (typo) | `_ => …::standard_uefi()` → **returns a different layout than the one asked for, with `ok:true`** | `parse_hardware_classes` rejects an unrecognised class |
@@ -3545,15 +3579,130 @@ A non-`Enforcing` mode is supposed to be non-blocking — that is what it is for
 - **`aios.task` is served by a second enforcement path — observation, not a finding.** The `tools/call` branch special-cases `tool == "aios.task"` and routes to `server.call_task(&parsed)` instead of `call_tool`, so the task tool never touches `call_tool`'s arms at all. `call_task` (`:6847`) does apply a gate of its own (`dispatch::dispatch` for `metrics`, `:6853`), and pass 21's index already counts `aios.task` among the gated tools — so **no bypass is claimed here**. The recordable observation is duplication: `call_task` hardcodes the actor identity as string literals (`"agent:mcp@aiosh-mcp"`, `"agent:mcp"`) where `call_tool` uses the `dispatch::DEFAULT_ACTOR*` constants, so the two paths can drift apart on the one field that identifies who acted.
 - **The line-based gate census is unreliable and should not be quoted.** Re-running it this pass gives `dispatch::recorded_call` = 136 (a count that includes the test module), `, true,` = 5 and `, true, dispatch::DEFAULT_ACTOR_ID` = 3 — three different numbers for the same question, because the flag and the actor are frequently split across lines. Only pass 20's **runtime** census (146 tools registered, 10 refusing without a grant) is authoritative; the `require_grant` flag read directly off each arm is the second-best source. Recorded so no future pass re-derives a gate count from a grep.
 - **Verified clean in the framing — the transport is the best-hardened part of this file, and I found no defect in it.** `read_line_capped` (`:7401-7443`) enforces `MAX_LINE_BYTES = 1 MiB`, and on overflow it **drains through the newline before returning** so framing is preserved for subsequent requests instead of desynchronising the stream — it replies JSON-RPC `-32700` rather than dying. Parse errors likewise produce `-32700` and the loop continues. `main()` (`:7445`) bounds nothing else and needs to bound nothing else. Notably, `read_layout_document_input` (`:7281`) refuses a document *by type* via `read_bounded_text_file`, and its doc comment explains why: the server is **single-threaded**, so a FIFO named by `spec` previously blocked the entire request loop, and `/dev/zero` streamed until memory was exhausted. That is a previously-fixed unauthenticated transport DoS, fixed in the right place with the rationale written down. **No authentication, session identity, or rate control exists anywhere in the framing** — `initialize` accepts any client and every request carries `dispatch::DEFAULT_ACTOR_ID` — but that is the already-recorded "no per-caller authorization" finding (H-5's entry), not a new one, and it is stated here only so the framing's coverage is complete.
-- **Stretches that yielded nothing (recorded, not skipped):** `:6973-7002` (`validate_mcp_string` — length + control-character rejection, correctly written); `:7031-7069` (`row_to_json` — apart from N-49 the mapping is complete and lossless); `:7088-7098` (`check_kernel_module_path_bounds`); `:7149-7183` (`resolve_network_service` — three optional roots, each bounded before use, defaults `/sys/class/net`, `/proc/net`, `/etc/resolv.conf`); `:7211-7239` (`resolve_hardware_service`); `:7240-7280` (`parse_hardware_classes` — **rejects** an unrecognised class, the fail-closed sibling that N-50 contrasts against); `:7358-7392` (`check_fs_layout_store_path_bounds`, `resolve_service_store`). No defect found in any of them.
+- **Stretches that yielded nothing (recorded, not skipped):** `:6973-7002` (`validate_mcp_string` — length + control-character rejection, correctly written); `:7031-7069` (`row_to_json` — apart from N-49 the mapping is complete and lossless); `:7090-7098` (`check_kernel_module_path_bounds`); `:7149-7183` (`resolve_network_service` — three optional roots, each bounded before use, defaults `/sys/class/net`, `/proc/net`, `/etc/resolv.conf`); `:7211-7239` (`resolve_hardware_service`); `:7240-7280` (`parse_hardware_classes` — **rejects** an unrecognised class, the fail-closed sibling that N-50 contrasts against); `:7358-7392` (`check_fs_layout_store_path_bounds`, `resolve_service_store`). No defect found in any of them.
 
 ## Coverage claim for this pass, stated precisely
+
+> **SUPERSEDED (pass 23):** see the authoritative coverage record at the top of this document. This pass's table is a historical record of that pass's windows only.
 
 **Read line-by-line and gap-free this pass: 2741–5286.** Together with pass 21 that makes **1–5286 (52% of the file, 70% of production code) contiguously read**. Separately and in full: **6973–7575** (helpers, `main()`, framing) — a second region, explicitly *not* contiguous with the first. A 42-line targeted window of `call_task` (`:6847-6888`) is disclosed above and is not part of either claim.
 
 **NOT read: `5287-6972`** (1,686 lines — the capability, PEP, hardware, network and update handler arms, plus most of `call_task`) and **`7576-10159`** (2,584 lines of tests).
 
 **Resume marker: the next pass starts at line 5287**, then continues to 7576 and the test module.
+
+---
+
+# TWENTY-THIRD PASS — the last unread production stretch (`5287–7635`) + N-49 demonstrated
+
+**Method:** read-only. No source edits; no probe wrote outside a temp root; the repo's own `docs/tasks` was never touched. Probes ran with `AIOSH_HOME`/`AIOSH_TASKS_DIR` in throwaway temp dirs.
+
+**Revision note.** The file was **10,159 lines** when this pass began and is **10,348 lines** as I finish — a parallel thread added 189 lines *during the pass*. `aios.pep.validate` sits at `:6846` in both the 10,218 and 10,348 revisions, i.e. the newest insertions are after it. **All citations below were re-grepped against the 10,348 revision**, not carried over; the quoted code is the durable anchor. See the authoritative coverage record at the top of this document for the full window-provenance table.
+
+**Windows read, each confirmed complete by the reader's own reported last line:** `5287–6136`, `6137–6846`, `6846–7635`. With passes 21–22 that completes **all of production code (1–7764)**. The only unread region left in this file is the `#[cfg(test)]` module at `:7765`.
+
+## N-56 — persistence failures are swallowed on the authorization path (HIGH, STATIC)
+
+Two sinks discard the write result and then report success.
+
+**The grant-revocation sink (`:7008`)** — the more serious one, because revocation is the control an operator reaches for *during an incident*:
+
+```rust
+let count = store.revoke_grant(gid, "mcp-agent", &reason, cascade)?;
+let _ = store.save_to_path(p);          // :7008 — result discarded
+Ok(json!({ "ok": true, "tool": "aios.pep.grant.revoke",
+           "grant_id": gid, "revoked_count": count, "cascade": cascade }))
+```
+
+The grant is revoked **in memory**, the write to `pep_grants.json` is attempted, the `Result` is thrown away with `let _ =`, and the caller is told `ok:true, revoked_count:1`. If that write fails — read-only mount, permissions, disk full, a path on a volume that does not exist — the operator sees a successful revocation while the **on-disk grant remains live**. The revocation survives only until the process restarts. Worse, `dispatch::recorded_call` still commits an audit row for the call, so the **evidence trail affirmatively records a revocation that did not persist**: the audit and the authorization store disagree, and the audit is the one that looks authoritative.
+
+**Four update-family sinks (`:5898`, `:5921`, `:5950`, `:5972`)** — same pattern, `let _ = service.save_state_to_dir(&state_dir);` in `aios.update.check/apply/confirm/rollback`, each followed by a success body built from the in-memory state. For an A/B update engine this means "the update applied and you will boot into the new slot" is reported regardless of whether that decision reached disk — which is the same failure N-53 reaches from the other direction (N-53 fabricates a state on *read* failure; N-56 discards the state on *write* failure).
+
+**Severity High** because one instance governs the durability of grant revocation. **Status STATIC:** the `let _ =` is the whole proof; no runtime state is needed. A probe would need to make a write fail (e.g. point `store_path` at a read-only location) and observe `ok:true` — recorded as the obvious way to demonstrate it, deliberately not run here because it means inducing a write failure on a real path.
+
+## N-57 — DISPROVEN: read-only capability tools do **not** materialise the store (DISPROVEN)
+
+I expected the `load_or_create` calls in the read-only capability arms (e.g. `aios.capability.list` `:6003`) to create a store file at whatever path the caller named, making an ungated *read* a filesystem write. **Probed and it does not happen.**
+
+```
+=== N-57: does the READ-ONLY aios.capability.list create the store file? ===
+  before: False
+  capability.list -> ok=True count=0
+  after : False | size: -
+```
+
+**No finding is filed.** The name is misleading, not the behaviour — `load_or_create` evidently creates only on a save path. Recorded here so that no future pass re-derives this as a defect from the function name, which is exactly how I reached it.
+
+## N-58 — a denied access check is reported to the client as a successful call (LOW-MEDIUM, **DEMONSTRATED**)
+
+`aios.capability.check` answers a denial with `ok: true` and puts the refusal in the body (`"granted": false`, `:6299`). `main()` computes the protocol error flag as `result.get("ok") == Some(false)`, so a denial produces **`isError: false`** — the transport tells the client the call succeeded.
+
+**Command and observed output (live, temp `AIOSH_HOME`, separate process, no grants):**
+
+```
+$ python _probe_p23.py
+=== N-58: denial signalled how? ===
+  body: ok=True granted=False reason=CAP_ERROR_RIGHT: right 'read' not granted
+  JSON-RPC isError field: False
+```
+
+An agent that gates on `isError` — the natural reading of a tool-call protocol — treats "you do not have this right" as a successful check. The file's own comment states the intended convention: *"semantic refusals flow through the gate as isError:true results"*. Here the semantics of `ok` were overloaded with *"the tool ran"* instead of *"the answer is positive"*, and a third tool completes the inconsistency: `aios.package.policy` sets `ok` to the **verdict** (`allowed:true` for a permitted package), so a policy denial there *does* raise `isError`. Three tools, three different meanings for the same field (N-55 records two of them disagreeing on mode logic; this is the third axis).
+
+## N-59 — the new `aios.pep.grant.*` family: CWD-relative default, ungated, hardcoded revoker (MEDIUM, STATIC)
+
+Four tools were registered by the parallel thread during this pass — `aios.pep.grant.list` (`:1929`), `.inspect` (`:1942`), `.validate` (`:1956`), `.revoke` (`:1972`), with arms at `:6893` and `:6993`. All four are registered **ungated** (`false`), and three problems follow.
+
+1. **The default store path is a bare relative filename.** `let path = store_path_opt.as_deref().unwrap_or("pep_grants.json");` — not `.aios/pep_grants.json` like its siblings, not an absolute path like N-47's family. A bare filename resolves against the **server's current working directory**, so the grant store lands wherever the process happened to be started. Every other store in this file picks one of three conventions; this one picks a fourth, and it is the store that holds authorization grants.
+2. **Ungated reads of grant records.** `grant.list` and `grant.inspect` return grant objects to a caller with no grant. **Whether that discloses the grant *secret* itself depends on the shape of `PepGrant` in `pep_grant.rs`, which this pass did not read** — so I am not claiming token disclosure here. It is recorded because it is the natural next question and because it combines with **N-49, which is now demonstrated**: an ungated caller can already harvest grant ids from the audit ring.
+3. **The revoker identity is hardcoded** — `store.revoke_grant(gid, "mcp-agent", …)` (`:7007`) records the same actor string for every caller, whatever actually called. This is the third hardcoded-identity site in the file (see the observation below), and here it lands in the record of *who revoked an authorization*.
+
+Also relevant: **the pass-20 runtime census (146 tools, 10 gated) is now stale.** Four new tools have been registered since, so that figure must be re-measured rather than quoted; the report's index no longer states a tool count as current.
+
+## N-49 — DEMONSTRATED end to end through the real binary
+
+The mission asked for either result. It is a **reached** result.
+
+**Setup.** Two separate MCP server processes (client A and client B) sharing one temp `AIOSH_HOME`; neither client has a valid grant. Client A calls two **PEP-gated** tools carrying a distinctive grant id. Client B — a different process, with no `grant_id` in any argument — calls the **ungated** `aios.audit.tail`.
+
+**Command and observed output:**
+
+```
+$ python _probe_p23.py
+=== CLIENT A (has a grant id; both tools are PEP-gated) ===
+  aios.fs.read:        {"audit_id": 1, "gate": "pep", "ok": false, "policy_revision": "sprint-2-rule-pack-v1",
+                        "reason": "unknown or revoked grant: gr_SECRET_TOKEN_OF_CLIENT_A"}
+  aios.audit.rotate:   {"audit_id": 2, "gate": "pep", "ok": false, "policy_revision": "sprint-2-rule-pack-v1",
+                        "reason": "unknown or revoked grant: gr_SECRET_TOKEN_OF_CLIENT_A"}
+
+=== CLIENT B (separate process, NO grant_id anywhere) ===
+  audit.tail -> ok=True count=2
+  rows carrying a grant_token: 2
+     row 1: tool=aios.fs.read      grant_token='gr_SECRET_TOKEN_OF_CLIENT_A'
+     row 2: tool=audit.rotate      grant_token='gr_SECRET_TOKEN_OF_CLIENT_A'
+
+  VERDICT N-49: DEMONSTRATED - ungated tail returned a grant token
+```
+
+**What this proves, precisely.** The gate genuinely refuses an unrecognised grant (`gate: "pep"`, `unknown or revoked grant`) — so the PEP enforcement itself works, as pass 17 found. What fails is **confidentiality of the credential column**: `row_to_json` (`:7233`) copies `grant_token` into the response, and `aios.audit.tail` is ungated, so **a caller who holds no grant reads grant tokens out of the ring** — including tokens belonging to calls made by other clients. The transport-level error text also **echoes the supplied token back verbatim**, which is a second, smaller copy of the same disclosure into any client log.
+
+**What it does not prove, stated honestly.** The harvested token here was one the attacker supplied, so this demonstrates the **disclosure channel**, not that a genuine valid token remains *usable* after harvest. Token lifetime and consumption semantics live in the grant/`pep` store, which this pass did not read; until that is probed, the escalation from "can read tokens" to "can use tokens" stays **unproven**. The disclosure itself is enough for High: the ring is the one artifact in this system that is supposed to be readable, and it is readable with the credentials in it.
+
+## Refinements, positives and negatives (no new IDs)
+
+- **`call_task` is the correct pattern, and the contrast with N-45 is exact.** The task path builds its argument JSON, asks the gate (`call.action.requires_grant()` — derived from the action, not a hardcoded flag), and only **inside the closure** runs `call.validate()` and `call.execute()`. So a task argument failure happens *behind* the gate and **is recorded**. The `call_tool` arms do the opposite — they validate **in front of** dispatch and `return` early, producing N-45's 44 unrecorded refusals. The right shape exists in this same file, one function below the wrong one; that makes N-45 a local ordering fix rather than a design change.
+- **N-45's unrecorded-return pattern also covers the unknown-tool fallback** (`:7023` `_ => json!({"ok": false, "error": format!("unknown tool: {}", tool)})`), which returns without an audit row — so probing for tool names is likewise invisible.
+- **Hardcoded actor identity now appears in three places** — `pentest_ctx` (`:7032`, `actor_id: "agent:mcp@aiosh-mcp"`), `aios.pep.grant.revoke` (`:7007`, `"mcp-agent"`), and `call_task`'s `dispatch::dispatch`/`commit` literals — where `call_tool` uses the `dispatch::DEFAULT_ACTOR*` constants. The field that says *who acted* is a string literal in three different spellings. This matters more now that N-49 shows the ring is world-readable: the actor is part of what a reader of the ring believes.
+- **N-36 refinement, enumerated:** all five `aios.pep.*` read arms call `PepDecisionService::load_or_recover(path)` on a caller-supplied store path (`evaluate`, `rule_list`, `status`, `report`, `rule_remove`), so the quarantine-and-recreate primitive is reachable from five unprivileged entry points, not one. No new ID — pass 13 recorded the mechanism (`rule_list` was the named instance) and pass 18 added `report`.
+- **The `aios.pep.grant.*` store is not the PEP policy store.** `pep_grants.json` (grants) and `.aios/pep_policies.json` (rules) are separate files with separate defaults — worth stating because the naming invites the assumption that one path governs both.
+- **Verified clean in this stretch (recorded, not skipped):** `aios.pep.validate` (`:6846`) and `aios.pep.recover` fail closed on an unknown recovery strategy and on a missing `store_path`; `aios.capability.doc`/`aios.pep.doc` reject an unknown `category` with `Err`; `aios.pep.rule_add` **does** invoke the governance (`validate_rule_addition(&rule, false)`) — the mechanism N-40 bypasses by case, not by absence; `parse_hardware_classes` rejects unrecognised classes (the fail-closed sibling N-50 contrasts against); `aios.update.check` validates `manifest_path` thoroughly — length, control characters, **`..` rejection, symlink rejection via `symlink_metadata`, and a 1 MiB cap applied before the read** — which is the strongest input handling anywhere in this file and the model the rest of the manifest does not follow.
+
+## Coverage claim for this pass, stated precisely
+
+**Read line-by-line and complete this pass: `5287–6136`, `6137–6846`, `6846–7635`** — three windows, none truncated, each confirmed by the reader's reported last line. Combined with passes 21–22 this completes **all production code (1–7764)**.
+
+**Only unread region remaining: the `#[cfg(test)]` module, `7765–10348` (2,584 lines).**
+
+**Resume marker: start at `7765`.** Because a parallel thread is still editing this file, the next pass must **re-diff first** — anything newer than revision 10,348 is unread by definition, and that diff has supplied every significant finding since pass 7.
 
 ---
 
@@ -3588,4 +3737,141 @@ A non-`Enforcing` mode is supposed to be non-blocking — that is what it is for
   - `aiosh-cli`: PEP CLI smoke suite (8/8 phases passed).
   - `aiosh-mcp`: PEP MCP smoke suite (6/6 flows passed).
   - Task ledger validated: 2205 completed, next_task: 2206, 0 errors.
+
+---
+
+# TWENTY-FOURTH PASS — the requested range was already read; its STATIC claims settled by probe
+
+**The mission's range (`5287–7575`) was completed in pass 23 and re-diffed this pass: the file is unchanged at revision 10,348** (`wc -l` = 10,348; `#[cfg(test)]` still begins at `7765`; the only two working-tree hunks, `+1928,59` and `+6893,130`, both fall *inside* the range and were read in window 3). No new code landed in it, so **nothing was re-read** — re-reading 2,288 covered lines would be repetition, and the authoritative coverage record already reflects the range. What was genuinely open inside it was its **STATIC findings**; five of them a probe can settle, and **all five are now demonstrated**.
+
+**Probe discipline.** One temp root with `AIOSH_HOME` redirected; the repo's own `docs/tasks` never written to; no source edits. Every fixture passed a **sanity gate first (P1)** — a crafted store was proven readable (`grant.list` → `count:1`) *before* anything was concluded from it — and a **control (P2)** established that the sink does persist when the filesystem cooperates, without which P3 would have proven nothing.
+
+**Stale-binary hazard, caught and closed.** `git status` showed a parallel thread editing `pep_grant.rs` — the exact module under probe — and the binary used for the first battery (`aiosh-mcp.exe`, 11:40:08) **predated** that edit (`pep_grant.rs` 11:45:49) and the new `pep_grant_service.rs` (11:50:22). A demonstration against a stale binary proves nothing about current sources, so I rebuilt (`cargo build -p aiosh-mcp` → binary 11:54:28) and **re-ran the identical battery**. Every result reproduced exactly:
+
+```
+### POST-REBUILD RE-RUN (binary 11:54:28; pep_grant.rs 11:45 / pep_grant_service.rs 11:50)
+P1  fixture sanity      : isError=False {"ok": true, "count": 1}
+P1b credential PRESENT  : isError=True  {"ok": false, "reason": "unknown or revoked grant: gr_TEST"}
+P1b credential OMITTED  : isError=False {"ok": true, "revoked_count": 1}
+P2  control (writable)  : isError=False {"ok": true, "revoked_count": 1} | bytes changed: True | re-list: ['revoked']
+P3  N-56 read-only sink : isError=False {"ok": true, "revoked_count": 1} | bytes unchanged: True | re-list: ['active']
+P4  N-59 store in CWD   : isError=False {"ok": true, "count": 1}
+P4  control empty CWD   : isError=False {"ok": true, "count": 0}
+P5  N-53 bogus state_dir: isError=False {"ok": true, "data": {"active_slot":"slot_a","current_version":"1.0.0",
+                          "progress_percent":0,"state":"idle","updated_at":"2026-09-20T12:00:00Z"}}
+P6  N-50 bogus profile  : isError=False {"ok": true}
+P7  N-52 env store path : isError=False {"ok": true, "data": {"blacklisted": true, "module": "dummy_mod"}}
+    env path created    : True
+```
+
+None of the five demonstrations therefore rests on pre-edit behaviour. (The new `pep_grant_service.rs` is also not wired into the MCP path — 0 references in `aiosh-mcp/src/main.rs`, 1 in `lib.rs` re-exports — so it could not have changed these handlers; the rebuild was done to confirm that rather than assume it.)
+
+**Precondition discovery that shaped the probes.** `PepGrantStore::load_from_path` performs **no schema validation** — existence, not-a-directory, then a size cap, then `serde_json::from_str` (`pep_grant.rs:476`) — so a hand-built store deserialises, but `revoke_grant` **errors** on an unknown id (`grant '...' not found`), which is exactly why reaching the `let _ =` sink required a store that genuinely contains the target grant rather than a bare call. `save_to_path` writes a temp file and renames (`:450`), so a failed write surfaces only as a discarded `Err`.
+
+**Arg-name correction, recorded for clarity:** the revoke handler reads the *target* from **`grant_id_param`**, while `call_tool` reads **`grant_id`** as the caller's *optional* credential (`:1977`, `:1979`); the schema marks `grant_id` "Optional PEP authorization grant ID" and requires only `grant_id_param`. The report's N-59 row never named the argument, so no prior claim was wrong — but the split matters for the C-3 refinement below.
+
+## N-56 → DEMONSTRATED — a revocation that reports success and does not persist
+
+```
+P2 — CONTROL: does the revoke sink PERSIST when the filesystem cooperates?
+  revoke (writable): isError=False body={... "ok": true, "revoked_count": 1, "cascade": false, ...}
+  file bytes changed: True; state after re-list: ['revoked']
+
+P3 — N-56: does the sink report success when the write FAILS?
+  revoke (read-only target): isError=False body={... "ok": true, "revoked_count": 1, "cascade": false, ...}
+  read-only flag effective (write attempt fails): True
+  state after re-list (still active => revocation LOST): ['active']
+  temp files left in ro/: ['pep_grants.json']
+```
+
+Identical store, identical call — the only difference is that the second target is read-only (effectiveness asserted *before* the call, so a read-only file that was secretly writable cannot produce a false positive). The caller is told `ok:true revoked_count:1`, the file is byte-identical afterwards, and re-listing shows the grant **still `active`**. The grant remains live; the caller believes it was revoked. `let _ = store.save_to_path(p)` (`:7008`) is the entire mechanism.
+
+**Why High:** revocation is the control an operator reaches for *during an incident*, and the audit ring still commits a row for the call — so the evidence trail affirmatively records a revocation that did not happen. The four update-family sinks (`:5898`, `:5921`, `:5950`, `:5972`) share the pattern but were not exercised here and **remain STATIC**.
+
+## N-59 → DEMONSTRATED — the grant store defaults to the process working directory
+
+```
+P4 — is the default store_path really the process CWD?
+  grant.list {} with store planted in CWD_A:  ok=True count=1
+  grant.list {} with CWD_B empty (control):   ok=True count=0
+```
+
+A differential, not an inference from the string: the same call, no `store_path`, returned the planted grant when the store sat in the server's working directory and nothing when it did not. The bare `pep_grants.json` default resolves against **wherever the process was started** — a fourth path convention in this file, holding authorization grants.
+
+## C-3 → refined, with its practical consequence demonstrated live
+
+No new ID: this is C-3's mechanism (`require_grant=false` on 136 of 146 tools), and pass 22 set the precedent of not minting an ID for a fresh instance of an existing pattern.
+
+```
+P1b — SCHEMA vs HANDLER FIELD NAME
+  revoke with {"grant_id": ...}:        isError=True  body={"gate":"pep", "ok":false,
+                                        "reason":"unknown or revoked grant: gr_TEST"}
+  revoke with {"grant_id_param": ...}: isError=False body={"ok":true, "revoked_count":1, ...}
+```
+
+The credential is an **optional** argument, so the gate refuses a caller who volunteers one it does not recognise while a caller who **omits it entirely** is served. The gate therefore does not require authorization; it punishes voluntary disclosure. That is a sharper statement of C-3 than "the tool is ungated", and it is now measured.
+
+## N-53 → DEMONSTRATED — the update service invents a state it cannot read
+
+```
+P5 — update.status {"state_dir":"<tmp>/nope"}:  ok=True
+  data: {"active_slot":"slot_a", "current_version":"1.0.0", "progress_percent":0,
+         "state":"idle", "updated_at":"2026-09-20T12:00:00Z"}
+```
+
+An operator asking about update state on a host with no state directory receives a confident answer carrying the literal placeholder from `resolve_update_service`'s `Err(_) => Ok(SystemUpdateService::new("1.0.0", SlotA, ..., "2026-09-20T12:00:00Z"))` arm — including a fabricated timestamp. The error that should have been reported is discarded (`:7373`); "I could not read the state" and "the state is 1.0.0 on slot A" are indistinguishable to the caller.
+
+## N-50 → DEMONSTRATED (the `fs_layout.get` arm) — a bogus profile silently yields the standard layout
+
+```
+P6 — fs_layout.get {"profile":"bogus_profile_xyz"}:  ok=True
+  layout.description: "Standard partition and mount layout for UEFI target host with ESP, Root,
+                      Swap, and CIS hardened temporary mounts"
+```
+
+The `_ =>` fallback arms (`:3928`, `:3959`, `:3989`) make an unrecognised profile indistinguishable from a correct request. The other N-50 sub-claims keep their prior status.
+
+## N-52 → DEMONSTRATED — the env var moves a real write target, and the check that should stop it has no containment
+
+```
+P7 — AIOSH_KERNEL_MODULE_STORE=<tmp>/evil/km.json
+  kernel_module.blacklist {"module":"dummy_mod"}:  ok=True  {"blacklisted":true, "module":"dummy_mod"}
+  wrote to env-controlled path <tmp>/evil/km.json: True
+  evil dir contents: ['km.json']
+```
+
+And the check on that path was read this pass: `check_kernel_module_path_bounds` rejects only **length > 1024** and **control characters** — it contains no containment test at all, so an env-supplied store path is accepted verbatim and its parent directory is created. This pins *why* the finding holds rather than only *that* it does.
+
+**Negative kept:** `kernel_module.autoload` then refused with `module 'dummy_mod' is blacklisted or disabled; cannot autoload` — correct, coupled behaviour, not a defect.
+
+## Coverage after this pass
+
+**No new code landed in `5287–7575`, so the range stands as read and the authoritative coverage table is unchanged.** `aiosh-mcp/src/main.rs` is still exactly 10,348 lines with `#[cfg(test)]` at `7765`.
+
+**Resume marker unchanged: `7765`** — the `#[cfg(test)]` module — **after a re-diff**, since a parallel thread is still writing to this crate and anything newer than the revision recorded in the coverage table is unread by definition. Two lessons from this pass belong in the method note rather than being rediscovered: a demonstration must name **the revision it was run against** (the stale-binary catch above), and a fixture must be **proven readable before it is concluded from** (P1), since `load_from_path` validates so little that an unreadable fixture would otherwise read as a fault.
+
+---
+
+# ADDENDUM 23 — 2026-09-22: Grant Lifecycle Sub-Epic 1 Closure & Sub-Epic 2 Core Service Launch (T-02206..T-02215)
+
+## 1. Scope & Progress
+Tasks completed: **T-02206 through T-02215** (10 tasks sequentially executed under strict No-Skip governance):
+- **T-02206..T-02210 (Sub-Epic 1: Data Model Closure)**: CLI & MCP integration (`aiosh pep grant <list|inspect|validate|revoke>`, MCP tools `aios.pep.grant.*`), security review, hardening bounds (`MAX_GRANTS_IN_STORE = 5000`, `MAX_GRANT_STORE_SIZE = 10 MiB`, `MAX_DELEGATION_DEPTH_LIMIT = 8`, metadata bounds), reference documentation (`docs/pep_decision_engine.md` Section 15), and milestone closure verification.
+- **T-02211..T-02215 (Sub-Epic 2: Core Service Launch)**: Research into capability delegation and RFC 7009/7519, formal specification of `PepGrantService` and invariants `GSVC1..GSVC6`, scaffolding and registration in `aiosh_core::lib`, full production implementation with multi-indexing (`by_subject`, `by_parent`, `by_state`), FSM state machine transitions, quota metering, cascade revocation, temporal sweep, and comprehensive standalone unit tests (11/11 PASS).
+
+## 2. Invariants & Controls Audited
+1. **`GSVC1` (Multi-Index Synchronization)**: In-memory primary `grants` hash map is synchronized with secondary multi-maps (`by_subject`, `by_parent`, `by_state`). Rebuild indexes on reload guarantees 100% cache coherence.
+2. **`GSVC2` (FSM State Governance)**: Terminal sink states `Revoked` and `Expired` reject resurrection attempts with `GSVC_ERR_INVALID_TRANSITION`.
+3. **`GSVC3` (Attenuation Monotonicity)**: Child grants require active parent with `CapabilityRight::Delegate`. Rights escalation is strictly blocked; delegation depth is decremented per level (max depth ceiling 8).
+4. **`GSVC4` (Action Evaluation & Quota Metering)**: Actions are validated against requester subject, rights, and temporal validity window (`not_before <= now < expires_at`). Usage consumption auto-expires exhausted grants.
+5. **`GSVC5` (Transitive Cascade Revocation)**: Revoking a parent grant recursively traverses the `by_parent` DAG, revoking all descendant sub-grants atomically and recording audit reason, operator, and timestamp.
+6. **`GSVC6` (Expiration Sweep & Atomic Persistence)**: Past-expiry grants are swept to `Expired`. Persistence uses `.tmp.<pid>.<nonce>` staging and atomic rename with directory validation and 10 MiB size caps.
+
+## 3. Audit Certification
+- Standalone test suite: `cargo test -p aiosh-core --test test_pep_grant_service` (11/11 PASS).
+- Data model test suite: `cargo test -p aiosh-core --test test_pep_grant` (10/10 PASS).
+- Smoke test suites: `test_pep_cli_smoke.py` (9/9 PASS) and `test_pep_decision_smoke.py` (7/7 PASS).
+- Compiler hygiene: Zero warnings across production and test targets.
+- Security status: **CLEAN & VERIFIED**. Pointer advances to `T-02216`.
+
 

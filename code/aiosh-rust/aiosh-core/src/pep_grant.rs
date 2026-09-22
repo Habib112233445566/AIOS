@@ -14,6 +14,8 @@ pub const MAX_GRANT_SUBJECT_LEN: usize = 128;
 pub const MAX_GRANT_ISSUER_LEN: usize = 128;
 pub const MAX_GRANT_REASON_LEN: usize = 512;
 pub const MAX_METADATA_ENTRIES: usize = 64;
+pub const MAX_METADATA_KEY_LEN: usize = 64;
+pub const MAX_METADATA_VALUE_LEN: usize = 512;
 pub const MAX_DELEGATION_DEPTH_LIMIT: u32 = 8;
 
 pub const PEPGRANT_ERR_INVALID_TRANSITION: &str = "PEPGRANT_ERR_INVALID_TRANSITION";
@@ -143,8 +145,16 @@ impl PepGrant {
         if self.rights.is_empty() {
             return Err(format!("{}: grant must confer at least one right", PEPGRANT_ERR_VALIDATION));
         }
+        if self.constraints.max_delegation_depth > MAX_DELEGATION_DEPTH_LIMIT {
+            return Err(format!("{}: max_delegation_depth {} exceeds limit of {}", PEPGRANT_ERR_VALIDATION, self.constraints.max_delegation_depth, MAX_DELEGATION_DEPTH_LIMIT));
+        }
         if self.metadata.len() > MAX_METADATA_ENTRIES {
             return Err(format!("{}: metadata entries exceed limit of {}", PEPGRANT_ERR_VALIDATION, MAX_METADATA_ENTRIES));
+        }
+        for (k, v) in &self.metadata {
+            if k.len() > MAX_METADATA_KEY_LEN || v.len() > MAX_METADATA_VALUE_LEN {
+                return Err(format!("{}: metadata entry exceeds key limit ({}) or value limit ({})", PEPGRANT_ERR_VALIDATION, MAX_METADATA_KEY_LEN, MAX_METADATA_VALUE_LEN));
+            }
         }
         Ok(())
     }
@@ -446,7 +456,11 @@ impl PepGrantStore {
         let serialized = serde_json::to_string_pretty(self)
             .map_err(|e| format!("{}: serialization failed: {}", PEPGRANT_ERR_VALIDATION, e))?;
 
-        let tmp_path = path.with_extension(format!("tmp.{}", std::process::id()));
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let tmp_path = path.with_extension(format!("tmp.{}.{}", std::process::id(), nonce));
         std::fs::write(&tmp_path, serialized)
             .map_err(|e| format!("{}: failed to write temporary file {:?}: {}", PEPGRANT_ERR_VALIDATION, tmp_path, e))?;
 
@@ -466,6 +480,9 @@ impl PepGrantStore {
 
         let meta = std::fs::metadata(path)
             .map_err(|e| format!("{}: failed to read metadata: {}", PEPGRANT_ERR_VALIDATION, e))?;
+        if meta.is_dir() {
+            return Err(format!("{}: path {:?} is a directory, expected JSON file", PEPGRANT_ERR_VALIDATION, path));
+        }
         if meta.len() > MAX_GRANT_STORE_SIZE {
             return Err(format!("{}: file size {} exceeds limit of {}", PEPGRANT_ERR_VALIDATION, meta.len(), MAX_GRANT_STORE_SIZE));
         }

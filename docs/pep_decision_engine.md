@@ -666,6 +666,89 @@ aiosh pep recover /etc/aios/pep_policy.json --strategy fail_closed
 - [T-02199: Documentation Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02199-recovery-validation-documentation.md)
 - [T-02200: Verification Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02200-recovery-validation-verification-evidenc.md)
 
+---
+
+## 15. Grant Lifecycle Subsystem Reference — Data Model (Sub-Epic 1)
+
+### 15.1 Overview & Invariants (`PEPGRANT1..PEPGRANT6`)
+
+The Grant Lifecycle Data Model (`pep_grant.rs`) governs dynamic, delegated authorization tokens, capability scoping, temporal validity, quota tracking, and recursive cascade revocation within the AIOS Security Kernel & PEP Fabric.
+
+| Invariant | Name | Formal Rule |
+|---|---|---|
+| **`PEPGRANT1`** | **Finite State Machine (FSM)** | Defines exact lifecycle states: `Requested`, `Active`, `Suspended`, `Revoked`, `Expired`. `Revoked` and `Expired` are terminal sink states. Unauthorized transitions are rejected with `PEPGRANT_ERR_INVALID_TRANSITION`. |
+| **`PEPGRANT2`** | **Strict Identification & Hygiene Validation** | Grant IDs are bounded (1..128 chars) and reject control characters and whitespace. Issuers and subjects must pass `validate_identifier()`. Scopes must pass `validate_scope()`. Empty rights are forbidden. |
+| **`PEPGRANT3`** | **Delegation & Attenuation Calculus** | Attenuation (`attenuate()`) allows an active grant holding `CapabilityRight::Delegate` to derive child grants. Child rights must be a strict subset of parent rights. Max delegation depth is decremented per level. Depth 0 or rights expansion fails with `PEPGRANT_ERR_ATTENUATION`. |
+| **`PEPGRANT4`** | **Temporal & Volumetric Quota Governance** | Invocations and byte consumption are tracked (`record_invocation()`). Grants automatically expire when `max_invocations` or `max_bytes` quotas are reached, or current time passes `expires_at`. Invocations before `not_before` are rejected with `PEPGRANT_ERR_NOT_YET_VALID`. |
+| **`PEPGRANT5`** | **Authoritative Revocation & Recursive Cascade** | Revocations record operator ID, timestamp, and audit reason (`PepGrantRevocation`). Calling `revoke_grant(..., cascade=true)` computes the transitive closure over all child grants and revokes all descendants atomically. |
+| **`PEPGRANT6`** | **Atomic Persistence & Dual-Substrate Interfaces** | File persistence uses collision-resistant temporary files (`tmp.<pid>.<nonce>`) and atomic replace rename. Exposes unified interfaces on operator CLI (`aiosh pep grant ...`) and agent MCP (`aios.pep.grant.*`). Every state mutation records an audit row in SQLite. |
+
+### 15.2 Invocation Examples
+
+#### CLI Usage
+```bash
+# List all registered grants (optionally filtering by subject)
+aiosh pep grant list --subject agent-worker-1
+
+# Inspect grant details and constraints
+aiosh pep grant inspect grnt-001 --json
+
+# Validate grant for a specific subject and right at the current time
+aiosh pep grant validate grnt-001 --subject agent-worker-1 --right read
+
+# Revoke a grant and cascade revocation to all delegated child grants
+aiosh pep grant revoke grnt-001 --reason "Compromised credential" --cascade
+```
+
+#### MCP Tool Call
+```json
+// Tool: aios.pep.grant.validate
+{
+  "method": "tools/call",
+  "params": {
+    "name": "aios.pep.grant.validate",
+    "arguments": {
+      "grant_id": "grnt-001",
+      "subject": "agent-worker-1",
+      "right": "read"
+    }
+  }
+}
+
+// Tool: aios.pep.grant.revoke
+{
+  "method": "tools/call",
+  "params": {
+    "name": "aios.pep.grant.revoke",
+    "arguments": {
+      "grant_id": "grnt-001",
+      "reason": "Security containment",
+      "cascade": true
+    }
+  }
+}
+```
+
+### 15.3 Constraints and Known Limitations
+1. **Store Capacity**: In-memory capacity is bounded to `MAX_GRANTS_IN_STORE = 5000` grants.
+2. **File Size Limit**: Store files exceeding `MAX_GRANT_STORE_SIZE = 10 MiB` are rejected before deserialization.
+3. **Delegation Depth**: Maximum delegation recursion is capped at `MAX_DELEGATION_DEPTH_LIMIT = 8`.
+4. **Metadata Boundaries**: Bounded to at most 64 key-value pairs (`MAX_METADATA_ENTRIES`), with key length $\le 64$ chars and value length $\le 512$ chars.
+5. **Terminal States**: Grants in `Revoked` or `Expired` states cannot be transitioned to any other state.
+
+### 15.4 Task Evidence References
+- [T-02201: Research Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02201-data-model-research.md)
+- [T-02202: Specification Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02202-data-model-specification.md)
+- [T-02203: Scaffold Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02203-data-model-scaffold.md)
+- [T-02204: Implementation Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02204-data-model-implementation.md)
+- [T-02205: Unit Test Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02205-data-model-unit-test.md)
+- [T-02206: Integration Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02206-data-model-integration.md)
+- [T-02207: Security Review Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02207-data-model-security-review.md)
+- [T-02208: Hardening Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02208-data-model-hardening.md)
+- [T-02209: Documentation Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02209-data-model-documentation.md)
+- [T-02210: Verification Evidence](file:///C:/Users/OBSESSION/Desktop/AIOS_MERGED/docs/tasks/evidence/T-02210-data-model-verification-evidenc.md)
+
+
 
 
 

@@ -256,3 +256,55 @@ fn test_pep_grant_action_validation() {
     let err_right = store.validate_grant_for_action("g-act-1", "agent-1", CapabilityRight::Write, now);
     assert!(err_right.unwrap_err().contains(PEPGRANT_ERR_ATTENUATION));
 }
+
+#[test]
+fn test_pep_grant_hardening_bounds() {
+    let mut grant = PepGrant::new(
+        "g-bound-1",
+        "admin",
+        "agent-1",
+        CapabilityScope::System { subsystem: "sec".into() },
+        vec![CapabilityRight::Read],
+    );
+
+    // Excessive delegation depth (> 8)
+    grant.constraints.max_delegation_depth = 9;
+    assert!(grant.validate().unwrap_err().contains("exceeds limit of 8"));
+    grant.constraints.max_delegation_depth = 2;
+
+    // Excessive metadata key length (> 64)
+    grant.metadata.insert("k".repeat(65), "valid_val".into());
+    assert!(grant.validate().unwrap_err().contains("metadata entry exceeds key limit"));
+    grant.metadata.clear();
+
+    // Excessive metadata value length (> 512)
+    grant.metadata.insert("valid_key".into(), "v".repeat(513));
+    assert!(grant.validate().unwrap_err().contains("metadata entry exceeds key limit"));
+    grant.metadata.clear();
+
+    // Valid metadata
+    grant.metadata.insert("env".into(), "production".into());
+    assert!(grant.validate().is_ok());
+}
+
+#[test]
+fn test_pep_grant_store_hardening_file_limits() {
+    let temp_dir = tempfile::tempdir().unwrap();
+
+    // 1. Loading non-existent file
+    let missing_path = temp_dir.path().join("does_not_exist.json");
+    let err_missing = PepGrantStore::load_from_path(&missing_path);
+    assert!(err_missing.unwrap_err().contains("does not exist"));
+
+    // 2. Loading a directory instead of file
+    let err_dir = PepGrantStore::load_from_path(temp_dir.path());
+    assert!(err_dir.unwrap_err().contains("is a directory"));
+
+    // 3. Loading a file exceeding MAX_GRANT_STORE_SIZE (10 MiB)
+    let large_file = temp_dir.path().join("large_store.json");
+    let file = std::fs::File::create(&large_file).unwrap();
+    file.set_len(11 * 1024 * 1024).unwrap(); // 11 MiB
+    let err_large = PepGrantStore::load_from_path(&large_file);
+    assert!(err_large.unwrap_err().contains("exceeds limit"));
+}
+

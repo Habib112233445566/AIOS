@@ -321,6 +321,81 @@ def test_pep_recovery_cli():
     print("PASS: aiosh pep recovery & validation CLI integration")
 
 
+def test_pep_grant_cli():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        grant_store = os.path.join(tmpdir, "pep_grants.json")
+        now = "2026-09-22T10:00:00Z"
+        test_data = {
+            "grants": {
+                "grnt-cli-1": {
+                    "id": "grnt-cli-1",
+                    "parent_grant_id": None,
+                    "issuer": "root-admin",
+                    "subject": "agent-worker",
+                    "scope": {
+                        "type": "filesystem",
+                        "details": { "path": "/data/test", "recursive": True }
+                    },
+                    "rights": ["read", "write"],
+                    "state": "active",
+                    "constraints": {
+                        "not_before": None,
+                        "expires_at": None,
+                        "max_invocations": None,
+                        "invocations_used": 0,
+                        "max_bytes": None,
+                        "bytes_used": 0,
+                        "max_delegation_depth": 2
+                    },
+                    "revocation": None,
+                    "metadata": {},
+                    "created_at": now,
+                    "updated_at": now
+                }
+            }
+        }
+        with open(grant_store, "w") as f:
+            json.dump(test_data, f)
+
+        # 1. List grants
+        res_list = run_aiosh("pep", "grant", "list", "--store", grant_store, "--json")
+        assert res_list.returncode == 0, f"Expected 0, got {res_list.returncode}: {res_list.stderr}"
+        d_list = parse_json_output(res_list)
+        assert d_list["code"] == 0
+        assert d_list["data"]["count"] == 1
+
+        # 2. Inspect grant
+        res_insp = run_aiosh("pep", "grant", "inspect", "grnt-cli-1", "--store", grant_store, "--json")
+        assert res_insp.returncode == 0
+        d_insp = parse_json_output(res_insp)
+        assert d_insp["code"] == 0
+        assert d_insp["data"]["id"] == "grnt-cli-1"
+        assert d_insp["data"]["subject"] == "agent-worker"
+
+        # 3. Validate grant
+        res_val = run_aiosh("pep", "grant", "validate", "grnt-cli-1", "--subject", "agent-worker", "--right", "read", "--store", grant_store, "--json")
+        assert res_val.returncode == 0
+        d_val = parse_json_output(res_val)
+        assert d_val["code"] == 0
+        assert d_val["data"]["valid"] is True
+
+        # 4. Revoke grant
+        res_rev = run_aiosh("pep", "grant", "revoke", "grnt-cli-1", "--reason", "Security audit test", "--store", grant_store, "--json")
+        assert res_rev.returncode == 0
+        d_rev = parse_json_output(res_rev)
+        assert d_rev["code"] == 0
+        assert d_rev["data"]["revoked_count"] == 1
+
+        # 5. Validate revoked grant fails
+        res_val_after = run_aiosh("pep", "grant", "validate", "grnt-cli-1", "--store", grant_store, "--json")
+        assert res_val_after.returncode == 1
+        d_val_after = parse_json_output(res_val_after)
+        assert d_val_after["code"] == 1
+        assert d_val_after["data"]["valid"] is False
+
+    print("PASS: aiosh pep grant CLI integration")
+
+
 if __name__ == "__main__":
     test_pep_help()
     test_pep_unknown_subcommand()
@@ -330,5 +405,6 @@ if __name__ == "__main__":
     test_pep_report_cli()
     test_pep_doc_cli()
     test_pep_recovery_cli()
+    test_pep_grant_cli()
     print("=== All PEP CLI tests passed ===")
 

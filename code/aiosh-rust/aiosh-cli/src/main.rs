@@ -15548,8 +15548,252 @@ fn cmd_pep(args: &[String]) -> i32 {
                 }
             }
         }
+        Some("grant") => {
+            let grant_args = if args.len() > 1 { &args[1..] } else { &[] };
+            let mut grant_sub = None;
+            let mut grant_id = None;
+            let mut subject_opt = None;
+            let mut right_opt = None;
+            let mut reason_opt = None;
+            let mut cascade = false;
+            let mut custom_store = None;
+            let mut is_grant_json = false;
+
+            let mut i = 0;
+            while i < grant_args.len() {
+                match grant_args[i].as_str() {
+                    "--json" => is_grant_json = true,
+                    "--cascade" => cascade = true,
+                    "--store" => {
+                        if i + 1 < grant_args.len() {
+                            i += 1;
+                            custom_store = Some(grant_args[i].clone());
+                        }
+                    }
+                    "--subject" => {
+                        if i + 1 < grant_args.len() {
+                            i += 1;
+                            subject_opt = Some(grant_args[i].clone());
+                        }
+                    }
+                    "--right" => {
+                        if i + 1 < grant_args.len() {
+                            i += 1;
+                            right_opt = Some(grant_args[i].clone());
+                        }
+                    }
+                    "--reason" => {
+                        if i + 1 < grant_args.len() {
+                            i += 1;
+                            reason_opt = Some(grant_args[i].clone());
+                        }
+                    }
+                    "list" | "inspect" | "validate" | "revoke" => {
+                        grant_sub = Some(grant_args[i].as_str());
+                    }
+                    other if !other.starts_with("--") => {
+                        if grant_sub.is_none() {
+                            grant_sub = Some(other);
+                        } else if grant_id.is_none() {
+                            grant_id = Some(other.to_string());
+                        }
+                    }
+                    _ => {}
+                }
+                i += 1;
+            }
+
+            let g_store_path = custom_store.map(std::path::PathBuf::from).unwrap_or_else(|| {
+                store_path.with_file_name("pep_grants.json")
+            });
+
+            let mut store = if g_store_path.exists() {
+                aiosh_core::pep_grant::PepGrantStore::load_from_path(&g_store_path).unwrap_or_else(|_| aiosh_core::pep_grant::PepGrantStore::new())
+            } else {
+                aiosh_core::pep_grant::PepGrantStore::new()
+            };
+
+            match grant_sub {
+                Some("list") | None => {
+                    let grants = if let Some(ref subj) = subject_opt {
+                        store.list_grants_for_subject(subj).into_iter().cloned().collect::<Vec<_>>()
+                    } else {
+                        store.list_grants()
+                    };
+                    classify_and_emit(
+                        &mut ctx, "pep", "grant.list", json!({ "count": grants.len() }),
+                        "success", None, Some("Listed PEP grants"), "operator", None,
+                    );
+                    if is_grant_json {
+                        println!("{}", json!({ "code": 0, "data": { "count": grants.len(), "grants": grants }, "error": serde_json::Value::Null }));
+                    } else {
+                        println!("PEP Grants ({} total):\n", grants.len());
+                        for g in &grants {
+                            println!("  {} [{}]: issuer={} subject={} rights={:?}", g.id, g.state, g.issuer, g.subject, g.rights);
+                        }
+                    }
+                    0
+                }
+                Some("inspect") => {
+                    let gid = match grant_id {
+                        Some(ref id) => id.as_str(),
+                        None => {
+                            let msg = "usage: aiosh pep grant inspect <grant_id> [--store <path>] [--json]";
+                            classify_and_emit(&mut ctx, "pep", "grant.inspect", json!({ "error": msg }), "failure", None, Some("Missing grant_id"), "operator", None);
+                            if is_grant_json {
+                                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENTS", "message": msg } }));
+                            } else {
+                                eprintln!("{}", sanitize_terminal(msg));
+                            }
+                            return 2;
+                        }
+                    };
+                    match store.get_grant(gid) {
+                        Some(grant) => {
+                            classify_and_emit(&mut ctx, "pep", "grant.inspect", json!({ "grant_id": gid }), "success", Some(gid), Some("Inspect PEP grant"), "operator", None);
+                            if is_grant_json {
+                                println!("{}", json!({ "code": 0, "data": grant, "error": serde_json::Value::Null }));
+                            } else {
+                                println!("Grant Details: {}\n  State:   {}\n  Issuer:  {}\n  Subject: {}\n  Rights:  {:?}\n  Created: {}",
+                                    grant.id, grant.state, grant.issuer, grant.subject, grant.rights, grant.created_at);
+                            }
+                            0
+                        }
+                        None => {
+                            let msg = format!("grant not found: {}", gid);
+                            classify_and_emit(&mut ctx, "pep", "grant.inspect", json!({ "error": &msg }), "failure", Some(gid), Some("Grant not found"), "operator", None);
+                            if is_grant_json {
+                                println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "NOT_FOUND", "message": msg } }));
+                            } else {
+                                eprintln!("{}", sanitize_terminal(&msg));
+                            }
+                            1
+                        }
+                    }
+                }
+                Some("validate") => {
+                    let gid = match grant_id {
+                        Some(ref id) => id.as_str(),
+                        None => {
+                            let msg = "usage: aiosh pep grant validate <grant_id> [--subject <subject>] [--right <read|write|execute|admin|delegate>] [--store <path>] [--json]";
+                            classify_and_emit(&mut ctx, "pep", "grant.validate", json!({ "error": msg }), "failure", None, Some("Missing grant_id"), "operator", None);
+                            if is_grant_json {
+                                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENTS", "message": msg } }));
+                            } else {
+                                eprintln!("{}", sanitize_terminal(msg));
+                            }
+                            return 2;
+                        }
+                    };
+                    let now = chrono::Utc::now().to_rfc3339();
+                    let grant = match store.get_grant(gid) {
+                        Some(g) => g,
+                        None => {
+                            let msg = format!("grant not found: {}", gid);
+                            classify_and_emit(&mut ctx, "pep", "grant.validate", json!({ "error": &msg }), "failure", Some(gid), Some("Grant not found"), "operator", None);
+                            if is_grant_json {
+                                println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "NOT_FOUND", "message": msg } }));
+                            } else {
+                                eprintln!("{}", sanitize_terminal(&msg));
+                            }
+                            return 1;
+                        }
+                    };
+
+                    let res = if let (Some(ref subj), Some(ref r_str)) = (subject_opt.as_ref(), right_opt.as_ref()) {
+                        let right = match r_str.to_ascii_lowercase().as_str() {
+                            "read" => aiosh_core::capability::CapabilityRight::Read,
+                            "write" => aiosh_core::capability::CapabilityRight::Write,
+                            "execute" => aiosh_core::capability::CapabilityRight::Execute,
+                            "delete" => aiosh_core::capability::CapabilityRight::Delete,
+                            "admin" => aiosh_core::capability::CapabilityRight::Admin,
+                            "delegate" => aiosh_core::capability::CapabilityRight::Delegate,
+                            other => {
+                                let msg = format!("unknown capability right: {}", other);
+                                if is_grant_json {
+                                    println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_RIGHT", "message": msg } }));
+                                } else {
+                                    eprintln!("{}", sanitize_terminal(&msg));
+                                }
+                                return 2;
+                            }
+                        };
+                        store.validate_grant_for_action(gid, subj, right, &now)
+                    } else {
+                        grant.is_usable_at(&now)
+                    };
+
+                    match res {
+                        Ok(()) => {
+                            classify_and_emit(&mut ctx, "pep", "grant.validate", json!({ "grant_id": gid, "valid": true }), "success", Some(gid), Some("Grant is valid"), "operator", None);
+                            if is_grant_json {
+                                println!("{}", json!({ "code": 0, "data": { "grant_id": gid, "valid": true, "state": grant.state.to_string() }, "error": serde_json::Value::Null }));
+                            } else {
+                                println!("VALID: grant '{}' is active and valid for evaluation", gid);
+                            }
+                            0
+                        }
+                        Err(e) => {
+                            classify_and_emit(&mut ctx, "pep", "grant.validate", json!({ "grant_id": gid, "valid": false, "error": &e }), "failure", Some(gid), Some("Grant validation failed"), "operator", None);
+                            if is_grant_json {
+                                println!("{}", json!({ "code": 1, "data": { "grant_id": gid, "valid": false }, "error": { "code": "INVALID_GRANT", "message": e } }));
+                            } else {
+                                eprintln!("INVALID: {}", sanitize_terminal(&e));
+                            }
+                            1
+                        }
+                    }
+                }
+                Some("revoke") => {
+                    let gid = match grant_id {
+                        Some(ref id) => id.as_str(),
+                        None => {
+                            let msg = "usage: aiosh pep grant revoke <grant_id> [--reason <reason>] [--cascade] [--store <path>] [--json]";
+                            classify_and_emit(&mut ctx, "pep", "grant.revoke", json!({ "error": msg }), "failure", None, Some("Missing grant_id"), "operator", None);
+                            if is_grant_json {
+                                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENTS", "message": msg } }));
+                            } else {
+                                eprintln!("{}", sanitize_terminal(msg));
+                            }
+                            return 2;
+                        }
+                    };
+                    let reason = reason_opt.unwrap_or_else(|| "Revoked by operator".to_string());
+                    match store.revoke_grant(gid, "operator", &reason, cascade) {
+                        Ok(revoked_count) => {
+                            let _ = store.save_to_path(&g_store_path);
+                            classify_and_emit(&mut ctx, "pep", "grant.revoke", json!({ "grant_id": gid, "revoked_count": revoked_count, "cascade": cascade }), "success", Some(gid), Some("Revoked grant"), "operator", None);
+                            if is_grant_json {
+                                println!("{}", json!({ "code": 0, "data": { "grant_id": gid, "revoked_count": revoked_count, "cascade": cascade }, "error": serde_json::Value::Null }));
+                            } else {
+                                println!("REVOKED: grant '{}' revoked ({} grants affected)", gid, revoked_count);
+                            }
+                            0
+                        }
+                        Err(e) => {
+                            classify_and_emit(&mut ctx, "pep", "grant.revoke", json!({ "grant_id": gid, "error": &e }), "failure", Some(gid), Some("Revoke failed"), "operator", None);
+                            if is_grant_json {
+                                println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "REVOKE_FAILED", "message": e } }));
+                            } else {
+                                eprintln!("ERROR: {}", sanitize_terminal(&e));
+                            }
+                            1
+                        }
+                    }
+                }
+                Some(other) => {
+                    let msg = format!("unknown grant action: {}", other);
+                    if is_grant_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "UNKNOWN_ACTION", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    2
+                }
+            }
+        }
         Some("--help") | Some("-h") | None => {
-            println!("aiosh pep — PEP Decision Engine & Policy Control\n\nUsage: aiosh pep <evaluate|rule-add|rule-list|rule-remove|status|report|doc|validate|recover> [options]\n\nCommands:\n  evaluate                   Evaluate authorization request against policies\n  rule-add                   Add a new policy rule\n  rule-list                  List loaded policy rules\n  rule-remove <id>           Remove a policy rule by ID\n  status                     Display PEP Decision Engine status & metrics\n  report                     Generate comprehensive PEP observability report\n  doc <list|show|search>     Query embedded PEP documentation & help\n  validate <path>            Validate policy store schema, constraints & capacity\n  recover <path>             Recover corrupted policy store (salvage or fail-closed)\n\nOptions:\n  --store <PATH>             Custom policy JSON store path\n  --strategy <STRAT>         Recovery strategy: strict_fail_closed, salvage_valid_rules, dry_run\n  --salvage                  Shorthand for --strategy salvage_valid_rules\n  --dry-run                  Shorthand for --strategy dry_run\n  --json                     Output structured JSON envelope\n  -h, --help                 Display this help message");
+            println!("aiosh pep — PEP Decision Engine & Policy Control\n\nUsage: aiosh pep <evaluate|rule-add|rule-list|rule-remove|status|report|doc|validate|recover|grant> [options]\n\nCommands:\n  evaluate                   Evaluate authorization request against policies\n  rule-add                   Add a new policy rule\n  rule-list                  List loaded policy rules\n  rule-remove <id>           Remove a policy rule by ID\n  status                     Display PEP Decision Engine status & metrics\n  report                     Generate comprehensive PEP observability report\n  doc <list|show|search>     Query embedded PEP documentation & help\n  validate <path>            Validate policy store schema, constraints & capacity\n  recover <path>             Recover corrupted policy store (salvage or fail-closed)\n  grant <list|inspect|validate|revoke> Manage and inspect PEP authorization grants\n\nOptions:\n  --store <PATH>             Custom policy JSON store path\n  --strategy <STRAT>         Recovery strategy: strict_fail_closed, salvage_valid_rules, dry_run\n  --salvage                  Shorthand for --strategy salvage_valid_rules\n  --dry-run                  Shorthand for --strategy dry_run\n  --json                     Output structured JSON envelope\n  -h, --help                 Display this help message");
             0
         }
         Some(unknown) => {

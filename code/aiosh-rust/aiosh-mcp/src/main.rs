@@ -1925,6 +1925,65 @@ impl Server {
                 "additionalProperties": false
             }
         }));
+        tools.push(json!({
+            "name": "aios.pep.grant.list",
+            "description": "List PEP authorization grants with optional subject filtering",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "store_path": { "type": "string", "description": "Optional path to PEP grants JSON store" },
+                    "subject": { "type": "string", "description": "Optional subject filter" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.pep.grant.inspect",
+            "description": "Inspect full details of a PEP authorization grant by ID",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "grant_id_param": { "type": "string", "description": "The grant ID to inspect" },
+                    "store_path": { "type": "string", "description": "Optional path to PEP grants JSON store" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "required": ["grant_id_param"],
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.pep.grant.validate",
+            "description": "Validate that a grant is active and authorizes a requested action",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "grant_id_param": { "type": "string", "description": "The grant ID to validate" },
+                    "subject": { "type": "string", "description": "Subject requesting execution" },
+                    "right": { "type": "string", "description": "Capability right requested: read, write, execute, delete, admin, delegate" },
+                    "store_path": { "type": "string", "description": "Optional path to PEP grants JSON store" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "required": ["grant_id_param"],
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.pep.grant.revoke",
+            "description": "Revoke a grant with audit reason and optional cascade to child grants",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "grant_id_param": { "type": "string", "description": "The grant ID to revoke" },
+                    "reason": { "type": "string", "description": "Audit reason for revocation" },
+                    "cascade": { "type": "boolean", "description": "Whether to recursively revoke descendant child grants" },
+                    "store_path": { "type": "string", "description": "Optional path to PEP grants JSON store" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "required": ["grant_id_param"],
+                "additionalProperties": false
+            }
+        }));
         tools
     }
 
@@ -6828,6 +6887,136 @@ impl Server {
                 dispatch::recorded_call(
                     &mut self.ring, &self.pep,
                     "aios.pep.recover", "Recover PEP policy store", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.pep.grant.list" => {
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let subject_opt = arguments.get("subject").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = move || -> Result<Value, String> {
+                    let path = store_path_opt.as_deref().unwrap_or("pep_grants.json");
+                    let p = std::path::Path::new(path);
+                    let store = if p.exists() {
+                        aiosh_core::pep_grant::PepGrantStore::load_from_path(p)?
+                    } else {
+                        aiosh_core::pep_grant::PepGrantStore::new()
+                    };
+                    let grants = if let Some(ref subj) = subject_opt {
+                        store.list_grants_for_subject(subj).into_iter().cloned().collect::<Vec<_>>()
+                    } else {
+                        store.list_grants()
+                    };
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.pep.grant.list",
+                        "count": grants.len(),
+                        "grants": grants
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.pep.grant.list", "List PEP authorization grants", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.pep.grant.inspect" => {
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let grant_id_param = arguments.get("grant_id_param").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = move || -> Result<Value, String> {
+                    let gid = grant_id_param.as_ref().ok_or_else(|| "missing required parameter: grant_id_param".to_string())?;
+                    let path = store_path_opt.as_deref().unwrap_or("pep_grants.json");
+                    let p = std::path::Path::new(path);
+                    let store = if p.exists() {
+                        aiosh_core::pep_grant::PepGrantStore::load_from_path(p)?
+                    } else {
+                        aiosh_core::pep_grant::PepGrantStore::new()
+                    };
+                    let grant = store.get_grant(gid).ok_or_else(|| format!("grant not found: {}", gid))?;
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.pep.grant.inspect",
+                        "grant": grant
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.pep.grant.inspect", "Inspect PEP authorization grant", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.pep.grant.validate" => {
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let grant_id_param = arguments.get("grant_id_param").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let subject_opt = arguments.get("subject").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let right_opt = arguments.get("right").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = move || -> Result<Value, String> {
+                    let gid = grant_id_param.as_ref().ok_or_else(|| "missing required parameter: grant_id_param".to_string())?;
+                    let path = store_path_opt.as_deref().unwrap_or("pep_grants.json");
+                    let p = std::path::Path::new(path);
+                    let store = if p.exists() {
+                        aiosh_core::pep_grant::PepGrantStore::load_from_path(p)?
+                    } else {
+                        aiosh_core::pep_grant::PepGrantStore::new()
+                    };
+                    let grant = store.get_grant(gid).ok_or_else(|| format!("grant not found: {}", gid))?;
+                    let now = chrono::Utc::now().to_rfc3339();
+
+                    if let (Some(ref subj), Some(ref r_str)) = (subject_opt.as_ref(), right_opt.as_ref()) {
+                        let right = match r_str.to_ascii_lowercase().as_str() {
+                            "read" => aiosh_core::capability::CapabilityRight::Read,
+                            "write" => aiosh_core::capability::CapabilityRight::Write,
+                            "execute" => aiosh_core::capability::CapabilityRight::Execute,
+                            "delete" => aiosh_core::capability::CapabilityRight::Delete,
+                            "admin" => aiosh_core::capability::CapabilityRight::Admin,
+                            "delegate" => aiosh_core::capability::CapabilityRight::Delegate,
+                            other => return Err(format!("unknown capability right: {}", other)),
+                        };
+                        store.validate_grant_for_action(gid, subj, right, &now)?;
+                    } else {
+                        grant.is_usable_at(&now)?;
+                    }
+
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.pep.grant.validate",
+                        "grant_id": gid,
+                        "valid": true,
+                        "state": grant.state.to_string()
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.pep.grant.validate", "Validate PEP authorization grant", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.pep.grant.revoke" => {
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let grant_id_param = arguments.get("grant_id_param").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let reason = arguments.get("reason").and_then(|v| v.as_str()).unwrap_or("Revoked via MCP").to_string();
+                let cascade = arguments.get("cascade").and_then(|v| v.as_bool()).unwrap_or(false);
+                let f = move || -> Result<Value, String> {
+                    let gid = grant_id_param.as_ref().ok_or_else(|| "missing required parameter: grant_id_param".to_string())?;
+                    let path = store_path_opt.as_deref().unwrap_or("pep_grants.json");
+                    let p = std::path::Path::new(path);
+                    let mut store = if p.exists() {
+                        aiosh_core::pep_grant::PepGrantStore::load_from_path(p)?
+                    } else {
+                        aiosh_core::pep_grant::PepGrantStore::new()
+                    };
+                    let count = store.revoke_grant(gid, "mcp-agent", &reason, cascade)?;
+                    let _ = store.save_to_path(p);
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.pep.grant.revoke",
+                        "grant_id": gid,
+                        "revoked_count": count,
+                        "cascade": cascade
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.pep.grant.revoke", "Revoke PEP authorization grant", arguments,
                     None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
                 )
             }

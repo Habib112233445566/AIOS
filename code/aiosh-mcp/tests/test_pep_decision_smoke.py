@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -108,6 +109,10 @@ def test_tool_registration():
         "aios.pep.doc",
         "aios.pep.validate",
         "aios.pep.recover",
+        "aios.pep.grant.list",
+        "aios.pep.grant.inspect",
+        "aios.pep.grant.validate",
+        "aios.pep.grant.revoke",
     ]:
         assert expected in tool_names, f"{expected} missing from tools/list"
     print("OK")
@@ -354,6 +359,84 @@ def test_pep_recovery_mcp():
     print("OK")
 
 
+def test_pep_grant_mcp():
+    print("TEST: PEP MCP grant lifecycle tools (list, inspect, validate, revoke) ...", end=" ")
+    with tempfile.TemporaryDirectory() as tmpdir:
+        grant_store = Path(tmpdir) / "pep_grants.json"
+        now = "2026-09-22T10:00:00Z"
+        test_data = {
+            "grants": {
+                "grnt-mcp-1": {
+                    "id": "grnt-mcp-1",
+                    "parent_grant_id": None,
+                    "issuer": "root-admin",
+                    "subject": "agent-worker",
+                    "scope": {
+                        "type": "filesystem",
+                        "details": { "path": "/data/test", "recursive": True }
+                    },
+                    "rights": ["read", "write"],
+                    "state": "active",
+                    "constraints": {
+                        "not_before": None,
+                        "expires_at": None,
+                        "max_invocations": None,
+                        "invocations_used": 0,
+                        "max_bytes": None,
+                        "bytes_used": 0,
+                        "max_delegation_depth": 2
+                    },
+                    "revocation": None,
+                    "metadata": {},
+                    "created_at": now,
+                    "updated_at": now
+                }
+            }
+        }
+        with open(grant_store, "w") as f:
+            json.dump(test_data, f)
+
+        store_str = str(grant_store)
+
+        # 1. List grants
+        res_list = call_mcp_tool("aios.pep.grant.list", {"store_path": store_str})
+        assert res_list.get("ok") is True, f"list failed: {res_list}"
+        assert res_list.get("count") == 1
+
+        # 2. Inspect grant
+        res_insp = call_mcp_tool("aios.pep.grant.inspect", {"store_path": store_str, "grant_id_param": "grnt-mcp-1"})
+        assert res_insp.get("ok") is True, f"inspect failed: {res_insp}"
+        assert res_insp.get("grant", {}).get("subject") == "agent-worker"
+
+        # 3. Validate grant for action
+        res_val = call_mcp_tool("aios.pep.grant.validate", {
+            "store_path": store_str,
+            "grant_id_param": "grnt-mcp-1",
+            "subject": "agent-worker",
+            "right": "read"
+        })
+        assert res_val.get("ok") is True, f"validate failed: {res_val}"
+        assert res_val.get("valid") is True
+
+        # 4. Revoke grant
+        res_rev = call_mcp_tool("aios.pep.grant.revoke", {
+            "store_path": store_str,
+            "grant_id_param": "grnt-mcp-1",
+            "reason": "Revoked in smoke test"
+        })
+        assert res_rev.get("ok") is True, f"revoke failed: {res_rev}"
+        assert res_rev.get("revoked_count") == 1
+
+        # 5. Re-validate revoked grant (should return ok=false)
+        res_val_after = call_mcp_tool("aios.pep.grant.validate", {
+            "store_path": store_str,
+            "grant_id_param": "grnt-mcp-1"
+        })
+        assert res_val_after.get("ok") is False, f"expected failure on revoked grant: {res_val_after}"
+
+    print("OK")
+
+
 def main():
     print("=== PEP Decision Engine MCP Smoke Test ===")
     test_tool_registration()
@@ -362,6 +445,7 @@ def main():
     test_pep_observability_report()
     test_pep_doc_mcp()
     test_pep_recovery_mcp()
+    test_pep_grant_mcp()
     print("=== All PEP Decision Engine smoke tests passed ===")
 
 
