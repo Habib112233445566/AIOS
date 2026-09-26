@@ -20,6 +20,7 @@
 
 pub mod agent;
 pub mod audit;
+pub mod audit_chain_ext;
 pub mod base_image;
 pub mod base_image_config;
 pub mod base_image_observability;
@@ -104,6 +105,10 @@ pub mod pep_recovery;
 pub mod pep_grant;
 pub mod pep_grant_service;
 pub mod pep_grant_config;
+pub mod pep_grant_security_policy;
+pub mod pep_grant_observability;
+pub mod pep_grant_doc;
+pub mod pep_grant_recovery;
 pub mod release;
 pub mod release_config;
 pub mod repo_health;
@@ -309,6 +314,32 @@ pub use pep_grant_config::{
     DEFAULT_MAX_DELEGATION_DEPTH, MAX_DELEGATION_DEPTH, MIN_DELEGATION_DEPTH,
     GRANTCONF_ERR_BOUNDS, GRANTCONF_ERR_IO, GRANTCONF_ERR_PARSE, GRANTCONF_ERR_VALIDATION,
 };
-
-
+pub use pep_grant_security_policy::{
+    PepGrantEnforcementMode, PepGrantSecurityPolicy,
+    DEFAULT_MAX_GRANT_DURATION_SECS, DEFAULT_MAX_POLICY_DELEGATION_DEPTH,
+    GRANTPOL_ERR_DELEGATION_REJECTED, GRANTPOL_ERR_IO, GRANTPOL_ERR_LIFETIME_EXCEEDED,
+    GRANTPOL_ERR_POLICY_VIOLATION, GRANTPOL_ERR_VALIDATION, MAX_GRANT_POLICY_BYTES,
+    MAX_PERMISSIBLE_DURATION_SECS,
+};
+pub use pep_grant_observability::{
+    PepGrantObservabilityReport, PEPOBS_GRANT_ERR_VALIDATION, PEP_GRANT_HEALTH_UTILIZATION_THRESHOLD,
+    sanitize_grant_telemetry_text,
+};
+pub use pep_grant_doc::{
+    PepGrantDocCategory, PepGrantDocIndex, PepGrantDocSearchResult, PepGrantDocSection, PepGrantDocTopic,
+    GRANTDOC_ERR_NOT_FOUND, GRANTDOC_ERR_QUERY_BOUNDS, MAX_GRANT_DOC_QUERY_LEN,
+    MAX_GRANT_DOC_SEARCH_RESULTS, MAX_GRANT_DOC_SNIPPET_LEN,
+};
+pub use pep_grant_recovery::{
+    PepGrantIssueCode, PepGrantIssueSeverity, PepGrantRecoveryManager, PepGrantRecoveryResult,
+    PepGrantRepairAction, PepGrantValidationIssue, PepGrantValidationReport,
+    PEPGRANTRECV_ERR_CORRUPT, PEPGRANTRECV_ERR_FILE_SIZE, PEPGRANTRECV_ERR_IO,
+    PEPGRANTRECV_ERR_PARSE, PEPGRANTRECV_ERR_PATH_TRAVERSAL, PEPGRANTRECV_ERR_VALIDATION,
+};
+pub use audit_chain_ext::{
+    AuditCausalLink, AuditProvenance, AuditSignature, ExtendedAuditRow,
+    AUDIT_EXT_ERR_BOUNDS, AUDIT_EXT_ERR_HASH, AUDIT_EXT_ERR_SIGNATURE, AUDIT_EXT_ERR_VALIDATION,
+    MAX_CAUSAL_LINKS, MAX_EXTENSION_ENTRIES, MAX_EXTENSION_PAYLOAD_BYTES, MAX_SESSION_ID_LEN,
+    MAX_TRACE_ID_LEN,
+};
 

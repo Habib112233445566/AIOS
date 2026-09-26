@@ -2037,6 +2037,55 @@ impl Server {
                 "additionalProperties": false
             }
         }));
+        tools.push(json!({
+            "name": "aios.pep.grant.report",
+            "description": "Generate point-in-time observability report for PEP grant registry",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "store_path": { "type": "string", "description": "Optional path to PEP grants JSON store" },
+                    "grant_id": { "type": "string", "description": "Optional PEP authorization grant ID" }
+                },
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.pep.grant.doc",
+            "description": "Query Grant Lifecycle documentation topics, guides, and MCP references",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "action": { "type": "string", "description": "Action: list, get, or search" },
+                    "topic_id": { "type": "string", "description": "Topic ID for 'get' action" },
+                    "query": { "type": "string", "description": "Search term for 'search' action" }
+                },
+                "required": ["action"],
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.pep.grant.validate_store",
+            "description": "Validate integrity and invariants of PEP grant registry store",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "store_path": { "type": "string", "description": "Optional path to PEP grants JSON store" }
+                },
+                "additionalProperties": false
+            }
+        }));
+        tools.push(json!({
+            "name": "aios.pep.grant.recover",
+            "description": "Execute non-destructive quarantine and auto-repair on corrupted or inconsistent PEP grant store",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "store_path": { "type": "string", "description": "Optional path to PEP grants JSON store" },
+                    "dry_run": { "type": "boolean", "description": "Simulate recovery actions without disk mutation" }
+                },
+                "additionalProperties": false
+            }
+        }));
         tools
     }
 
@@ -7266,6 +7315,142 @@ fn validate_and_open_grant_service(path_str: Option<&str>) -> Result<(std::path:
                 dispatch::recorded_call(
                     &mut self.ring, &self.pep,
                     "aios.pep.grant.sweep", "Sweep expired PEP authorization grants", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.pep.grant.report" => {
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = move || -> Result<Value, String> {
+                    let (_p, service) = Server::validate_and_open_grant_service(store_path_opt.as_deref())?;
+                    let report = service.generate_observability_report();
+                    report.validate()?;
+                    let val = serde_json::to_value(&report)
+                        .map_err(|e| format!("Serialization error: {}", e))?;
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.pep.grant.report",
+                        "report": val
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.pep.grant.report", "Get PEP grant observability report", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.pep.grant.doc" => {
+                let action = arguments
+                    .get("action")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let topic_id_opt = arguments.get("topic_id").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let query_opt = arguments.get("query").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+                let f = move || -> Result<Value, String> {
+                    let index = aiosh_core::pep_grant_doc::PepGrantDocIndex::new();
+                    match action.as_str() {
+                        "list" => {
+                            let topics = index.list_topics();
+                            let topic_summaries: Vec<Value> = topics
+                                .iter()
+                                .map(|t| json!({
+                                    "id": t.id,
+                                    "title": t.title,
+                                    "category": t.category.as_str(),
+                                    "summary": t.summary,
+                                    "tags": t.tags
+                                }))
+                                .collect();
+                            Ok(json!({
+                                "ok": true,
+                                "tool": "aios.pep.grant.doc",
+                                "action": "list",
+                                "count": topic_summaries.len(),
+                                "topics": topic_summaries
+                            }))
+                        }
+                        "get" => {
+                            let topic_id = topic_id_opt.as_deref().ok_or_else(|| "missing required parameter: topic_id".to_string())?;
+                            let topic = index.get_topic(topic_id).ok_or_else(|| format!("topic not found: {}", topic_id))?;
+                            let markdown = index.render_markdown(topic_id)?;
+                            Ok(json!({
+                                "ok": true,
+                                "tool": "aios.pep.grant.doc",
+                                "action": "get",
+                                "topic": topic,
+                                "markdown": markdown
+                            }))
+                        }
+                        "search" => {
+                            let query = query_opt.as_deref().ok_or_else(|| "missing required parameter: query".to_string())?;
+                            let results = index.search(query)?;
+                            Ok(json!({
+                                "ok": true,
+                                "tool": "aios.pep.grant.doc",
+                                "action": "search",
+                                "query": query,
+                                "count": results.len(),
+                                "results": results
+                            }))
+                        }
+                        other => Err(format!("unknown doc action '{}'; valid actions: list, get, search", other)),
+                    }
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.pep.grant.doc", "Query Grant Lifecycle documentation", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.pep.grant.validate_store" => {
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = move || -> Result<Value, String> {
+                    let path = match store_path_opt.as_deref() {
+                        Some(s) => std::path::PathBuf::from(s),
+                        None => match aiosh_core::pep_grant_config::PepGrantConfig::from_env() {
+                            Ok(cfg) => cfg.store_path,
+                            Err(_) => std::path::PathBuf::from("pep_grants.json"),
+                        },
+                    };
+                    let report = aiosh_core::pep_grant_recovery::PepGrantRecoveryManager::validate_store_file(&path)?;
+                    let val = serde_json::to_value(&report)
+                        .map_err(|e| format!("Serialization error: {}", e))?;
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.pep.grant.validate_store",
+                        "report": val
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.pep.grant.validate_store", "Validate PEP grant registry store", arguments,
+                    None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.pep.grant.recover" => {
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let dry_run = arguments.get("dry_run").and_then(|v| v.as_bool()).unwrap_or(false);
+                let f = move || -> Result<Value, String> {
+                    let path = match store_path_opt.as_deref() {
+                        Some(s) => std::path::PathBuf::from(s),
+                        None => match aiosh_core::pep_grant_config::PepGrantConfig::from_env() {
+                            Ok(cfg) => cfg.store_path,
+                            Err(_) => std::path::PathBuf::from("pep_grants.json"),
+                        },
+                    };
+                    let res = aiosh_core::pep_grant_recovery::PepGrantRecoveryManager::recover_store_file(&path, dry_run)?;
+                    let val = serde_json::to_value(&res)
+                        .map_err(|e| format!("Serialization error: {}", e))?;
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.pep.grant.recover",
+                        "result": val
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.pep.grant.recover", "Recover PEP grant registry store", arguments,
                     None, grant_id, false, dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
                 )
             }

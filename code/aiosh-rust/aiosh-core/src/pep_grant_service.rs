@@ -64,12 +64,24 @@ pub struct PepGrantService {
     by_state: HashMap<PepGrantState, HashSet<String>>,
     #[serde(skip)]
     storage_path: Option<PathBuf>,
+    #[serde(skip)]
+    policy: Option<crate::pep_grant_security_policy::PepGrantSecurityPolicy>,
 }
 
 impl PepGrantService {
     /// Creates a new empty grant service with initialized indexes.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Creates a grant service populated with pre-existing grants and rebuilt indexes.
+    pub fn from_grants(grants: Vec<PepGrant>) -> Self {
+        let mut service = Self::default();
+        for g in grants {
+            service.index_grant(&g);
+            service.grants.insert(g.id.clone(), g);
+        }
+        service
     }
 
     /// Configures the storage path for persistence.
@@ -81,6 +93,22 @@ impl PepGrantService {
     /// Returns the backing storage path if configured.
     pub fn storage_path(&self) -> Option<&Path> {
         self.storage_path.as_deref()
+    }
+
+    /// Configures the active security policy for the grant service.
+    pub fn with_security_policy(mut self, policy: crate::pep_grant_security_policy::PepGrantSecurityPolicy) -> Self {
+        self.policy = Some(policy);
+        self
+    }
+
+    /// Dynamically sets or clears the security policy.
+    pub fn set_security_policy(&mut self, policy: Option<crate::pep_grant_security_policy::PepGrantSecurityPolicy>) {
+        self.policy = policy;
+    }
+
+    /// Returns a reference to the active security policy if configured.
+    pub fn security_policy(&self) -> Option<&crate::pep_grant_security_policy::PepGrantSecurityPolicy> {
+        self.policy.as_ref()
     }
 
     /// Total number of grants in the service.
@@ -157,6 +185,10 @@ impl PepGrantService {
     /// Registers a new grant in the service and updates secondary indices (GSVC1, GSVC2).
     pub fn issue_grant(&mut self, grant: PepGrant) -> Result<(), String> {
         grant.validate().map_err(|e| format!("{}: {}", GSVC_ERR_VALIDATION, e))?;
+
+        if let Some(ref pol) = self.policy {
+            pol.validate_grant(&grant)?;
+        }
 
         if self.grants.len() >= MAX_GRANTS_IN_SERVICE && !self.grants.contains_key(&grant.id) {
             return Err(format!(
@@ -248,6 +280,10 @@ impl PepGrantService {
         let child = parent
             .attenuate(child_id, child_subject, delegated_rights)
             .map_err(|e| format!("{}: {}", GSVC_ERR_ATTENUATION, e))?;
+
+        if let Some(ref pol) = self.policy {
+            pol.validate_attenuation(parent, &child)?;
+        }
 
         self.issue_grant(child.clone())?;
         Ok(child)

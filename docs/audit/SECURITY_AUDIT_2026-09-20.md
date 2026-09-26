@@ -4914,3 +4914,51 @@ Tasks completed: **T-02246 through T-02255** (10 tasks sequentially executed und
 - Task ledger state: 2,255 completed, 0 orphans, valid state.
 - Security status: **CLEAN & VERIFIED**. Pointer advances to `T-02256`.
 
+---
+
+# ADDENDUM 28 — 2026-09-26: Grant Lifecycle Closure (Sub-Epics 6-10) & Audit Chain Extensions Launch (T-02256..T-02304)
+
+## 1. Scope & Progress
+Tasks completed: **T-02256 through T-02304** (49 tasks executed sequentially under strict No-Skip governance):
+- **T-02256..T-02260 (Sub-Epic 6: Automated Tests Closure)**:
+  - T-02256: MCP surface automated test suite wiring.
+  - T-02257: Security review for automated test fixtures and harness isolation.
+  - T-02258: Test hardening: execution timeouts, temporary directory hermetic isolation.
+  - T-02259: Documentation of automated test framework and reproduction commands.
+  - T-02260: Verification and formal closure of Sub-Epic 6.
+- **T-02261..T-02270 (Sub-Epic 7: Security Policy)**:
+  - T-02261..T-02264: Research, specification, scaffold, and implementation of `PepGrantSecurityPolicy`.
+  - T-02265..T-02266: Dedicated unit tests (10/10 PASS) and integration into `PepGrantService`.
+  - T-02267..T-02270: Policy security review, hardening against policy bypass, operator guide, and Sub-Epic 7 milestone closure.
+- **T-02271..T-02280 (Sub-Epic 8: Observability)**:
+  - T-02271..T-02274: Research, specification, scaffold, and implementation of `PepGrantObservabilityReport`.
+  - T-02275..T-02276: Unit tests (6/6 PASS) and `aios.pep.grant.report` MCP tool integration.
+  - T-02277..T-02280: Security review, telemetry sanitization hardening, documentation, and Sub-Epic 8 milestone closure.
+- **T-02281..T-02290 (Sub-Epic 9: Documentation)**:
+  - T-02281..T-02284: In-memory canonical grant documentation catalog across 7 topics and bounded lexical search.
+  - T-02285..T-02286: Dedicated unit tests (5/5 PASS) and `aios.pep.grant.doc` MCP tool integration.
+  - T-02287..T-02290: Security review, search query length bounds and snippet cap hardening, documentation, and Sub-Epic 9 milestone closure.
+- **T-02291..T-02300 (Sub-Epic 10: Recovery & Validation — EPIC 3 CLOSURE)**:
+  - T-02291..T-02294: Invariant validation engine (`validate_grants`, `validate_store_file`) and non-destructive salvage (`recover_store_file`).
+  - T-02295..T-02296: Unit tests (7/7 PASS) and MCP tools `aios.pep.grant.validate_store` & `aios.pep.grant.recover`.
+  - T-02297..T-02300: Security review, atomic snapshot/quarantine hardening, operator guide, and formal closure of Epic 3 (all 100 Grant Lifecycle tasks T-02201..T-02300 complete).
+- **T-02301..T-02304 (Epic 4 Sub-Epic 1: Audit Chain Extensions Data Model)**:
+  - T-02301..T-02304: Research, specification, scaffolding, and implementation of `ExtendedAuditRow`, `AuditProvenance`, `AuditCausalLink`, `AuditSignature`, canonical hash proto derivation, and unit tests (4/4 PASS).
+
+## 2. Invariants & Controls Audited
+1. **DAG Cycle & Hierarchy Integrity**: Cycle detection ensures delegation graphs are strictly acyclic DAGs. Orphan active grants fail closed.
+2. **Monotonic Recovery Guarantees**: Recovery actions only transition grants towards higher restriction (`Revoked` or `Expired`), guaranteeing zero privilege escalation.
+3. **Non-Destructive Storage Protection**: Atomic backups (`.bak.<ts>`) and quarantine files (`.quarantine.<ts>.json`) protect against data loss from corrupted JSON syntax.
+4. **Lexical Search Boundedness**: Documentation search enforces $\le 128$ character queries, $\le 10$ results, and $\le 200$ character snippets, preventing CPU/memory exhaustion.
+5. **Cryptographic Provenance & Backward Compatibility**: `ExtendedAuditRow` preserves exact byte-level canonical JSON hash parity for legacy rows while supporting Ed25519 signatures and causal DAG links.
+6. **Zero Compiler Warnings**: Workspace builds cleanly with 0 warnings and 0 errors.
+
+## 3. Audit Certification
+- `test_pep_grant_observability`: 6/6 PASS
+- `test_pep_grant_doc`: 5/5 PASS
+- `test_pep_grant_recovery`: 7/7 PASS
+- `test_audit_chain_ext`: 4/4 PASS
+- Workspace compiler status: `cargo check --workspace` clean (0 warnings, 0 errors).
+- Security status: **PASS / CLEAN / VERIFIED**. Task pointer advances to `T-02305`.
+
+
