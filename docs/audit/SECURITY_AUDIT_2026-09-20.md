@@ -4961,4 +4961,47 @@ Tasks completed: **T-02256 through T-02304** (49 tasks executed sequentially und
 - Workspace compiler status: `cargo check --workspace` clean (0 warnings, 0 errors).
 - Security status: **PASS / CLEAN / VERIFIED**. Task pointer advances to `T-02305`.
 
+---
+
+# ADDENDUM 29 — 2026-09-27: Audit Chain Extensions Subsystem (Sub-Epics 1-4: T-02305..T-02334)
+
+## 1. Scope & Progress
+Tasks completed: **T-02305 through T-02334** (30 consecutive tasks executed under strict No-Skip governance):
+- **T-02305..T-02310 (Sub-Epic 1: Data Model Closure)**:
+  - T-02305: Comprehensive unit testing for `ExtendedAuditRow`, boundary validation, and hash tampering.
+  - T-02306: Integration with SQLite schema migrations (`provenance_json`, `causal_links_json`, `signature_json`, `extensions_json`).
+  - T-02307: Data model security review analyzing serialization attacks, hash collisions, and payload expansion.
+  - T-02308: Security hardening: hard limits on causal links (<= 16), extension keys (<= 32), and extension payload size (<= 64 KiB).
+  - T-02309: System documentation: updated `docs/architecture/AUDIT_RING.md` with extended schemas and migration specifications.
+  - T-02310: Formal verification and Sub-Epic 1 closure (7/7 tests PASS, 0 warnings).
+- **T-02311..T-02320 (Sub-Epic 2: Core Service)**:
+  - T-02311..T-02314: Research, specification, scaffolding, and implementation of `AuditChainService` (`record_event`, `get_row_by_hash`, `query_events`, `trace_ancestry`, `verify_event_signature`, `verify_integrity`).
+  - T-02315..T-02316: Unit and integration test suites covering query filtering, DAG ancestry tracing, and Ed25519 signature verification.
+  - T-02317..T-02318: Core service security review and hardening: visited `HashSet` loop protection, depth bound (`MAX_LINEAGE_DEPTH = 64`), query row cap (`MAX_QUERY_LIMIT = 1000`).
+  - T-02319..T-02320: Developer documentation and Sub-Epic 2 formal milestone closure (6/6 tests PASS, 0 warnings).
+- **T-02321..T-02330 (Sub-Epic 3: CLI Surface)**:
+  - T-02321..T-02324: Research, specification, scaffolding, and CLI implementation under `aiosh audit`: `query`, `inspect`, `ancestry`, `sign-verify`.
+  - T-02325..T-02326: Unit tests and end-to-end integration tests verifying stdout/stderr formatting and exit codes.
+  - T-02327..T-02328: Security review and hardening against ANSI injection, unbounded query dumps, and malformed command arguments.
+  - T-02329..T-02330: CLI operator reference guide and formal Sub-Epic 3 closure (2/2 tests PASS, 0 warnings).
+- **T-02331..T-02334 (Sub-Epic 4: MCP/API Surface Launch)**:
+  - T-02331..T-02334: Research, specification, scaffolding, and implementation of MCP tools in `aiosh-mcp`: `aios.audit.query`, `aios.audit.inspect`, `aios.audit.ancestry`, `aios.audit.sign_verify`.
+  - Production dispatch wired through `dispatch::recorded_call`, enforcing parameter validation, schema compliance, and isolated JSON-RPC error handling.
+
+## 2. Invariants & Controls Audited
+1. **Byte-Level Hash Parity & Non-Repudiation**: `ExtendedAuditRow` preserves exact byte-level canonical JSON hash parity for legacy rows while supporting Ed25519 signatures and causal DAG links.
+2. **DAG Cycle & Depth Protection**: Explicit visited `HashSet<String>` tracking and hard limit `MAX_LINEAGE_DEPTH = 64` eliminate infinite recursion and stack overflow risks during graph traversals.
+3. **DoS & Resource Exhaustion Defense**: Query limits strictly clamped to 1,000 rows; extension sizes capped at 64 KiB, link fan-out capped at 16, query strings capped at 128 characters.
+4. **PEP Dispatch Invariant**: All consequential MCP audit actions execute inside `dispatch::recorded_call`, ensuring exactly one canonical audit record is persisted per consequential operation.
+5. **Zero Compiler Warnings**: Workspace builds cleanly with 0 warnings and 0 errors across all workspace crates.
+
+## 3. Audit Certification
+- `test_audit_chain_ext`: 7/7 PASS (0.02s)
+- `test_audit_chain_service`: 6/6 PASS (1.17s)
+- `test_audit_chain_cli`: 2/2 PASS (2.10s)
+- MCP end-to-end JSON-RPC tests: PASS
+- Workspace compiler status: `cargo check --workspace` clean (0 warnings, 0 errors).
+- Task ledger state: 2,334 completed, 0 orphans, valid state.
+- Security status: **PASS / CLEAN / VERIFIED**. Task pointer advances to `T-02335`.
+
 

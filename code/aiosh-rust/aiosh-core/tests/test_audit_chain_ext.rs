@@ -113,3 +113,103 @@ fn test_extended_audit_row_bounds_enforcement() {
     let err = row.validate().unwrap_err();
     assert!(err.contains(AUDIT_EXT_ERR_BOUNDS));
 }
+
+#[test]
+fn test_extended_audit_row_json_serde_roundtrip() {
+    let mut row = ExtendedAuditRow::from_legacy_row(make_sample_legacy_row());
+    row.provenance = Some(AuditProvenance {
+        session_id: Some("session-roundtrip-42".to_string()),
+        pep_grant_id: Some("grant-roundtrip-99".to_string()),
+        delegation_depth: 2,
+        trace_id: None,
+        span_id: None,
+    });
+    row.hash = row.compute_hash();
+
+    let json_str = serde_json::to_string(&row).unwrap();
+    let deserialized: ExtendedAuditRow = serde_json::from_str(&json_str).unwrap();
+    assert_eq!(row, deserialized);
+    assert!(deserialized.verify_hash().is_ok());
+}
+
+#[test]
+fn test_extended_audit_row_invalid_provenance_and_signatures() {
+    let mut row = ExtendedAuditRow::from_legacy_row(make_sample_legacy_row());
+    row.provenance = Some(AuditProvenance {
+        session_id: Some("bad session with spaces".to_string()),
+        pep_grant_id: None,
+        delegation_depth: 0,
+        trace_id: None,
+        span_id: None,
+    });
+    row.hash = row.compute_hash();
+    assert!(row.validate().is_err());
+
+    let bad_sig = AuditSignature::new("", "pubkey", "sig");
+    assert!(bad_sig.validate().is_err());
+}
+
+#[test]
+fn test_audit_ring_extended_integration() {
+    use aiosh_core::audit::{AuditRing, AuditRowInput, ExtendedAuditRowInput};
+
+    let mut ring = AuditRing::open_in_memory().expect("open_in_memory failed");
+
+    // 1. Write an unextended row using write()
+    let mut base_input = AuditRowInput::default();
+    base_input.actor = "agent_init".to_string();
+    base_input.tool = "aios.system.boot".to_string();
+    base_input.command = "boot".to_string();
+    let row1 = ring.write(base_input).expect("write failed");
+
+    // 2. Write an extended row using write_extended()
+    let mut ext_base = AuditRowInput::default();
+    ext_base.actor = "agent_worker".to_string();
+    ext_base.tool = "aios.pep.grant.issue".to_string();
+    ext_base.command = "issue".to_string();
+
+    let mut ext_input = ExtendedAuditRowInput::new(ext_base);
+    ext_input.provenance = Some(AuditProvenance {
+        session_id: Some("sess-int-1".to_string()),
+        pep_grant_id: Some("grant-int-root".to_string()),
+        delegation_depth: 1,
+        trace_id: Some("trace-int-1".to_string()),
+        span_id: Some("span-int-1".to_string()),
+    });
+    ext_input.causal_links = vec![AuditCausalLink::new(
+        row1.hash.clone(),
+        "delegation",
+    )];
+    ext_input.signature = Some(AuditSignature::new(
+        "ed25519",
+        "pubkey-test-hex",
+        "sig-test-hex",
+    ));
+    let mut exts = HashMap::new();
+    exts.insert("custom_key".to_string(), json!("custom_val"));
+    ext_input.extensions = exts;
+
+    let row2 = ring.write_extended(ext_input).expect("write_extended failed");
+
+    assert_eq!(row2.prev_hash, row1.hash);
+    assert!(row2.validate().is_ok());
+
+    // 3. Tail extended
+    let tailed_ext = ring.tail_extended(10).expect("tail_extended failed");
+    assert_eq!(tailed_ext.len(), 2);
+    // row 1 has empty extensions
+    assert!(tailed_ext[0].provenance.is_none());
+    assert!(tailed_ext[0].causal_links.is_empty());
+    // row 2 has extensions preserved
+    assert_eq!(tailed_ext[1].provenance.as_ref().unwrap().session_id.as_deref(), Some("sess-int-1"));
+    assert_eq!(tailed_ext[1].causal_links.len(), 1);
+    assert_eq!(tailed_ext[1].causal_links[0].parent_event_hash, row1.hash);
+    assert_eq!(tailed_ext[1].signature.as_ref().unwrap().algorithm, "ed25519");
+    assert_eq!(tailed_ext[1].extensions.get("custom_key"), Some(&json!("custom_val")));
+
+    // 4. Verify ring integrity across both unextended and extended rows
+    let verify_res = ring.verify().expect("verify failed");
+    assert!(verify_res.ok);
+    assert_eq!(verify_res.checked, 2);
+}
+

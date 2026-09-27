@@ -10,6 +10,7 @@
 use rusqlite::{params, Connection, OptionalExtension, Row};
 use std::path::Path;
 
+use crate::audit_chain_ext::{AuditCausalLink, AuditProvenance, AuditSignature, ExtendedAuditRow};
 use crate::canonical::{canonical, sha256_hex, utcnow_iso};
 use crate::types::{AuditRow, CFlags, GENESIS_HASH};
 
@@ -47,6 +48,14 @@ const CLASSIFIER_COLUMNS: &[(&str, &str)] = &[
     ("classify_evidence_json", "TEXT"),
     ("classify_overall_verdict", "TEXT"),
     ("classify_verdict_reason", "TEXT"),
+];
+
+/// Sprint-4 / Phase-2 Audit Chain Extensions columns (idempotent ALTER TABLE migration).
+const EXTENSION_COLUMNS: &[(&str, &str)] = &[
+    ("provenance_json", "TEXT"),
+    ("causal_links_json", "TEXT"),
+    ("signature_json", "TEXT"),
+    ("extensions_json", "TEXT"),
 ];
 
 /// Sprint-3 segments table (rotation checkpoints).
@@ -143,6 +152,56 @@ fn row_to_audit(row: &Row) -> rusqlite::Result<AuditRow> {
     })
 }
 
+pub fn row_to_extended_audit(row: &Row) -> rusqlite::Result<ExtendedAuditRow> {
+    let base_row = row_to_audit(row)?;
+    let provenance_json: Option<String> = row.get("provenance_json").unwrap_or(None);
+    let causal_links_json: Option<String> = row.get("causal_links_json").unwrap_or(None);
+    let signature_json: Option<String> = row.get("signature_json").unwrap_or(None);
+    let extensions_json: Option<String> = row.get("extensions_json").unwrap_or(None);
+
+    let provenance = provenance_json
+        .as_deref()
+        .and_then(|s| serde_json::from_str(s).ok());
+    let causal_links = causal_links_json
+        .as_deref()
+        .and_then(|s| serde_json::from_str(s).ok())
+        .unwrap_or_default();
+    let signature = signature_json
+        .as_deref()
+        .and_then(|s| serde_json::from_str(s).ok());
+    let extensions = extensions_json
+        .as_deref()
+        .and_then(|s| serde_json::from_str(s).ok())
+        .unwrap_or_default();
+
+    Ok(ExtendedAuditRow {
+        id: base_row.id,
+        ts: base_row.ts,
+        actor: base_row.actor,
+        actor_id: base_row.actor_id,
+        tool: base_row.tool,
+        command: base_row.command,
+        args: base_row.args,
+        target: base_row.target,
+        outcome: base_row.outcome,
+        outcome_detail: base_row.outcome_detail,
+        constitution_rev: base_row.constitution_rev,
+        grant_token: base_row.grant_token,
+        c_flags: base_row.c_flags,
+        policy_revision: base_row.policy_revision,
+        classify_rule_ids: base_row.classify_rule_ids,
+        classify_evidence: base_row.classify_evidence,
+        classify_overall_verdict: base_row.classify_overall_verdict,
+        classify_verdict_reason: base_row.classify_verdict_reason,
+        provenance,
+        causal_links,
+        signature,
+        extensions,
+        prev_hash: base_row.prev_hash,
+        hash: base_row.hash,
+    })
+}
+
 pub struct AuditRing {
     conn: Connection,
     path: String,
@@ -197,6 +256,13 @@ impl AuditRing {
             .query_map([], |r| r.get::<_, String>(1))?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         for (col, decl) in CLASSIFIER_COLUMNS {
+            if !existing.iter().any(|c| c == col) {
+                self.conn
+                    .execute(&format!("ALTER TABLE audit_ring ADD COLUMN {} {}", col, decl), [])?;
+            }
+        }
+        // Sprint-4 / Phase-2 migration: add audit chain extension columns.
+        for (col, decl) in EXTENSION_COLUMNS {
             if !existing.iter().any(|c| c == col) {
                 self.conn
                     .execute(&format!("ALTER TABLE audit_ring ADD COLUMN {} {}", col, decl), [])?;
@@ -369,6 +435,107 @@ impl AuditRing {
         Ok(rows)
     }
 
+    /// Append one extended row to the ring. Computes prev_hash from the head and
+    /// the chain hash from the canonical extended proto.
+    pub fn write_extended(&mut self, input: ExtendedAuditRowInput) -> rusqlite::Result<ExtendedAuditRow> {
+        let prev_hash = self.head_hash()?;
+        let dummy_row = input.to_extended_row(0, prev_hash.clone(), String::new());
+        let hash = dummy_row.compute_hash();
+
+        let args_canonical = canonical(&input.base.args);
+        let rule_ids_json = input
+            .base
+            .classify_rule_ids
+            .as_ref()
+            .map(|ids| canonical(&serde_json::Value::Array(ids.iter().map(|s| serde_json::Value::String(s.clone())).collect())));
+        let evidence_json = input
+            .base
+            .classify_evidence
+            .as_ref()
+            .map(|ev| canonical(ev));
+
+        let provenance_json = input
+            .provenance
+            .as_ref()
+            .map(|p| serde_json::to_string(p).unwrap_or_default());
+        let causal_links_json = if input.causal_links.is_empty() {
+            None
+        } else {
+            Some(serde_json::to_string(&input.causal_links).unwrap_or_default())
+        };
+        let signature_json = input
+            .signature
+            .as_ref()
+            .map(|s| serde_json::to_string(s).unwrap_or_default());
+        let extensions_json = if input.extensions.is_empty() {
+            None
+        } else {
+            Some(serde_json::to_string(&input.extensions).unwrap_or_default())
+        };
+
+        self.conn.execute(
+            r#"INSERT INTO audit_ring (
+                ts, actor, actor_id, tool, command, args_json, target,
+                outcome, outcome_detail, constitution_rev, grant_token,
+                c1, c2, c3, c4,
+                policy_revision, classify_rule_ids_json, classify_evidence_json,
+                classify_overall_verdict, classify_verdict_reason,
+                provenance_json, causal_links_json, signature_json, extensions_json,
+                prev_hash, hash
+            ) VALUES (
+                ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11,
+                ?12, ?13, ?14, ?15,
+                ?16, ?17, ?18, ?19, ?20,
+                ?21, ?22, ?23, ?24,
+                ?25, ?26
+            )"#,
+            params![
+                input.base.ts,
+                input.base.actor,
+                input.base.actor_id,
+                input.base.tool,
+                input.base.command,
+                args_canonical,
+                input.base.target,
+                input.base.outcome,
+                input.base.outcome_detail,
+                input.base.constitution_rev,
+                input.base.grant_token,
+                input.base.c_flags.c1 as i64,
+                input.base.c_flags.c2 as i64,
+                input.base.c_flags.c3 as i64,
+                input.base.c_flags.c4 as i64,
+                input.base.policy_revision,
+                rule_ids_json,
+                evidence_json,
+                input.base.classify_overall_verdict,
+                input.base.classify_verdict_reason,
+                provenance_json,
+                causal_links_json,
+                signature_json,
+                extensions_json,
+                prev_hash,
+                hash,
+            ],
+        )?;
+        let id = self.conn.last_insert_rowid();
+        Ok(input.to_extended_row(id, prev_hash, hash))
+    }
+
+    /// Tail the last n extended rows in ascending id order.
+    pub fn tail_extended(&self, n: i64) -> rusqlite::Result<Vec<ExtendedAuditRow>> {
+        let safe = n.clamp(1, 1024);
+        let mut stmt = self
+            .conn
+            .prepare("SELECT * FROM audit_ring ORDER BY id DESC LIMIT ?")?;
+        let rows = stmt
+            .query_map(params![safe], row_to_extended_audit)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        let mut rows = rows;
+        rows.reverse();
+        Ok(rows)
+    }
+
     /// Verify the live ring anchored at the newest checkpoint head.
     pub fn verify(&self) -> rusqlite::Result<VerifyResult> {
         let anchor = self.anchor_hash()?;
@@ -378,7 +545,7 @@ impl AuditRing {
             .unwrap_or(0);
         let mut stmt = self.conn.prepare("SELECT * FROM audit_ring ORDER BY id ASC")?;
         let rows = stmt
-            .query_map([], row_to_audit)?
+            .query_map([], row_to_extended_audit)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         let mut prev = anchor.clone();
         let mut checked = 0usize;
@@ -529,6 +696,113 @@ impl Default for AuditRowInput {
             classify_overall_verdict: None,
             classify_verdict_reason: None,
         }
+    }
+}
+
+/// Input for `AuditRing::write_extended` — base fields plus provenance, causality, signature, extensions.
+#[derive(Debug, Clone)]
+pub struct ExtendedAuditRowInput {
+    pub base: AuditRowInput,
+    pub provenance: Option<AuditProvenance>,
+    pub causal_links: Vec<AuditCausalLink>,
+    pub signature: Option<AuditSignature>,
+    pub extensions: std::collections::HashMap<String, serde_json::Value>,
+}
+
+impl ExtendedAuditRowInput {
+    pub fn new(base: AuditRowInput) -> Self {
+        Self {
+            base,
+            provenance: None,
+            causal_links: Vec::new(),
+            signature: None,
+            extensions: std::collections::HashMap::new(),
+        }
+    }
+
+    pub fn to_extended_row(&self, id: i64, prev_hash: String, hash: String) -> ExtendedAuditRow {
+        ExtendedAuditRow {
+            id,
+            ts: self.base.ts.clone(),
+            actor: self.base.actor.clone(),
+            actor_id: self.base.actor_id.clone(),
+            tool: self.base.tool.clone(),
+            command: self.base.command.clone(),
+            args: self.base.args.clone(),
+            target: self.base.target.clone(),
+            outcome: self.base.outcome.clone(),
+            outcome_detail: self.base.outcome_detail.clone(),
+            constitution_rev: self.base.constitution_rev.clone(),
+            grant_token: self.base.grant_token.clone(),
+            c_flags: self.base.c_flags.clone(),
+            policy_revision: self.base.policy_revision.clone(),
+            classify_rule_ids: self.base.classify_rule_ids.clone(),
+            classify_evidence: self.base.classify_evidence.clone(),
+            classify_overall_verdict: self.base.classify_overall_verdict.clone(),
+            classify_verdict_reason: self.base.classify_verdict_reason.clone(),
+            provenance: self.provenance.clone(),
+            causal_links: self.causal_links.clone(),
+            signature: self.signature.clone(),
+            extensions: self.extensions.clone(),
+            prev_hash,
+            hash,
+        }
+    }
+
+    pub fn validate(&self) -> Result<(), String> {
+        if self.base.ts.trim().is_empty() {
+            return Err(format!("{}: ts cannot be empty", crate::audit_chain_ext::AUDIT_EXT_ERR_VALIDATION));
+        }
+        if self.base.actor.trim().is_empty() {
+            return Err(format!("{}: actor cannot be empty", crate::audit_chain_ext::AUDIT_EXT_ERR_VALIDATION));
+        }
+        if self.base.actor_id.trim().is_empty() {
+            return Err(format!("{}: actor_id cannot be empty", crate::audit_chain_ext::AUDIT_EXT_ERR_VALIDATION));
+        }
+        if self.base.tool.trim().is_empty() {
+            return Err(format!("{}: tool cannot be empty", crate::audit_chain_ext::AUDIT_EXT_ERR_VALIDATION));
+        }
+        if let Some(ref prov) = self.provenance {
+            prov.validate()?;
+        }
+        if self.causal_links.len() > crate::audit_chain_ext::MAX_CAUSAL_LINKS {
+            return Err(format!(
+                "{}: causal_links count {} exceeds maximum {}",
+                crate::audit_chain_ext::AUDIT_EXT_ERR_BOUNDS,
+                self.causal_links.len(),
+                crate::audit_chain_ext::MAX_CAUSAL_LINKS
+            ));
+        }
+        for link in &self.causal_links {
+            link.validate()?;
+        }
+        if let Some(ref sig) = self.signature {
+            sig.validate()?;
+        }
+        if self.extensions.len() > crate::audit_chain_ext::MAX_EXTENSION_ENTRIES {
+            return Err(format!(
+                "{}: extensions count {} exceeds maximum {}",
+                crate::audit_chain_ext::AUDIT_EXT_ERR_BOUNDS,
+                self.extensions.len(),
+                crate::audit_chain_ext::MAX_EXTENSION_ENTRIES
+            ));
+        }
+        let serialized_ext = serde_json::to_string(&self.extensions).unwrap_or_default();
+        if serialized_ext.len() > crate::audit_chain_ext::MAX_EXTENSION_PAYLOAD_BYTES {
+            return Err(format!(
+                "{}: extensions payload {} bytes exceeds limit of {}",
+                crate::audit_chain_ext::AUDIT_EXT_ERR_BOUNDS,
+                serialized_ext.len(),
+                crate::audit_chain_ext::MAX_EXTENSION_PAYLOAD_BYTES
+            ));
+        }
+        Ok(())
+    }
+}
+
+impl From<AuditRowInput> for ExtendedAuditRowInput {
+    fn from(base: AuditRowInput) -> Self {
+        Self::new(base)
     }
 }
 

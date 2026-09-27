@@ -221,7 +221,7 @@ fn main() {
         Some("capability") | Some("cap") => cmd_capability(&args[1..]),
         Some("pep") => cmd_pep(&args[1..]),
         Some("--help") | Some("-h") | None => {
-            println!("aiosh — AIOS shell CLI (Rust)\n\nUsage: aiosh <status|run|agent|audit|grant|pentest|classify|task|ci|release|backup|toolchain|doc|evidence|repo|secrets|triage|handoff|distro|image|package|service|session|layout|mod|hw|net|update|capability|pep> ...\n\n  aiosh task <status|done|block|unblock|skip|rebuild|check>  Task ledger control\n  aiosh ci <show|failures|check|config|metrics> [--file PATH]  CI smoke reports\n  aiosh release generate  Create bootable ISO\n  aiosh backup create  Create system snapshot zip\n  aiosh toolchain check [--config <path>]  Verify host environment against ToolchainManifest\n  aiosh toolchain show [--config <path>]   Display the resolved ToolchainManifest\n  aiosh doc <show|check|search>  Documentation Index Control\n  aiosh evidence <verify|hash|scan>   Evidence & Audit Trail Control\n  aiosh repo <health|check>  Repository Health Diagnostics\n  aiosh secrets <scan|check> [--config <path>]  Secrets & Access Hygiene Scanner\n  aiosh triage <list|show|record|resolve|ingest|check>  Regression Triage Manager\n  aiosh handoff <list|show|initiate|accept|reject|complete|cancel>  Agent Handoff Protocol Manager\n  aiosh distro <list|show|evaluate|recommend|policy|stats|check>  Linux Distro Selection & Justification Manager\n  aiosh image <list|show|plan|filter>  Linux Base Image Build & Packaging Manager\n  aiosh package <list|show|search|plan|apply|validate>  Linux Package Management & Store Control\n  aiosh service <validate|list|show|status|action|start|stop|restart|reload|order>  Init & Service Supervision Control\n  aiosh session <validate|list|show|status|create|action|activate|lock|unlock|terminate|config>  User Session Bootstrap Control\n  aiosh layout <list|show|validate|check|probe|diff|fstab|register|set-active|remove|import-fstab>  Filesystem Layout & Target Partitioning Manager\n  aiosh mod <list|show|blacklist|unblacklist|options|autoload|unautoload|preset|export>  Kernel Module Management\n  aiosh hw <scan|list|show|summary|verify>  Hardware Detection & Inventory Control\n  aiosh net <list|show|routes|dns|state|up|down>  Network Bootstrap & Interface Control\n  aiosh update <status|slots|check|apply|confirm|rollback>  System Update & Dual-Slot Control\n  aiosh capability <list|show|issue|attenuate|revoke|check|prune>  Capability & Zero-Ambient Authority Control\n  aiosh pep <evaluate|rule-add|rule-list|rule-remove|status|report|doc>  PEP Decision Engine & Policy Control");
+            println!("aiosh — AIOS shell CLI (Rust)\n\nUsage: aiosh <status|run|agent|audit|grant|pentest|classify|task|ci|release|backup|toolchain|doc|evidence|repo|secrets|triage|handoff|distro|image|package|service|session|layout|mod|hw|net|update|capability|pep> ...\n\n  aiosh audit <tail|verify|rotate|segments|seen|query|ancestry|sign-verify|inspect>  Audit ring & chain extensions control\n  aiosh task <status|done|block|unblock|skip|rebuild|check>  Task ledger control\n  aiosh ci <show|failures|check|config|metrics> [--file PATH]  CI smoke reports\n  aiosh release generate  Create bootable ISO\n  aiosh backup create  Create system snapshot zip\n  aiosh toolchain check [--config <path>]  Verify host environment against ToolchainManifest\n  aiosh toolchain show [--config <path>]   Display the resolved ToolchainManifest\n  aiosh doc <show|check|search>  Documentation Index Control\n  aiosh evidence <verify|hash|scan>   Evidence & Audit Trail Control\n  aiosh repo <health|check>  Repository Health Diagnostics\n  aiosh secrets <scan|check> [--config <path>]  Secrets & Access Hygiene Scanner\n  aiosh triage <list|show|record|resolve|ingest|check>  Regression Triage Manager\n  aiosh handoff <list|show|initiate|accept|reject|complete|cancel>  Agent Handoff Protocol Manager\n  aiosh distro <list|show|evaluate|recommend|policy|stats|check>  Linux Distro Selection & Justification Manager\n  aiosh image <list|show|plan|filter>  Linux Base Image Build & Packaging Manager\n  aiosh package <list|show|search|plan|apply|validate>  Linux Package Management & Store Control\n  aiosh service <validate|list|show|status|action|start|stop|restart|reload|order>  Init & Service Supervision Control\n  aiosh session <validate|list|show|status|create|action|activate|lock|unlock|terminate|config>  User Session Bootstrap Control\n  aiosh layout <list|show|validate|check|probe|diff|fstab|register|set-active|remove|import-fstab>  Filesystem Layout & Target Partitioning Manager\n  aiosh mod <list|show|blacklist|unblacklist|options|autoload|unautoload|preset|export>  Kernel Module Management\n  aiosh hw <scan|list|show|summary|verify>  Hardware Detection & Inventory Control\n  aiosh net <list|show|routes|dns|state|up|down>  Network Bootstrap & Interface Control\n  aiosh update <status|slots|check|apply|confirm|rollback>  System Update & Dual-Slot Control\n  aiosh capability <list|show|issue|attenuate|revoke|check|prune>  Capability & Zero-Ambient Authority Control\n  aiosh pep <evaluate|rule-add|rule-list|rule-remove|status|report|doc>  PEP Decision Engine & Policy Control");
             0
         }
         Some(other) => {
@@ -8459,8 +8459,12 @@ fn cmd_audit(args: &[String]) -> i32 {
         Some("rotate") => cmd_audit_rotate(&args[1..]),
         Some("segments") => cmd_audit_segments(),
         Some("seen") => cmd_audit_seen(&args[1..]),
+        Some("query") => cmd_audit_query(&args[1..]),
+        Some("ancestry") => cmd_audit_ancestry(&args[1..]),
+        Some("sign-verify") => cmd_audit_sign_verify(&args[1..]),
+        Some("inspect") => cmd_audit_inspect(&args[1..]),
         _ => {
-            eprintln!("usage: aiosh audit <tail|verify|rotate|segments|seen>");
+            eprintln!("usage: aiosh audit <tail|verify|rotate|segments|seen|query|ancestry|sign-verify|inspect>");
             2
         }
     }
@@ -8693,6 +8697,221 @@ fn cmd_audit_seen(args: &[String]) -> i32 {
     );
     ok_out(json!({"ok": true, "subcommand": "audit seen", "outcome": "ok",
                   "audit_id": -1, "data": res.to_json()}));
+    0
+}
+
+fn cmd_audit_query(args: &[String]) -> i32 {
+    let mut ctx = open_context();
+    let session_id = parse_flag(args, "--session");
+    let trace_id = parse_flag(args, "--trace");
+    let actor = parse_flag(args, "--actor");
+    let tool = parse_flag(args, "--tool");
+    let parent_hash = parse_flag(args, "--parent");
+    let limit = parse_flag(args, "--limit").and_then(|s| s.parse::<usize>().ok());
+
+    let filter = aiosh_core::audit_chain_service::AuditQueryFilter {
+        session_id: session_id.clone(),
+        trace_id: trace_id.clone(),
+        actor: actor.clone(),
+        tool: tool.clone(),
+        parent_hash: parent_hash.clone(),
+        limit,
+    };
+
+    let service = aiosh_core::audit_chain_service::AuditChainService::new(ctx.ring);
+    let rows = match service.query_events(&filter) {
+        Ok(r) => r,
+        Err(e) => {
+            return err_out(json!({
+                "ok": false,
+                "subcommand": "audit query",
+                "outcome": "error",
+                "audit_id": -1,
+                "error": e
+            }));
+        }
+    };
+    let rows_json: Vec<Value> = rows.iter().map(|r| serde_json::to_value(r).unwrap_or(Value::Null)).collect();
+    let count = rows_json.len();
+    ctx.ring = service.into_ring();
+
+    emit(
+        &mut ctx,
+        "audit.query",
+        "aiosh audit query",
+        json!({"session": session_id, "trace": trace_id, "actor": actor, "tool": tool, "parent": parent_hash, "limit": limit}),
+        "ok",
+        None,
+        None,
+        "user",
+        None,
+        CFlags { c4: true, ..Default::default() },
+        None,
+    );
+
+    ok_out(json!({
+        "ok": true,
+        "subcommand": "audit query",
+        "outcome": "ok",
+        "audit_id": -1,
+        "data": {
+            "count": count,
+            "rows": rows_json
+        }
+    }));
+    0
+}
+
+fn cmd_audit_ancestry(args: &[String]) -> i32 {
+    let hash = args.first().cloned().unwrap_or_default();
+    if hash.is_empty() {
+        eprintln!("usage: aiosh audit ancestry <hash> [--depth <n>]");
+        return 2;
+    }
+    let depth: usize = parse_flag(args, "--depth")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(16);
+
+    let mut ctx = open_context();
+    let service = aiosh_core::audit_chain_service::AuditChainService::new(ctx.ring);
+    let report = match service.trace_ancestry(&hash, depth) {
+        Ok(rep) => rep,
+        Err(e) => {
+            return err_out(json!({
+                "ok": false,
+                "subcommand": "audit ancestry",
+                "outcome": "error",
+                "audit_id": -1,
+                "error": e
+            }));
+        }
+    };
+    ctx.ring = service.into_ring();
+
+    emit(
+        &mut ctx,
+        "audit.ancestry",
+        &format!("aiosh audit ancestry {} --depth {}", hash, depth),
+        json!({"hash": hash, "depth": depth}),
+        "ok",
+        None,
+        None,
+        "user",
+        None,
+        CFlags { c4: true, ..Default::default() },
+        None,
+    );
+
+    ok_out(json!({
+        "ok": true,
+        "subcommand": "audit ancestry",
+        "outcome": "ok",
+        "audit_id": -1,
+        "data": serde_json::to_value(&report).unwrap_or(Value::Null)
+    }));
+    0
+}
+
+fn cmd_audit_sign_verify(args: &[String]) -> i32 {
+    let hash = args.first().cloned().unwrap_or_default();
+    if hash.is_empty() {
+        eprintln!("usage: aiosh audit sign-verify <hash>");
+        return 2;
+    }
+
+    let mut ctx = open_context();
+    let service = aiosh_core::audit_chain_service::AuditChainService::new(ctx.ring);
+    let report = match service.verify_event_signature(&hash) {
+        Ok(rep) => rep,
+        Err(e) => {
+            return err_out(json!({
+                "ok": false,
+                "subcommand": "audit sign-verify",
+                "outcome": "error",
+                "audit_id": -1,
+                "error": e
+            }));
+        }
+    };
+    ctx.ring = service.into_ring();
+
+    emit(
+        &mut ctx,
+        "audit.sign-verify",
+        &format!("aiosh audit sign-verify {}", hash),
+        json!({"hash": hash}),
+        "ok",
+        None,
+        None,
+        "user",
+        None,
+        CFlags { c4: true, ..Default::default() },
+        None,
+    );
+
+    ok_out(json!({
+        "ok": true,
+        "subcommand": "audit sign-verify",
+        "outcome": "ok",
+        "audit_id": -1,
+        "data": serde_json::to_value(&report).unwrap_or(Value::Null)
+    }));
+    0
+}
+
+fn cmd_audit_inspect(args: &[String]) -> i32 {
+    let hash = args.first().cloned().unwrap_or_default();
+    if hash.is_empty() {
+        eprintln!("usage: aiosh audit inspect <hash>");
+        return 2;
+    }
+
+    let mut ctx = open_context();
+    let service = aiosh_core::audit_chain_service::AuditChainService::new(ctx.ring);
+    let row = match service.get_row_by_hash(&hash) {
+        Ok(Some(r)) => r,
+        Ok(None) => {
+            return err_out(json!({
+                "ok": false,
+                "subcommand": "audit inspect",
+                "outcome": "not_found",
+                "audit_id": -1,
+                "error": format!("Audit event with hash {} not found", hash)
+            }));
+        }
+        Err(e) => {
+            return err_out(json!({
+                "ok": false,
+                "subcommand": "audit inspect",
+                "outcome": "error",
+                "audit_id": -1,
+                "error": e
+            }));
+        }
+    };
+    ctx.ring = service.into_ring();
+
+    emit(
+        &mut ctx,
+        "audit.inspect",
+        &format!("aiosh audit inspect {}", hash),
+        json!({"hash": hash}),
+        "ok",
+        None,
+        None,
+        "user",
+        None,
+        CFlags { c4: true, ..Default::default() },
+        None,
+    );
+
+    ok_out(json!({
+        "ok": true,
+        "subcommand": "audit inspect",
+        "outcome": "ok",
+        "audit_id": -1,
+        "data": serde_json::to_value(&row).unwrap_or(Value::Null)
+    }));
     0
 }
 

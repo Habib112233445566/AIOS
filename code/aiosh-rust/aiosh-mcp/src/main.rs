@@ -50,6 +50,10 @@ impl Server {
             json!({"name": "aios.audit.rotate", "description": "Seal live rows into an archived segment [grant]", "inputSchema": {"type": "object", "properties": {"keep_rows": {"type": "integer"}, "grant_id": {"type": "string"}}}}),
             json!({"name": "aios.audit.segments", "description": "List archived rotation checkpoints", "inputSchema": {"type": "object"}}),
             json!({"name": "aios.audit.seen", "description": "Bloom-backed was-this-hash-ever-logged query", "inputSchema": {"type": "object", "properties": {"hash": {"type": "string"}, "exact": {"type": "boolean"}}}}),
+            json!({"name": "aios.audit.query", "description": "Query extended audit events by provenance, session, trace, actor, or causal parent", "inputSchema": {"type": "object", "properties": {"session_id": {"type": "string"}, "trace_id": {"type": "string"}, "actor": {"type": "string"}, "tool": {"type": "string"}, "parent_hash": {"type": "string"}, "limit": {"type": "integer"}}}}),
+            json!({"name": "aios.audit.inspect", "description": "Fetch detailed record and metadata for a specific audit event by hash", "inputSchema": {"type": "object", "properties": {"hash": {"type": "string"}}, "required": ["hash"]}}),
+            json!({"name": "aios.audit.ancestry", "description": "Trace causal DAG lineage upwards to root triggers", "inputSchema": {"type": "object", "properties": {"hash": {"type": "string"}, "depth": {"type": "integer"}}, "required": ["hash"]}}),
+            json!({"name": "aios.audit.sign_verify", "description": "Verify digital signature attached to an audit event", "inputSchema": {"type": "object", "properties": {"hash": {"type": "string"}}, "required": ["hash"]}}),
         ];
         for (name, desc) in [
             ("aios.pentest.nmap", "TCP recon (top-100 ports) [C-1]"),
@@ -5210,6 +5214,155 @@ fn validate_and_open_grant_service(path_str: Option<&str>) -> Result<(std::path:
                     &mut self.ring, &self.pep,
                     "aios.audit.seen", &format!("audit.seen {}", hash),
                     &json!({"hash": hash, "exact": exact}), None, None, false,
+                    dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.audit.query" => {
+                let session_id = arguments.get("session_id").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let trace_id = arguments.get("trace_id").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let actor = arguments.get("actor").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let tool = arguments.get("tool").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let parent_hash = arguments.get("parent_hash").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let limit = arguments.get("limit").and_then(|v| v.as_u64()).map(|n| n as usize);
+
+                let filter = aiosh_core::audit_chain_service::AuditQueryFilter {
+                    session_id: session_id.clone(),
+                    trace_id: trace_id.clone(),
+                    actor: actor.clone(),
+                    tool: tool.clone(),
+                    parent_hash: parent_hash.clone(),
+                    limit,
+                };
+                let db_path = self.ring.path().to_string();
+                let f = move || -> Result<Value, String> {
+                    let query_ring = if db_path == ":memory:" {
+                        aiosh_core::audit::AuditRing::open_in_memory().map_err(|e| e.to_string())?
+                    } else {
+                        aiosh_core::audit::AuditRing::open(aiosh_core::audit::OpenOptions {
+                            path: Some(db_path.clone()),
+                            home: None,
+                        }).map_err(|e| e.to_string())?
+                    };
+                    let service = aiosh_core::audit_chain_service::AuditChainService::new(query_ring);
+                    let rows = service.query_events(&filter).map_err(|e| e.to_string())?;
+                    let rows_json: Vec<Value> = rows.iter().map(|r| serde_json::to_value(r).unwrap_or(Value::Null)).collect();
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.audit.query",
+                        "count": rows_json.len(),
+                        "rows": rows_json
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.audit.query", "audit.query",
+                    &json!({"session": session_id, "trace": trace_id, "actor": actor, "tool": tool, "parent": parent_hash, "limit": limit}),
+                    None, None, false,
+                    dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.audit.inspect" => {
+                let hash = arguments.get("hash").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                if hash.is_empty() {
+                    return json!({"ok": false, "tool": "aios.audit.inspect", "error": "hash is required"});
+                }
+                let db_path = self.ring.path().to_string();
+                let hash_for_closure = hash.clone();
+                let f = move || -> Result<Value, String> {
+                    let query_ring = if db_path == ":memory:" {
+                        aiosh_core::audit::AuditRing::open_in_memory().map_err(|e| e.to_string())?
+                    } else {
+                        aiosh_core::audit::AuditRing::open(aiosh_core::audit::OpenOptions {
+                            path: Some(db_path.clone()),
+                            home: None,
+                        }).map_err(|e| e.to_string())?
+                    };
+                    let service = aiosh_core::audit_chain_service::AuditChainService::new(query_ring);
+                    match service.get_row_by_hash(&hash_for_closure).map_err(|e| e.to_string())? {
+                        Some(row) => Ok(json!({
+                            "ok": true,
+                            "tool": "aios.audit.inspect",
+                            "row": serde_json::to_value(&row).unwrap_or(Value::Null)
+                        })),
+                        None => Ok(json!({
+                            "ok": false,
+                            "tool": "aios.audit.inspect",
+                            "error": format!("Audit row not found for hash {}", hash_for_closure)
+                        })),
+                    }
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.audit.inspect", &format!("audit.inspect {}", hash),
+                    &json!({"hash": hash}),
+                    None, None, false,
+                    dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.audit.ancestry" => {
+                let hash = arguments.get("hash").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                if hash.is_empty() {
+                    return json!({"ok": false, "tool": "aios.audit.ancestry", "error": "hash is required"});
+                }
+                let depth = arguments.get("depth").and_then(|v| v.as_u64()).unwrap_or(16) as usize;
+                let db_path = self.ring.path().to_string();
+                let hash_for_closure = hash.clone();
+                let f = move || -> Result<Value, String> {
+                    let query_ring = if db_path == ":memory:" {
+                        aiosh_core::audit::AuditRing::open_in_memory().map_err(|e| e.to_string())?
+                    } else {
+                        aiosh_core::audit::AuditRing::open(aiosh_core::audit::OpenOptions {
+                            path: Some(db_path.clone()),
+                            home: None,
+                        }).map_err(|e| e.to_string())?
+                    };
+                    let service = aiosh_core::audit_chain_service::AuditChainService::new(query_ring);
+                    let report = service.trace_ancestry(&hash_for_closure, depth).map_err(|e| e.to_string())?;
+                    let mut res = serde_json::to_value(&report).unwrap_or(Value::Null);
+                    if let Value::Object(ref mut m) = res {
+                        m.insert("ok".into(), json!(true));
+                        m.insert("tool".into(), json!("aios.audit.ancestry"));
+                    }
+                    Ok(res)
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.audit.ancestry", &format!("audit.ancestry {} depth={}", hash, depth),
+                    &json!({"hash": hash, "depth": depth}),
+                    None, None, false,
+                    dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.audit.sign_verify" => {
+                let hash = arguments.get("hash").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                if hash.is_empty() {
+                    return json!({"ok": false, "tool": "aios.audit.sign_verify", "error": "hash is required"});
+                }
+                let db_path = self.ring.path().to_string();
+                let hash_for_closure = hash.clone();
+                let f = move || -> Result<Value, String> {
+                    let query_ring = if db_path == ":memory:" {
+                        aiosh_core::audit::AuditRing::open_in_memory().map_err(|e| e.to_string())?
+                    } else {
+                        aiosh_core::audit::AuditRing::open(aiosh_core::audit::OpenOptions {
+                            path: Some(db_path.clone()),
+                            home: None,
+                        }).map_err(|e| e.to_string())?
+                    };
+                    let service = aiosh_core::audit_chain_service::AuditChainService::new(query_ring);
+                    let report = service.verify_event_signature(&hash_for_closure).map_err(|e| e.to_string())?;
+                    let mut res = serde_json::to_value(&report).unwrap_or(Value::Null);
+                    if let Value::Object(ref mut m) = res {
+                        m.insert("ok".into(), json!(true));
+                        m.insert("tool".into(), json!("aios.audit.sign_verify"));
+                    }
+                    Ok(res)
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.audit.sign_verify", &format!("audit.sign_verify {}", hash),
+                    &json!({"hash": hash}),
+                    None, None, false,
                     dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
                 )
             }
