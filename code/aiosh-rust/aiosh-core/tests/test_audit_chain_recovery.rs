@@ -92,3 +92,39 @@ fn test_integration_recovery_forward_repair_execution() {
     assert_eq!(recovery_result.repaired_count, 1);
     assert_eq!(recovery_result.actions[0].action_type, "FORWARD_REPAIR_ANCHOR");
 }
+
+#[test]
+fn test_integration_recovery_detect_cycle() {
+    let ring = AuditRing::open_in_memory().expect("open ring");
+    let service = AuditChainService::new(ring);
+
+    // Self-referential loop in causal link
+    let self_hash = "1111222233334444555566667777888899990000aaaabbbbccccddddeeeeffff";
+    let links_json = format!(r#"[{{ "parent_event_hash": "{}", "causality_type": "trigger" }}]"#, self_hash);
+
+    service.ring().conn().execute(
+        "INSERT INTO audit_ring (id, ts, actor, actor_id, tool, command, args_json, target, outcome, outcome_detail, prev_hash, hash, causal_links_json)
+         VALUES (1, '2026-09-28T00:00:00Z', 'actor', 'id', 'tool', 'run', '{}', NULL, 'success', NULL, '0000000000000000000000000000000000000000000000000000000000000000', ?1, ?2)",
+        rusqlite::params![self_hash, links_json],
+    ).expect("insert row with cycle");
+
+    let report = AuditChainRecoveryManager::validate(&service).expect("validate");
+    assert!(!report.is_valid);
+    assert!(report.issues.iter().any(|i| i.code == AuditChainIssueCode::CausalCycleDetected));
+}
+
+#[test]
+fn test_integration_recovery_malformed_signature() {
+    let ring = AuditRing::open_in_memory().expect("open ring");
+    let service = AuditChainService::new(ring);
+
+    service.ring().conn().execute(
+        "INSERT INTO audit_ring (id, ts, actor, actor_id, tool, command, args_json, target, outcome, outcome_detail, prev_hash, hash, signature_json)
+         VALUES (1, '2026-09-28T00:00:00Z', 'actor', 'id', 'tool', 'run', '{}', NULL, 'success', NULL, '0000000000000000000000000000000000000000000000000000000000000000', 'hash_with_bad_sig', '{broken:signature:')",
+        [],
+    ).expect("insert row with bad sig");
+
+    let report = AuditChainRecoveryManager::validate(&service).expect("validate");
+    assert!(!report.is_valid);
+    assert!(report.issues.iter().any(|i| i.code == AuditChainIssueCode::InvalidJson));
+}

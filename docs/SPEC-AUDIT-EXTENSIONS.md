@@ -233,6 +233,53 @@ aiosh audit doc lineage
 - Hardening: [T-02388 Evidence](docs/tasks/evidence/T-02388-documentation-hardening.md)
 - Verification: [T-02390 Evidence](docs/tasks/evidence/T-02390-documentation-verification-evidenc.md)
 
+---
+
+## 9. Audit Chain Recovery & Invariant Validation Subsystem (Sub-Epic 10)
+
+### 9.1 Overview & Invariant Rules
+The recovery and validation subsystem (`AuditChainRecoveryManager`) provides two-tier structural verification and non-destructive forward repair:
+- **Structural Invariants**:
+  - `HashDiscontinuity`: Sequential `prev_hash` links verified from `GENESIS_HASH`.
+  - `InvalidJson`: Validates `provenance_json`, `causal_links_json`, `signature_json`, `extensions_json`.
+  - `CausalCycleDetected`: Enforces DAG acyclicity by detecting self-referential or circular causal links.
+  - `SignatureMismatch`: Detects corrupted digital signatures on events.
+- **Non-Destructive Forward Repair**:
+  - Pre-flight atomic database snapshots: `<db_path>.backup.<timestamp>` (or custom `--backup-dir`).
+  - Strict append-only forward anchoring: Historical rows are never deleted or rewritten; instead, a cryptographically sealed `repair` anchor event (`outcome = "repaired"`, `tool = "audit.recover"`) is appended forward.
+
+### 9.2 Safety & Hardening Bounds
+- **Path Traversal Shield**: `validate_backup_dir` rejects `..` sequences, control characters, and enforces `MAX_PATH_LEN = 1024`.
+- **Diagnostic Capping**: Maximum diagnostic issues capped at 1,000 (`MAX_VALIDATION_ISSUES`).
+- **Audit-on-Operation**: All repair and validation actions via MCP (`aios.audit.validate`, `aios.audit.repair`) are audited via `dispatch::recorded_call`.
+
+### 9.3 Invocations & Usage
+```bash
+# Validate audit chain invariants
+aiosh audit validate
+aiosh audit validate --json
+
+# Execute forward recovery with automatic snapshot
+aiosh audit repair
+aiosh audit repair --backup-dir /var/backups/audit --json
+
+# Query via MCP tool call
+{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "aios.audit.validate", "arguments": {}}}
+{"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "aios.audit.repair", "arguments": {}}}
+```
+
+### 9.4 Evidence & Cross-References
+- Research: [T-02391 Evidence](docs/tasks/evidence/T-02391-recovery-validation-research.md)
+- Specification: [T-02392 Evidence](docs/tasks/evidence/T-02392-recovery-validation-specification.md)
+- Scaffold: [T-02393 Evidence](docs/tasks/evidence/T-02393-recovery-validation-scaffold.md)
+- Implementation: [T-02394 Evidence](docs/tasks/evidence/T-02394-recovery-validation-implementation.md)
+- Unit Tests: [T-02395 Evidence](docs/tasks/evidence/T-02395-recovery-validation-unit-test.md)
+- Integration: [T-02396 Evidence](docs/tasks/evidence/T-02396-recovery-validation-integration.md)
+- Security Review: [T-02397 Evidence](docs/tasks/evidence/T-02397-recovery-validation-security-review.md)
+- Hardening: [T-02398 Evidence](docs/tasks/evidence/T-02398-recovery-validation-hardening.md)
+- Verification: [T-02400 Evidence](docs/tasks/evidence/T-02400-recovery-validation-verification-evidenc.md)
+
+
 
 
 

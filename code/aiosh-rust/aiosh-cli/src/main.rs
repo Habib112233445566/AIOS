@@ -220,8 +220,9 @@ fn main() {
         Some("update") | Some("upd") => cmd_update(&args[1..]),
         Some("capability") | Some("cap") => cmd_capability(&args[1..]),
         Some("pep") => cmd_pep(&args[1..]),
+        Some("sandbox") | Some("sb") => cmd_sandbox(&args[1..]),
         Some("--help") | Some("-h") | None => {
-            println!("aiosh — AIOS shell CLI (Rust)\n\nUsage: aiosh <status|run|agent|audit|grant|pentest|classify|task|ci|release|backup|toolchain|doc|evidence|repo|secrets|triage|handoff|distro|image|package|service|session|layout|mod|hw|net|update|capability|pep> ...\n\n  aiosh audit <tail|verify|rotate|segments|seen|query|ancestry|sign-verify|inspect|config>  Audit ring & chain extensions control\n  aiosh task <status|done|block|unblock|skip|rebuild|check>  Task ledger control\n  aiosh ci <show|failures|check|config|metrics> [--file PATH]  CI smoke reports\n  aiosh release generate  Create bootable ISO\n  aiosh backup create  Create system snapshot zip\n  aiosh toolchain check [--config <path>]  Verify host environment against ToolchainManifest\n  aiosh toolchain show [--config <path>]   Display the resolved ToolchainManifest\n  aiosh doc <show|check|search>  Documentation Index Control\n  aiosh evidence <verify|hash|scan>   Evidence & Audit Trail Control\n  aiosh repo <health|check>  Repository Health Diagnostics\n  aiosh secrets <scan|check> [--config <path>]  Secrets & Access Hygiene Scanner\n  aiosh triage <list|show|record|resolve|ingest|check>  Regression Triage Manager\n  aiosh handoff <list|show|initiate|accept|reject|complete|cancel>  Agent Handoff Protocol Manager\n  aiosh distro <list|show|evaluate|recommend|policy|stats|check>  Linux Distro Selection & Justification Manager\n  aiosh image <list|show|plan|filter>  Linux Base Image Build & Packaging Manager\n  aiosh package <list|show|search|plan|apply|validate>  Linux Package Management & Store Control\n  aiosh service <validate|list|show|status|action|start|stop|restart|reload|order>  Init & Service Supervision Control\n  aiosh session <validate|list|show|status|create|action|activate|lock|unlock|terminate|config>  User Session Bootstrap Control\n  aiosh layout <list|show|validate|check|probe|diff|fstab|register|set-active|remove|import-fstab>  Filesystem Layout & Target Partitioning Manager\n  aiosh mod <list|show|blacklist|unblacklist|options|autoload|unautoload|preset|export>  Kernel Module Management\n  aiosh hw <scan|list|show|summary|verify>  Hardware Detection & Inventory Control\n  aiosh net <list|show|routes|dns|state|up|down>  Network Bootstrap & Interface Control\n  aiosh update <status|slots|check|apply|confirm|rollback>  System Update & Dual-Slot Control\n  aiosh capability <list|show|issue|attenuate|revoke|check|prune>  Capability & Zero-Ambient Authority Control\n  aiosh pep <evaluate|rule-add|rule-list|rule-remove|status|report|doc>  PEP Decision Engine & Policy Control");
+            println!("aiosh — AIOS shell CLI (Rust)\n\nUsage: aiosh <status|run|agent|audit|grant|pentest|classify|task|ci|release|backup|toolchain|doc|evidence|repo|secrets|triage|handoff|distro|image|package|service|session|layout|mod|hw|net|update|capability|pep|sandbox> ...\n\n  aiosh audit <tail|verify|rotate|segments|seen|query|ancestry|sign-verify|inspect|config>  Audit ring & chain extensions control\n  aiosh task <status|done|block|unblock|skip|rebuild|check>  Task ledger control\n  aiosh ci <show|failures|check|config|metrics> [--file PATH]  CI smoke reports\n  aiosh release generate  Create bootable ISO\n  aiosh backup create  Create system snapshot zip\n  aiosh toolchain check [--config <path>]  Verify host environment against ToolchainManifest\n  aiosh toolchain show [--config <path>]   Display the resolved ToolchainManifest\n  aiosh doc <show|check|search>  Documentation Index Control\n  aiosh evidence <verify|hash|scan>   Evidence & Audit Trail Control\n  aiosh repo <health|check>  Repository Health Diagnostics\n  aiosh secrets <scan|check> [--config <path>]  Secrets & Access Hygiene Scanner\n  aiosh triage <list|show|record|resolve|ingest|check>  Regression Triage Manager\n  aiosh handoff <list|show|initiate|accept|reject|complete|cancel>  Agent Handoff Protocol Manager\n  aiosh distro <list|show|evaluate|recommend|policy|stats|check>  Linux Distro Selection & Justification Manager\n  aiosh image <list|show|plan|filter>  Linux Base Image Build & Packaging Manager\n  aiosh package <list|show|search|plan|apply|validate>  Linux Package Management & Store Control\n  aiosh service <validate|list|show|status|action|start|stop|restart|reload|order>  Init & Service Supervision Control\n  aiosh session <validate|list|show|status|create|action|activate|lock|unlock|terminate|config>  User Session Bootstrap Control\n  aiosh layout <list|show|validate|check|probe|diff|fstab|register|set-active|remove|import-fstab>  Filesystem Layout & Target Partitioning Manager\n  aiosh mod <list|show|blacklist|unblacklist|options|autoload|unautoload|preset|export>  Kernel Module Management\n  aiosh hw <scan|list|show|summary|verify>  Hardware Detection & Inventory Control\n  aiosh net <list|show|routes|dns|state|up|down>  Network Bootstrap & Interface Control\n  aiosh update <status|slots|check|apply|confirm|rollback>  System Update & Dual-Slot Control\n  aiosh capability <list|show|issue|attenuate|revoke|check|prune>  Capability & Zero-Ambient Authority Control\n  aiosh pep <evaluate|rule-add|rule-list|rule-remove|status|report|doc>  PEP Decision Engine & Policy Control\n  aiosh sandbox <profiles|probe|exec>  Sandbox Containment & Execution Control");
             0
         }
         Some(other) => {
@@ -8467,8 +8468,10 @@ fn cmd_audit(args: &[String]) -> i32 {
         Some("policy") => cmd_audit_policy(&args[1..]),
         Some("stats") | Some("telemetry") => cmd_audit_stats(&args[1..]),
         Some("doc") => cmd_audit_doc(&args[1..]),
+        Some("validate") => cmd_audit_validate(&args[1..]),
+        Some("repair") => cmd_audit_repair(&args[1..]),
         _ => {
-            eprintln!("usage: aiosh audit <tail|verify|rotate|segments|seen|query|ancestry|sign-verify|inspect|config|policy|stats|doc>");
+            eprintln!("usage: aiosh audit <tail|verify|rotate|segments|seen|query|ancestry|sign-verify|inspect|config|policy|stats|doc|validate|repair>");
             2
         }
     }
@@ -8623,6 +8626,79 @@ fn cmd_audit_doc(args: &[String]) -> i32 {
         }
         Err(e) => {
             eprintln!("Error searching audit doc: {}", e);
+            1
+        }
+    }
+}
+
+fn cmd_audit_validate(args: &[String]) -> i32 {
+    let is_json = args.iter().any(|a| a == "--json");
+    let ctx = open_context();
+    let service = aiosh_core::audit_chain_service::AuditChainService::new(ctx.ring);
+
+    match aiosh_core::audit_chain_recovery::AuditChainRecoveryManager::validate(&service) {
+        Ok(report) => {
+            if is_json {
+                println!("{}", serde_json::to_string_pretty(&report).unwrap_or_default());
+            } else {
+                println!("=== Audit Chain Invariant Validation ===");
+                println!("Total Events:      {}", report.total_events);
+                println!("Healthy Events:    {}", report.healthy_events);
+                println!("Is Valid:          {}", report.is_valid);
+                println!("Can Auto-Repair:   {}", report.can_auto_repair);
+                if !report.issues.is_empty() {
+                    println!("\nDetected Issues ({}):", report.issues.len());
+                    for issue in report.issues {
+                        println!("- [{:?}] {:?}: {}", issue.severity, issue.code, issue.message);
+                        if let Some(row_id) = issue.row_id {
+                            println!("    Row ID: {}", row_id);
+                        }
+                    }
+                }
+            }
+            if report.is_valid { 0 } else { 1 }
+        }
+        Err(e) => {
+            eprintln!("Error validating audit chain: {}", e);
+            1
+        }
+    }
+}
+
+fn cmd_audit_repair(args: &[String]) -> i32 {
+    let is_json = args.iter().any(|a| a == "--json");
+    let mut backup_dir = None;
+    let mut iter = args.iter();
+    while let Some(arg) = iter.next() {
+        if arg == "--backup-dir" {
+            backup_dir = iter.next().cloned();
+        }
+    }
+
+    let ctx = open_context();
+    let mut service = aiosh_core::audit_chain_service::AuditChainService::new(ctx.ring);
+    let dir_path = backup_dir.as_ref().map(|s| std::path::Path::new(s));
+
+    match aiosh_core::audit_chain_recovery::AuditChainRecoveryManager::recover(&mut service, dir_path) {
+        Ok(res) => {
+            if is_json {
+                println!("{}", serde_json::to_string_pretty(&res).unwrap_or_default());
+            } else {
+                println!("=== Audit Chain Forward Recovery Result ===");
+                println!("Success:           {}", res.ok);
+                if let Some(ref bp) = res.backup_path {
+                    println!("Backup Snapshot:   {}", bp);
+                }
+                println!("Repaired Actions:  {}", res.repaired_count);
+                for act in &res.actions {
+                    println!("- [{}] {}", act.action_type, act.description);
+                }
+                println!("Post-validation:   is_valid={}", res.post_validation.is_valid);
+            }
+            if res.ok { 0 } else { 1 }
+        }
+        Err(e) => {
+            eprintln!("Error executing audit chain recovery: {}", e);
             1
         }
     }
@@ -16621,6 +16697,214 @@ fn cmd_pep(args: &[String]) -> i32 {
     }
 }
 
+fn cmd_sandbox(args: &[String]) -> i32 {
+    let mut ctx = open_context();
+    let sub = args.first().map(|s| s.as_str());
+    let rest = if args.len() > 1 { &args[1..] } else { &[] };
+    let is_json = has_flag(rest, "--json");
+
+    match sub {
+        Some("profiles") => {
+            let ring = AuditRing::open(aiosh_core::audit::OpenOptions {
+                path: Some(db_path()),
+                home: None,
+            }).ok();
+            let svc = aiosh_core::sandbox_service::SandboxService::with_default_profiles(ring);
+            let profiles = svc.list_profiles();
+
+            if is_json {
+                println!("{}", json!({ "code": 0, "data": profiles, "error": serde_json::Value::Null }));
+            } else {
+                println!("Sandbox Profiles ({} total):", profiles.len());
+                for p in &profiles {
+                    println!("  - {}: isolation={:?}, net={:?}, mem_max_mb={}",
+                        p.name,
+                        p.isolation_level,
+                        p.network,
+                        p.resources.max_memory_bytes / (1024 * 1024)
+                    );
+                }
+            }
+            0
+        }
+        Some("probe") => {
+            let caps = aiosh_core::sandbox_service::HostSandboxCapabilities::probe();
+            if is_json {
+                println!("{}", json!({ "code": 0, "data": caps, "error": serde_json::Value::Null }));
+            } else {
+                println!("Host Sandbox Capabilities (platform: {}):", caps.platform);
+                println!("  Landlock LSM:         {}", if caps.landlock_supported { format!("supported (ABI v{:?})", caps.landlock_abi_version.unwrap_or(0)) } else { "unavailable".into() });
+                println!("  Seccomp-BPF:          {}", if caps.seccomp_bpf_supported { "supported" } else { "unavailable" });
+                println!("  no_new_privs:         {}", if caps.no_new_privs_supported { "supported" } else { "unavailable" });
+            }
+            0
+        }
+        Some("exec") => {
+            // Find delimiter `--`
+            let dash_pos = rest.iter().position(|r| r == "--");
+            let (flags_slice, cmd_slice) = match dash_pos {
+                Some(pos) => (&rest[..pos], &rest[pos + 1..]),
+                None => {
+                    let msg = "sandbox exec requires '--' delimiter before command to execute";
+                    classify_and_emit(
+                        &mut ctx, "sandbox", "exec", json!({ "error": msg }),
+                        "failure", None, Some("Missing '--' delimiter"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_DELIMITER", "message": msg } }));
+                    } else {
+                        eprintln!("ERROR: {}", sanitize_terminal(msg));
+                    }
+                    return 2;
+                }
+            };
+
+            if cmd_slice.is_empty() {
+                let msg = "sandbox exec requires target command binary after '--'";
+                classify_and_emit(
+                    &mut ctx, "sandbox", "exec", json!({ "error": msg }),
+                    "failure", None, Some("Missing command binary"), "operator", None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_COMMAND", "message": msg } }));
+                } else {
+                    eprintln!("ERROR: {}", sanitize_terminal(msg));
+                }
+                return 2;
+            }
+
+            let profile_name = parse_flag(flags_slice, "--profile").unwrap_or_else(|| "standard".into());
+            let grant_token = parse_flag(flags_slice, "--grant");
+            let cwd_opt = parse_flag(flags_slice, "--cwd");
+
+            // Traversal check on cwd
+            if let Some(ref cwd) = cwd_opt {
+                if cwd.contains("..") {
+                    let msg = format!("directory traversal prohibited in cwd: {}", cwd);
+                    classify_and_emit(
+                        &mut ctx, "sandbox", "exec", json!({ "error": &msg }),
+                        "failure", None, Some("Directory traversal in cwd"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "TRAVERSAL_DETECTED", "message": msg } }));
+                    } else {
+                        eprintln!("ERROR: {}", sanitize_terminal(&msg));
+                    }
+                    return 2;
+                }
+            }
+
+            let ring = AuditRing::open(aiosh_core::audit::OpenOptions {
+                path: Some(db_path()),
+                home: None,
+            }).ok();
+            let mut svc = aiosh_core::sandbox_service::SandboxService::with_default_profiles(ring);
+
+            let profile = match svc.get_profile(&profile_name) {
+                Some(p) => p,
+                None => {
+                    let msg = format!("profile '{}' not found", profile_name);
+                    classify_and_emit(
+                        &mut ctx, "sandbox", "exec", json!({ "error": &msg, "profile": &profile_name }),
+                        "failure", None, Some("Profile not found"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "PROFILE_NOT_FOUND", "message": msg } }));
+                    } else {
+                        eprintln!("ERROR: {}", sanitize_terminal(&msg));
+                    }
+                    return 2;
+                }
+            };
+
+            let bin = &cmd_slice[0];
+            let bin_args = if cmd_slice.len() > 1 { cmd_slice[1..].to_vec() } else { Vec::new() };
+
+            let req = aiosh_core::sandbox_data_model::SandboxExecutionRequest {
+                command: bin.to_string(),
+                args: bin_args,
+                cwd: cwd_opt,
+                profile,
+                session_id: None,
+                pep_grant_id: grant_token,
+                stdin_data: None,
+            };
+
+            if let Err(e) = req.validate() {
+                let msg = format!("invalid execution request: {}", e);
+                classify_and_emit(
+                    &mut ctx, "sandbox", "exec", json!({ "error": &msg }),
+                    "failure", None, Some("Invalid request"), "operator", None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_REQUEST", "message": msg } }));
+                } else {
+                    eprintln!("ERROR: {}", sanitize_terminal(&msg));
+                }
+                return 2;
+            }
+
+            match svc.execute(&req) {
+                Ok(res) => {
+                    classify_and_emit(
+                        &mut ctx, "sandbox", "exec",
+                        json!({ "command": bin, "profile": profile_name, "exit_code": res.exit_code, "status": format!("{:?}", res.status) }),
+                        if res.exit_code == 0 { "success" } else { "failure" },
+                        Some(bin), Some("Sandbox execution completed"), "operator", req.pep_grant_id.as_deref(),
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 0, "data": res, "error": serde_json::Value::Null }));
+                    } else {
+                        if !res.stdout.is_empty() {
+                            print!("{}", sanitize_terminal(&res.stdout));
+                        }
+                        if !res.stderr.is_empty() {
+                            eprint!("{}", sanitize_terminal(&res.stderr));
+                        }
+                    }
+                    res.exit_code
+                }
+                Err(e) => {
+                    let exit_code = if e.contains(aiosh_core::sandbox_service::ERR_SANDBOX_PEP_UNAUTHORIZED) {
+                        1
+                    } else if e.contains(aiosh_core::sandbox_service::ERR_SANDBOX_EXEC_FAILED) {
+                        127
+                    } else {
+                        2
+                    };
+                    classify_and_emit(
+                        &mut ctx, "sandbox", "exec", json!({ "command": bin, "error": &e }),
+                        "failure", Some(bin), Some("Sandbox execution failed"), "operator", req.pep_grant_id.as_deref(),
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": exit_code, "data": serde_json::Value::Null, "error": { "code": "EXEC_ERROR", "message": e } }));
+                    } else {
+                        eprintln!("ERROR: {}", sanitize_terminal(&e));
+                    }
+                    exit_code
+                }
+            }
+        }
+        Some("--help") | Some("-h") | None => {
+            println!("aiosh sandbox — Sandbox Containment & Execution Control\n\nUsage: aiosh sandbox <profiles|probe|exec> [options]\n\nCommands:\n  profiles                   List registered sandbox containment profiles\n  probe                      Probe host kernel sandbox capabilities\n  exec                       Execute command under sandbox containment\n\nOptions for exec:\n  --profile <NAME>           Target sandbox profile (standard, strict, permissive) [default: standard]\n  --grant <TOKEN>            PEP authorization grant token\n  --cwd <PATH>               Working directory for process execution\n  --                         Delimiter separating aiosh flags from the command to execute\n  --json                     Output structured JSON envelope\n  -h, --help                 Display this help message");
+            0
+        }
+        Some(unknown) => {
+            let msg = format!("unknown sandbox subcommand: {}", unknown);
+            classify_and_emit(
+                &mut ctx, "sandbox", unknown, json!({ "error": &msg }),
+                "failure", None, Some("Unknown subcommand"), "operator", None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "UNKNOWN_SUBCOMMAND", "message": msg } }));
+            } else {
+                eprintln!("{}", sanitize_terminal(&msg));
+            }
+            2
+        }
+    }
+}
+
 #[cfg(test)]
 mod update_cli_tests {
     use super::*;
@@ -17051,6 +17335,59 @@ mod pep_cli_tests {
         assert_eq!(cmd_pep(&s(&["rule-remove", "bad\nid", "--store", &store])), 2);
 
         let _ = std::fs::remove_dir_all(&tmp_dir);
+    }
+}
+
+#[cfg(test)]
+mod sandbox_cli_tests {
+    use super::*;
+
+    fn s(v: &[&str]) -> Vec<String> {
+        v.iter().map(|x| x.to_string()).collect()
+    }
+
+    #[test]
+    fn test_sandbox_cli_help_and_subcommands() {
+        assert_eq!(cmd_sandbox(&[]), 0);
+        assert_eq!(cmd_sandbox(&s(&["--help"])), 0);
+        assert_eq!(cmd_sandbox(&s(&["-h"])), 0);
+        assert_eq!(cmd_sandbox(&s(&["unknown_cmd"])), 2);
+        assert_eq!(cmd_sandbox(&s(&["unknown_cmd", "--json"])), 2);
+    }
+
+    #[test]
+    fn test_sandbox_cli_profiles_and_probe() {
+        assert_eq!(cmd_sandbox(&s(&["profiles"])), 0);
+        assert_eq!(cmd_sandbox(&s(&["profiles", "--json"])), 0);
+        assert_eq!(cmd_sandbox(&s(&["probe"])), 0);
+        assert_eq!(cmd_sandbox(&s(&["probe", "--json"])), 0);
+    }
+
+    #[test]
+    fn test_sandbox_cli_exec_validation() {
+        // Missing delimiter
+        assert_eq!(cmd_sandbox(&s(&["exec"])), 2);
+        assert_eq!(cmd_sandbox(&s(&["exec", "echo", "hi"])), 2);
+
+        // Missing command binary after delimiter
+        assert_eq!(cmd_sandbox(&s(&["exec", "--"])), 2);
+
+        // Directory traversal in cwd
+        assert_eq!(cmd_sandbox(&s(&["exec", "--cwd", "../outside", "--", "echo", "hi"])), 2);
+
+        // Unknown profile
+        assert_eq!(cmd_sandbox(&s(&["exec", "--profile", "nonexistent_profile_123", "--", "echo", "hi"])), 2);
+    }
+
+    #[test]
+    fn test_sandbox_cli_exec_success() {
+        // Execute python print command
+        let res = cmd_sandbox(&s(&["exec", "--profile", "permissive", "--", "python", "-c", "print('hello_sandbox')"]));
+        assert_eq!(res, 0);
+
+        // JSON format
+        let res_json = cmd_sandbox(&s(&["exec", "--json", "--profile", "permissive", "--", "python", "-c", "print('json_sandbox')"]));
+        assert_eq!(res_json, 0);
     }
 }
 

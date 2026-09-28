@@ -19,6 +19,32 @@ pub const AUDITRECV_ERR_VALIDATION: &str = "AUDITRECV_ERR_VALIDATION";
 /// Error code: Corrupt or unrecoverable audit database state.
 pub const AUDITRECV_ERR_CORRUPT: &str = "AUDITRECV_ERR_CORRUPT";
 
+/// Error code: Path traversal attempt detected in backup directory.
+pub const AUDITRECV_ERR_PATH_TRAVERSAL: &str = "AUDITRECV_ERR_PATH_TRAVERSAL";
+
+/// Maximum number of diagnostic issues collected in a single validation run.
+pub const MAX_VALIDATION_ISSUES: usize = 1000;
+
+/// Maximum allowable path length for backup directories.
+pub const MAX_PATH_LEN: usize = 1024;
+
+/// Validates a backup directory path against traversal and control characters.
+pub fn validate_backup_dir(path: &Path) -> Result<(), String> {
+    let s = path.to_string_lossy();
+    if s.len() > MAX_PATH_LEN {
+        return Err(format!("{}: path exceeds max length of {}", AUDITRECV_ERR_PATH_TRAVERSAL, MAX_PATH_LEN));
+    }
+    if s.chars().any(|c| c.is_control()) {
+        return Err(format!("{}: path contains control characters", AUDITRECV_ERR_PATH_TRAVERSAL));
+    }
+    for comp in path.components() {
+        if let std::path::Component::ParentDir = comp {
+            return Err(format!("{}: directory traversal (..) forbidden", AUDITRECV_ERR_PATH_TRAVERSAL));
+        }
+    }
+    Ok(())
+}
+
 /// Severity level for an identified audit chain validation issue.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -222,6 +248,17 @@ impl AuditChainRecoveryManager {
             if row_ok {
                 healthy_events += 1;
             }
+
+            if issues.len() >= MAX_VALIDATION_ISSUES {
+                issues.push(AuditChainValidationIssue {
+                    row_id: Some(id),
+                    event_hash: Some(hash.clone()),
+                    code: AuditChainIssueCode::HashDiscontinuity,
+                    severity: AuditChainIssueSeverity::Warning,
+                    message: format!("Issue cap reached ({} items); stopping further diagnostics", MAX_VALIDATION_ISSUES),
+                });
+                break;
+            }
         }
 
         let is_valid = issues.is_empty();
@@ -245,6 +282,10 @@ impl AuditChainRecoveryManager {
         service: &mut AuditChainService,
         backup_dir: Option<&Path>,
     ) -> Result<AuditChainRecoveryResult, String> {
+        if let Some(dir) = backup_dir {
+            validate_backup_dir(dir)?;
+        }
+
         let initial_validation = Self::validate(service)?;
         if initial_validation.is_valid {
             return Ok(AuditChainRecoveryResult {
@@ -441,5 +482,12 @@ mod tests {
         assert!(result.ok);
         assert_eq!(result.repaired_count, 1);
         assert_eq!(result.actions[0].action_type, "FORWARD_REPAIR_ANCHOR");
+    }
+
+    #[test]
+    fn test_validate_backup_dir_path_traversal() {
+        assert!(validate_backup_dir(Path::new("valid/backup/dir")).is_ok());
+        assert!(validate_backup_dir(Path::new("../invalid/dir")).is_err());
+        assert!(validate_backup_dir(Path::new("invalid/../dir")).is_err());
     }
 }

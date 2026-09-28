@@ -123,6 +123,8 @@ pub mod repo_health_service;
 pub mod retention;
 #[allow(dead_code)]
 pub mod sandbox;
+pub mod sandbox_data_model;
+pub mod sandbox_service;
 pub mod secrets;
 pub mod secrets_config;
 pub mod secrets_service;
@@ -348,4 +350,20 @@ pub use audit_chain_ext::{
     MAX_CAUSAL_LINKS, MAX_EXTENSION_ENTRIES, MAX_EXTENSION_PAYLOAD_BYTES, MAX_SESSION_ID_LEN,
     MAX_TRACE_ID_LEN,
 };
+pub use sandbox_data_model::{
+    EnvironmentPolicy, FilesystemPolicy, IsolationLevel, NetworkIsolationMode,
+    ResourceLimits, SandboxComponentStatus, SandboxExecutionRequest, SandboxExecutionResult,
+    SandboxExecutionStatus, SandboxProfile, SandboxProfileBuilder, SandboxProfileType, SyscallAction, SyscallPolicy,
+    ERR_SANDBOX_BOUNDS_EXCEEDED, ERR_SANDBOX_EMPTY_COMMAND, ERR_SANDBOX_INVALID_LIMIT, ERR_SANDBOX_INVALID_PATH,
+    ERR_SANDBOX_POLICY_CONFLICT,
+};
+pub use sandbox_service::{
+    HostSandboxCapabilities, SandboxConfig, SandboxService, DEFAULT_MAX_OUTPUT_CAPTURE_BYTES,
+    ERR_SANDBOX_CANNOT_DELETE_DEFAULT, ERR_SANDBOX_CAPACITY_EXCEEDED, ERR_SANDBOX_EXEC_FAILED,
+    ERR_SANDBOX_PEP_UNAUTHORIZED, ERR_SANDBOX_PROFILE_EXISTS, ERR_SANDBOX_PROFILE_NOT_FOUND,
+    MAX_PROFILES_IN_SERVICE,
+};
+
+
+
 

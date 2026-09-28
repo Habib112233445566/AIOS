@@ -121,6 +121,21 @@ impl SandboxPolicy {
         })
     }
 
+    pub fn to_profile(&self, name: &str) -> crate::sandbox_data_model::SandboxProfile {
+        let mut prof = crate::sandbox_data_model::SandboxProfile::standard();
+        prof.name = name.to_string();
+        prof.filesystem.paths_ro = self.paths_ro.clone();
+        prof.filesystem.paths_rw = self.paths_rw.clone();
+        prof.filesystem.paths_execute = self.paths_execute.clone();
+        prof.syscall.no_new_privs = self.no_new_privs;
+        prof.syscall.denylist = self.seccomp_denylist.clone();
+        prof
+    }
+
+    pub fn from_profile(profile: &crate::sandbox_data_model::SandboxProfile) -> Self {
+        profile.to_legacy_policy()
+    }
+
     pub fn default_landlock_rules(&self, argv0: &str) -> Vec<PathRule> {
         let mut rules = vec![
             PathRule { path: "/usr".into(), read: true, write: false, execute: true },

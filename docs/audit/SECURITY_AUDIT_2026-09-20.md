@@ -5090,3 +5090,46 @@ Tasks completed: **T-02365 through T-02394** (30 consecutive tasks executed unde
 - Task ledger state: 2,394 completed, 0 orphans, valid state.
 - Security status: **PASS / CLEAN / VERIFIED**. Task pointer advances to `T-02395`.
 
+---
+
+# ADDENDUM 32 — 2026-09-29: Audit Recovery Closure & Sandbox Enforcement Launch (T-02395..T-02424)
+
+## 1. Scope & Progress
+Tasks completed: **T-02395 through T-02424** (30 consecutive tasks executed under strict No-Skip governance):
+- **T-02395..T-02400 (Sub-Epic 10: Audit Chain Recovery & Validation Closure)**:
+  - T-02395..T-02396: Unit testing (`test_audit_chain_recovery.rs` 5/5 pass) and CLI integration (`aiosh audit recover`) / MCP integration (`aios.audit.recover`).
+  - T-02397..T-02398: Security review and hardening: atomic pre-flight snapshotting, bounded recursion in cycle detection, directory permission checks, and forward repair anchoring without rewriting historical blocks.
+  - T-02399..T-02400: Architecture documentation in `docs/SPEC-AUDIT-EXTENSIONS.md` Section 9 and formal Sub-Epic 10 milestone verification (`T-02400-recovery-validation-verification-evidenc.md`).
+- **T-02401..T-02410 (Sub-Epic 1: Sandbox Enforcement Data Model)**:
+  - T-02401..T-02404: Research, specification, scaffolding, and implementation of `SandboxProfileType`, `IsolationLevel`, `ResourceLimits`, `FilesystemPolicy`, `NetworkIsolationMode`, `SyscallPolicy`, `EnvironmentPolicy`, `SandboxProfile`, `SandboxExecutionRequest`, and `SandboxExecutionResult` in `sandbox_data_model.rs`.
+  - T-02405..T-02406: Unit testing (`test_sandbox_data_model.rs` 8/8 pass, `sandbox_data_model.rs` 10/10 pass) and CLI integration with `aiosh-sandbox` (`--profile` flag).
+  - T-02407..T-02408: Security review and hardening: strict bounds checking (`MAX_PATHS_PER_POLICY = 256`, `MAX_PATH_LEN = 4096`, `MAX_PROFILE_NAME_LEN = 128`, `MAX_ARGS_COUNT = 1024`, `MAX_ENV_VARS_COUNT = 256`, `MAX_MEMORY_BYTES = 64GB`), directory traversal prevention (`..` rejection), and null-byte prevention.
+  - T-02409..T-02410: Architecture documentation in `docs/SPEC-SANDBOX-DATA-MODEL.md` and Sub-Epic 1 milestone closure (`T-02410-data-model-verification-evidenc.md`).
+- **T-02411..T-02420 (Sub-Epic 2: Sandbox Enforcement Core Service)**:
+  - T-02411..T-02414: Research, specification, scaffolding, and implementation of `HostSandboxCapabilities`, `SandboxService`, and `SandboxConfig` in `sandbox_service.rs`.
+  - T-02415..T-02416: Unit testing (`test_sandbox_service.rs` 8/8 pass, `sandbox_service.rs` 5/5 pass) and MCP integration (`aios.sandbox.profiles` and `aios.sandbox.probe` in `aiosh-mcp`).
+  - T-02417..T-02418: Security review and hardening: capacity bounds (`MAX_PROFILES_IN_SERVICE = 256`), protected default profiles (`standard`, `strict`, `permissive`), PEP authorization gating, output capping (`DEFAULT_MAX_OUTPUT_CAPTURE_BYTES = 10 MiB`), and atomic audit logging to SQLite WAL.
+  - T-02419..T-02420: Architecture documentation in `docs/SPEC-SANDBOX-CORE-SERVICE.md` and Sub-Epic 2 milestone closure (`T-02420-core-service-verification-evidenc.md`).
+- **T-02421..T-02424 (Sub-Epic 3: Sandbox Enforcement CLI Surface Launch)**:
+  - T-02421..T-02422: Research and comprehensive specification of the CLI surface for sandbox containment (`docs/tasks/evidence/T-02422-cli-surface-specification.md`).
+  - T-02423..T-02424: Scaffolding and full implementation of `cmd_sandbox` in `aiosh-cli` with subcommands `profiles`, `probe`, `exec`, `--` delimiter enforcement, `--cwd` traversal rejection, terminal sanitization (`sanitize_terminal`), and unit test coverage (`sandbox_cli_tests` 4/4 pass).
+
+## 2. Invariants & Controls Audited
+1. **Multi-Substrate Boundary Safety**: Zero ambient authority enforced. Sandboxed commands cannot traverse path hierarchies (`..` forbidden) or exceed bounded memory/runtime caps.
+2. **Denial of Service Prevention**: Hard caps on path counts (256), path length (4096), args (1024), environment variables (256), profile store capacity (256), and captured standard I/O (10 MiB).
+3. **Protected Default Profiles**: Factory containment profiles (`standard`, `strict`, `permissive`) are immutable and cannot be removed or compromised at runtime.
+4. **PEP Authorization Gating**: When PEP enforcement is active, execution is blocked fail-closed unless a verified `pep_grant_id` is supplied.
+5. **Immutable Audit Provenance**: All sandboxed executions and recovery operations emit immutable audit trail entries into the SQLite WAL `audit_ring` table with classification, actor, and outcome.
+6. **Terminal Sanitization (CWE-150)**: Child process output and error streams are sanitized with `sanitize_terminal`, mitigating terminal escape sequence injection attacks.
+7. **Zero Compiler Warnings**: Workspace builds cleanly with 0 warnings and 0 errors across all workspace crates.
+
+## 3. Audit Certification
+- `test_audit_chain_recovery`: 5/5 PASS
+- `test_sandbox_data_model`: 8/8 PASS
+- `test_sandbox_service`: 8/8 PASS
+- `sandbox_cli_tests`: 4/4 PASS
+- Internal unit tests in `audit_chain_recovery`, `sandbox_data_model`, `sandbox_service`: 19/19 PASS
+- Workspace compiler status: `cargo check --workspace` clean (0 warnings, 0 errors).
+- Task ledger state: 2,424 completed, 0 orphans, valid state.
+- Security status: **PASS / CLEAN / VERIFIED**. Task pointer advances to `T-02425`.
+

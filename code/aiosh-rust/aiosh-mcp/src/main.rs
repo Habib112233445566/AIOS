@@ -58,6 +58,10 @@ impl Server {
             json!({"name": "aios.audit.policy", "description": "Inspect Audit Chain security policy enforcement rules and constraints", "inputSchema": {"type": "object", "properties": {"policy_path": {"type": "string"}}}}),
             json!({"name": "aios.audit.stats", "description": "Retrieve comprehensive telemetry and observability report for the Audit Chain Extensions subsystem", "inputSchema": {"type": "object"}}),
             json!({"name": "aios.audit.doc", "description": "Query, list, or search Audit Chain Extensions self-contained documentation topics", "inputSchema": {"type": "object", "properties": {"action": {"type": "string", "enum": ["list", "get", "search"]}, "topic_id": {"type": "string"}, "query": {"type": "string"}}}}),
+            json!({"name": "aios.audit.validate", "description": "Validate structural, cryptographic, and causal invariants of the Audit Chain", "inputSchema": {"type": "object"}}),
+            json!({"name": "aios.audit.repair", "description": "Execute non-destructive forward repair on the Audit Chain with atomic pre-flight snapshotting", "inputSchema": {"type": "object", "properties": {"backup_dir": {"type": "string"}}}}),
+            json!({"name": "aios.sandbox.profiles", "description": "List registered sandbox containment profiles", "inputSchema": {"type": "object"}}),
+            json!({"name": "aios.sandbox.probe", "description": "Probe host kernel sandbox capabilities (Landlock, seccomp-bpf, no_new_privs)", "inputSchema": {"type": "object"}}),
         ];
         for (name, desc) in [
             ("aios.pentest.nmap", "TCP recon (top-100 ports) [C-1]"),
@@ -5486,6 +5490,91 @@ fn validate_and_open_grant_service(path_str: Option<&str>) -> Result<(std::path:
                 dispatch::recorded_call(
                     &mut self.ring, &self.pep,
                     "aios.audit.doc", "audit.doc",
+                    &arguments,
+                    None, None, false,
+                    dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.audit.validate" => {
+                let db_path = self.ring.path().to_string();
+                let f = move || -> Result<Value, String> {
+                    let query_ring = if db_path == ":memory:" {
+                        aiosh_core::audit::AuditRing::open_in_memory().map_err(|e| e.to_string())?
+                    } else {
+                        aiosh_core::audit::AuditRing::open(aiosh_core::audit::OpenOptions {
+                            path: Some(db_path.clone()),
+                            home: None,
+                        }).map_err(|e| e.to_string())?
+                    };
+                    let service = aiosh_core::audit_chain_service::AuditChainService::new(query_ring);
+                    let report = aiosh_core::audit_chain_recovery::AuditChainRecoveryManager::validate(&service)?;
+                    let mut res = serde_json::to_value(&report).unwrap_or(Value::Null);
+                    if let Value::Object(ref mut m) = res {
+                        m.insert("ok".into(), json!(true));
+                        m.insert("tool".into(), json!("aios.audit.validate"));
+                    }
+                    Ok(res)
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.audit.validate", "audit.validate",
+                    &arguments,
+                    None, None, false,
+                    dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.audit.repair" => {
+                let db_path = self.ring.path().to_string();
+                let backup_dir = arguments.get("backup_dir").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = move || -> Result<Value, String> {
+                    let repair_ring = if db_path == ":memory:" {
+                        aiosh_core::audit::AuditRing::open_in_memory().map_err(|e| e.to_string())?
+                    } else {
+                        aiosh_core::audit::AuditRing::open(aiosh_core::audit::OpenOptions {
+                            path: Some(db_path.clone()),
+                            home: None,
+                        }).map_err(|e| e.to_string())?
+                    };
+                    let mut service = aiosh_core::audit_chain_service::AuditChainService::new(repair_ring);
+                    let dir_path = backup_dir.as_ref().map(|s| std::path::Path::new(s));
+                    let res = aiosh_core::audit_chain_recovery::AuditChainRecoveryManager::recover(&mut service, dir_path)?;
+                    let mut json_val = serde_json::to_value(&res).unwrap_or(Value::Null);
+                    if let Value::Object(ref mut m) = json_val {
+                        m.insert("ok".into(), json!(res.ok));
+                        m.insert("tool".into(), json!("aios.audit.repair"));
+                    }
+                    Ok(json_val)
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.audit.repair", "audit.repair",
+                    &arguments,
+                    None, None, false,
+                    dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.sandbox.profiles" => {
+                let f = move || -> Result<Value, String> {
+                    let svc = aiosh_core::sandbox_service::SandboxService::with_default_profiles(None);
+                    let profiles = svc.list_profiles();
+                    Ok(json!({"ok": true, "profiles": profiles}))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.sandbox.profiles", "sandbox.profiles",
+                    &arguments,
+                    None, None, false,
+                    dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.sandbox.probe" => {
+                let f = move || -> Result<Value, String> {
+                    let caps = aiosh_core::sandbox_service::HostSandboxCapabilities::probe();
+                    Ok(json!({"ok": true, "capabilities": caps}))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.sandbox.probe", "sandbox.probe",
                     &arguments,
                     None, None, false,
                     dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
