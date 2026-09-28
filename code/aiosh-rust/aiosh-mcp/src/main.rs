@@ -62,6 +62,8 @@ impl Server {
             json!({"name": "aios.audit.repair", "description": "Execute non-destructive forward repair on the Audit Chain with atomic pre-flight snapshotting", "inputSchema": {"type": "object", "properties": {"backup_dir": {"type": "string"}}}}),
             json!({"name": "aios.sandbox.profiles", "description": "List registered sandbox containment profiles", "inputSchema": {"type": "object"}}),
             json!({"name": "aios.sandbox.probe", "description": "Probe host kernel sandbox capabilities (Landlock, seccomp-bpf, no_new_privs)", "inputSchema": {"type": "object"}}),
+            json!({"name": "aios.sandbox.exec", "description": "Execute a command under sandbox containment with watchdog supervision and output capture", "inputSchema": {"type": "object", "properties": {"command": {"type": "string"}, "args": {"type": "array", "items": {"type": "string"}}, "profile": {"type": "string"}, "cwd": {"type": "string"}, "grant_token": {"type": "string"}}, "required": ["command"]}}),
+            json!({"name": "aios.sandbox.config", "description": "Inspect Sandbox Enforcement configuration parameters, defaults, and limits", "inputSchema": {"type": "object", "properties": {"config_path": {"type": "string"}}}}),
         ];
         for (name, desc) in [
             ("aios.pentest.nmap", "TCP recon (top-100 ports) [C-1]"),
@@ -5575,6 +5577,69 @@ fn validate_and_open_grant_service(path_str: Option<&str>) -> Result<(std::path:
                 dispatch::recorded_call(
                     &mut self.ring, &self.pep,
                     "aios.sandbox.probe", "sandbox.probe",
+                    &arguments,
+                    None, None, false,
+                    dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.sandbox.exec" => {
+                let command = arguments.get("command").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let args_val = arguments.get("args").and_then(|v| v.as_array()).map(|arr| {
+                    arr.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect::<Vec<String>>()
+                }).unwrap_or_default();
+                let profile_name = arguments.get("profile").and_then(|v| v.as_str()).unwrap_or("standard").to_string();
+                let cwd_opt = arguments.get("cwd").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let grant_token = arguments.get("grant_token").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+                let f = move || -> Result<Value, String> {
+                    if command.trim().is_empty() {
+                        return Err("ERR_SANDBOX_EMPTY_COMMAND: command cannot be empty".into());
+                    }
+                    if let Some(ref cwd) = cwd_opt {
+                        if cwd.contains("..") {
+                            return Err("ERR_SANDBOX_INVALID_PATH: directory traversal prohibited in cwd".into());
+                        }
+                    }
+                    let mut svc = aiosh_core::sandbox_service::SandboxService::with_default_profiles(None);
+                    let profile = svc.get_profile(&profile_name)
+                        .ok_or_else(|| format!("ERR_SANDBOX_PROFILE_NOT_FOUND: profile '{}' not found", profile_name))?;
+
+                    let req = aiosh_core::sandbox_data_model::SandboxExecutionRequest {
+                        command: command.clone(),
+                        args: args_val.clone(),
+                        cwd: cwd_opt.clone(),
+                        profile,
+                        session_id: None,
+                        pep_grant_id: grant_token.clone(),
+                        stdin_data: None,
+                    };
+
+                    let res = svc.execute(&req)?;
+                    Ok(json!({
+                        "ok": res.exit_code == 0,
+                        "result": res
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.sandbox.exec", "sandbox.exec",
+                    &arguments,
+                    None, None, false,
+                    dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.sandbox.config" => {
+                let cfg_path = arguments.get("config_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = move || -> Result<Value, String> {
+                    let cfg = match cfg_path {
+                        Some(ref p) => aiosh_core::sandbox_config::SandboxConfig::load_from_path(p)?,
+                        None => aiosh_core::sandbox_config::SandboxConfig::load_with_env_overrides(),
+                    };
+                    Ok(json!({"ok": true, "config": cfg}))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.sandbox.config", "sandbox.config",
                     &arguments,
                     None, None, false,
                     dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,

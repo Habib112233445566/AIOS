@@ -5133,3 +5133,48 @@ Tasks completed: **T-02395 through T-02424** (30 consecutive tasks executed unde
 - Task ledger state: 2,424 completed, 0 orphans, valid state.
 - Security status: **PASS / CLEAN / VERIFIED**. Task pointer advances to `T-02425`.
 
+---
+
+# ADDENDUM 33 — 2026-09-29: Sandbox Enforcement Subsystem (T-02425..T-02454)
+
+## 1. Scope & Progress
+Tasks completed: **T-02425 through T-02454** (30 consecutive tasks executed under strict No-Skip governance):
+- **T-02425..T-02430 (Sub-Epic 3: Sandbox Enforcement CLI Surface Closure)**:
+  - T-02425..T-02426: Unit testing (`sandbox_cli_tests` 4/4 pass) and integration testing (`test_sandbox_cli.py` 6/6 pass).
+  - T-02427..T-02428: Security review and hardening against CWE-150 / CWE-78 / CWE-22: parameter delimiter (`--`) enforcement, path traversal rejection in working directory resolution, terminal sanitization (`sanitize_terminal_output` safely preserving whitespace formatting `\n`, `\r`, `\t` while stripping dangerous ANSI sequences and control characters).
+  - T-02429..T-02430: Architecture documentation in `docs/SPEC-SANDBOX-CLI.md` and Sub-Epic 3 milestone closure (`T-02430-cli-surface-verification-evidenc.md`).
+- **T-02431..T-02440 (Sub-Epic 4: Sandbox Enforcement MCP/API Surface)**:
+  - T-02431..T-02434: Research, specification, scaffolding, and implementation of 4 MCP sandbox tools: `aios.sandbox.profiles`, `aios.sandbox.probe`, `aios.sandbox.exec`, `aios.sandbox.config`.
+  - T-02435..T-02436: Unit and integration testing (`test_sandbox_mcp.py` 9/9 pass).
+  - T-02437..T-02438: Security review and hardening: PEP capability grant validation gating, output capture buffer truncation (`max_output_capture_bytes`), bounded parameter validation via `validate_mcp_string`, and atomic audit emission through `dispatch::recorded_call`.
+  - T-02439..T-02440: Architecture documentation in `docs/SPEC-SANDBOX-MCP.md` and Sub-Epic 4 milestone closure (`T-02440-mcp-api-surface-verification-evidenc.md`).
+- **T-02441..T-02450 (Sub-Epic 5: Sandbox Enforcement Configuration Subsystem)**:
+  - T-02441..T-02444: Research, specification, scaffolding, and implementation of `SandboxConfig` in `code/aiosh-rust/aiosh-core/src/sandbox_config.rs`.
+  - T-02445..T-02446: Unit testing (`test_sandbox_config.rs` 6/6 pass), CLI integration (`aiosh sandbox config`), and MCP integration (`aios.sandbox.config`).
+  - T-02447..T-02448: Security review and hardening: bounded config file loading (`MAX_CONFIG_FILE_BYTES = 64 * 1024`), environment overrides (`AIOS_SANDBOX_CONFIG`, `AIOS_SANDBOX_DEFAULT_PROFILE`, `AIOS_SANDBOX_MAX_CONCURRENT`, `AIOS_SANDBOX_ENFORCE_PEP`), path traversal rejection, and strict default profile existence validation.
+  - T-02449..T-02450: Architecture documentation in `docs/SPEC-SANDBOX-CONFIG.md` and Sub-Epic 5 milestone closure (`T-02450-configuration-verification-evidenc.md`).
+- **T-02451..T-02454 (Sub-Epic 6: Sandbox Enforcement Automated Test Suites Launch)**:
+  - T-02451..T-02454: Research, specification, scaffolding, and full implementation of automated integration test suite `test_sandbox_automated.rs` covering formal test vectors `AUTOSANDBOX1` through `AUTOSANDBOX8` (8/8 pass).
+
+## 2. Invariants & Controls Audited
+1. **Zero Ambient Authority Containment**: Process execution is strictly bounded to the declared profile envelope. Filesystem conflicts (`paths_ro` vs `paths_rw`) and path traversal sequences (`..`) are rejected fail-closed (`AUTOSANDBOX2`).
+2. **Resource Exhaustion Immunity**: Output capture streams are strictly clamped to `max_output_capture_bytes` (`AUTOSANDBOX6`), and execution resource bounds (memory, CPU, wall-time) reject invalid boundaries (`AUTOSANDBOX4`).
+3. **PEP Capability Gating**: When `enforce_pep_grants` is set, child process execution requires explicit capability grants (`AUTOSANDBOX7`).
+4. **Protected Factory Profiles**: Factory default profiles (`standard`, `strict`, `permissive`) are immutable and cannot be removed or overwritten (`AUTOSANDBOX1`).
+5. **Thread-Safe Audit Provenance**: Concurrent sandboxed executions across multiple worker threads write hash-chained records to SQLite WAL without data corruption or lock contention (`AUTOSANDBOX8`).
+6. **Terminal Sanitization (CWE-150)**: Child output streams are sanitized via `sanitize_terminal_output`, preventing terminal escape injection and log injection attacks.
+7. **Zero Compiler Warnings**: Workspace compiles cleanly with 0 warnings and 0 errors across all workspace crates.
+
+## 3. Audit Certification
+- `test_sandbox_automated`: 8/8 PASS
+- `test_sandbox_config`: 6/6 PASS
+- `test_sandbox_data_model`: 8/8 PASS
+- `test_sandbox_service`: 8/8 PASS
+- `sandbox_cli_tests`: 4/4 PASS
+- `test_sandbox_cli.py`: 6/6 PASS
+- `test_sandbox_mcp.py`: 9/9 PASS
+- Workspace compiler status: `cargo check --workspace` clean (0 warnings, 0 errors).
+- Task ledger state: 2,454 completed, 0 orphans, valid state.
+- Security status: **PASS / CLEAN / VERIFIED**. Task pointer advances to `T-02455`.
+
+

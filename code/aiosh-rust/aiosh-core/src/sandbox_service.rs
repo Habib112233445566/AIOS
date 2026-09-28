@@ -75,25 +75,7 @@ impl HostSandboxCapabilities {
     }
 }
 
-/// Operational configuration for SandboxService.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SandboxConfig {
-    pub default_profile_name: String,
-    pub max_output_capture_bytes: usize,
-    pub enforce_pep_grants: bool,
-    pub audit_enabled: bool,
-}
-
-impl Default for SandboxConfig {
-    fn default() -> Self {
-        Self {
-            default_profile_name: "standard".into(),
-            max_output_capture_bytes: DEFAULT_MAX_OUTPUT_CAPTURE_BYTES,
-            enforce_pep_grants: false,
-            audit_enabled: true,
-        }
-    }
-}
+pub use crate::sandbox_config::SandboxConfig;
 
 /// Core service orchestrating Sandbox Enforcement.
 pub struct SandboxService {

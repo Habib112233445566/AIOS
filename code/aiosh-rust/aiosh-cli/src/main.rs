@@ -154,6 +154,13 @@ fn sanitize_terminal(input: &str) -> String {
         .collect()
 }
 
+fn sanitize_terminal_output(input: &str) -> String {
+    input
+        .chars()
+        .map(|c| if c.is_control() && c != '\n' && c != '\r' && c != '\t' { '\u{FFFD}' } else { c })
+        .collect()
+}
+
 fn ok_out(v: Value) {
     println!("{}", serde_json::to_string_pretty(&v).unwrap());
 }
@@ -16739,6 +16746,45 @@ fn cmd_sandbox(args: &[String]) -> i32 {
             }
             0
         }
+        Some("config") => {
+            let cfg_path = parse_flag(rest, "--path");
+            let cfg = match cfg_path {
+                Some(ref p) => match aiosh_core::sandbox_config::SandboxConfig::load_from_path(p) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        let msg = format!("failed to load config from {}: {}", p, e);
+                        classify_and_emit(
+                            &mut ctx, "sandbox", "config", json!({ "error": &msg }),
+                            "failure", None, Some("Config load error"), "operator", None,
+                        );
+                        if is_json {
+                            println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "CONFIG_ERROR", "message": msg } }));
+                        } else {
+                            eprintln!("ERROR: {}", sanitize_terminal(&msg));
+                        }
+                        return 1;
+                    }
+                },
+                None => aiosh_core::sandbox_config::SandboxConfig::load_with_env_overrides(),
+            };
+
+            if is_json {
+                println!("{}", json!({ "code": 0, "data": cfg, "error": serde_json::Value::Null }));
+            } else {
+                println!("Sandbox Configuration:");
+                println!("  Version:                   {}", cfg.version);
+                println!("  Default Profile:           {}", cfg.default_profile_name);
+                println!("  Max Output Capture:        {} bytes ({} MiB)", cfg.max_output_capture_bytes, cfg.max_output_capture_bytes / (1024 * 1024));
+                println!("  Execution Timeout:         {} seconds", cfg.execution_timeout_seconds);
+                println!("  Max Registered Profiles:   {}", cfg.max_registered_profiles);
+                println!("  Enforce PEP Grants:        {}", cfg.enforce_pep_grants);
+                println!("  Audit Enabled:             {}", cfg.audit_enabled);
+                if let Some(ref dir) = cfg.custom_profiles_dir {
+                    println!("  Custom Profiles Dir:       {}", dir.display());
+                }
+            }
+            0
+        }
         Some("exec") => {
             // Find delimiter `--`
             let dash_pos = rest.iter().position(|r| r == "--");
@@ -16856,10 +16902,10 @@ fn cmd_sandbox(args: &[String]) -> i32 {
                         println!("{}", json!({ "code": 0, "data": res, "error": serde_json::Value::Null }));
                     } else {
                         if !res.stdout.is_empty() {
-                            print!("{}", sanitize_terminal(&res.stdout));
+                            print!("{}", sanitize_terminal_output(&res.stdout));
                         }
                         if !res.stderr.is_empty() {
-                            eprint!("{}", sanitize_terminal(&res.stderr));
+                            eprint!("{}", sanitize_terminal_output(&res.stderr));
                         }
                     }
                     res.exit_code
@@ -16886,7 +16932,7 @@ fn cmd_sandbox(args: &[String]) -> i32 {
             }
         }
         Some("--help") | Some("-h") | None => {
-            println!("aiosh sandbox — Sandbox Containment & Execution Control\n\nUsage: aiosh sandbox <profiles|probe|exec> [options]\n\nCommands:\n  profiles                   List registered sandbox containment profiles\n  probe                      Probe host kernel sandbox capabilities\n  exec                       Execute command under sandbox containment\n\nOptions for exec:\n  --profile <NAME>           Target sandbox profile (standard, strict, permissive) [default: standard]\n  --grant <TOKEN>            PEP authorization grant token\n  --cwd <PATH>               Working directory for process execution\n  --                         Delimiter separating aiosh flags from the command to execute\n  --json                     Output structured JSON envelope\n  -h, --help                 Display this help message");
+            println!("aiosh sandbox — Sandbox Containment & Execution Control\n\nUsage: aiosh sandbox <profiles|probe|config|exec> [options]\n\nCommands:\n  profiles                   List registered sandbox containment profiles\n  probe                      Probe host kernel sandbox capabilities\n  config                     Inspect Sandbox Enforcement runtime configuration\n  exec                       Execute command under sandbox containment\n\nOptions for config:\n  --path <PATH>              Custom sandbox config JSON file\n\nOptions for exec:\n  --profile <NAME>           Target sandbox profile (standard, strict, permissive) [default: standard]\n  --grant <TOKEN>            PEP authorization grant token\n  --cwd <PATH>               Working directory for process execution\n  --                         Delimiter separating aiosh flags from the command to execute\n  --json                     Output structured JSON envelope\n  -h, --help                 Display this help message");
             0
         }
         Some(unknown) => {
@@ -17388,6 +17434,13 @@ mod sandbox_cli_tests {
         // JSON format
         let res_json = cmd_sandbox(&s(&["exec", "--json", "--profile", "permissive", "--", "python", "-c", "print('json_sandbox')"]));
         assert_eq!(res_json, 0);
+    }
+
+    #[test]
+    fn test_sandbox_cli_config() {
+        assert_eq!(cmd_sandbox(&s(&["config"])), 0);
+        assert_eq!(cmd_sandbox(&s(&["config", "--json"])), 0);
+        assert_eq!(cmd_sandbox(&s(&["config", "--path", "nonexistent_conf.json"])), 1);
     }
 }
 
