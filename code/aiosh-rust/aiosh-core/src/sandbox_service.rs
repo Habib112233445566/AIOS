@@ -15,6 +15,7 @@ use crate::sandbox_data_model::{
     SandboxExecutionStatus, SandboxProfile,
 };
 use crate::types::CFlags;
+use crate::sandbox_policy::{SandboxPolicyVerdict, SandboxSecurityPolicy};
 
 pub const ERR_SANDBOX_PROFILE_NOT_FOUND: &str = "ERR_SANDBOX_PROFILE_NOT_FOUND";
 pub const ERR_SANDBOX_PROFILE_EXISTS: &str = "ERR_SANDBOX_PROFILE_EXISTS";
@@ -81,6 +82,7 @@ pub use crate::sandbox_config::SandboxConfig;
 pub struct SandboxService {
     ring: Option<AuditRing>,
     config: SandboxConfig,
+    policy: SandboxSecurityPolicy,
     profiles: HashMap<String, SandboxProfile>,
 }
 
@@ -89,6 +91,7 @@ impl SandboxService {
         let mut svc = Self {
             ring,
             config,
+            policy: SandboxSecurityPolicy::default(),
             profiles: HashMap::new(),
         };
         // Pre-populate factory profiles
@@ -108,6 +111,18 @@ impl SandboxService {
 
     pub fn config_mut(&mut self) -> &mut SandboxConfig {
         &mut self.config
+    }
+
+    pub fn policy(&self) -> &SandboxSecurityPolicy {
+        &self.policy
+    }
+
+    pub fn policy_mut(&mut self) -> &mut SandboxSecurityPolicy {
+        &mut self.policy
+    }
+
+    pub fn set_policy(&mut self, policy: SandboxSecurityPolicy) {
+        self.policy = policy;
     }
 
     pub fn ring(&self) -> Option<&AuditRing> {
@@ -147,6 +162,10 @@ impl SandboxService {
         HostSandboxCapabilities::probe()
     }
 
+    pub fn generate_observability_report(&self) -> Result<crate::sandbox_observability::SandboxObservabilityReport, String> {
+        crate::sandbox_observability::SandboxObservabilityReport::generate(self)
+    }
+
     pub fn execute(&mut self, request: &SandboxExecutionRequest) -> Result<SandboxExecutionResult, String> {
         request.validate()?;
 
@@ -155,6 +174,39 @@ impl SandboxService {
             if request.pep_grant_id.is_none() {
                 return Err(format!("{}: execution requires valid pep_grant_id", ERR_SANDBOX_PEP_UNAUTHORIZED));
             }
+        }
+
+        // Evaluate security policy (SANDBOXPOL1..SANDBOXPOL6)
+        match self.policy.evaluate(request) {
+            SandboxPolicyVerdict::Deny { reason, code } => {
+                let err_msg = format!("{}: {}", code, reason);
+                if let Some(ref mut ring) = self.ring {
+                    let row_in = AuditRowInput {
+                        ts: Utc::now().to_rfc3339(),
+                        actor: "sandbox-service".into(),
+                        actor_id: "sec-sandbox-01".into(),
+                        tool: "sandbox".into(),
+                        command: request.command.clone(),
+                        args: serde_json::json!({ "denial_reason": reason }),
+                        target: request.cwd.clone(),
+                        outcome: "denied".into(),
+                        outcome_detail: Some(format!("policy_denial: {}", reason)),
+                        constitution_rev: None,
+                        grant_token: request.pep_grant_id.clone(),
+                        c_flags: CFlags::default(),
+                        policy_revision: Some(self.policy.version.clone()),
+                        classify_rule_ids: None,
+                        classify_evidence: None,
+                        classify_overall_verdict: None,
+                        classify_verdict_reason: None,
+                    };
+                    let ext_in = ExtendedAuditRowInput::new(row_in);
+                    let _ = ring.write_extended(ext_in);
+                }
+                return Err(err_msg);
+            }
+            SandboxPolicyVerdict::PermitWithWarning { warning: _ } => {}
+            SandboxPolicyVerdict::Permit => {}
         }
 
         let start = Instant::now();

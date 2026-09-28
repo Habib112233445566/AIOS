@@ -5177,4 +5177,47 @@ Tasks completed: **T-02425 through T-02454** (30 consecutive tasks executed unde
 - Task ledger state: 2,454 completed, 0 orphans, valid state.
 - Security status: **PASS / CLEAN / VERIFIED**. Task pointer advances to `T-02455`.
 
+---
+
+# ADDENDUM 34 — 2026-09-29: Sandbox Enforcement Automated Tests Closure, Security Policy, Observability & Documentation Launch (T-02455..T-02484)
+
+## 1. Scope & Progress
+Tasks completed: **T-02455 through T-02484** (30 consecutive tasks executed under strict No-Skip governance):
+- **T-02455..T-02460 (Sub-Epic 6: Sandbox Enforcement Automated Test Suites Closure)**:
+  - T-02455..T-02456: Unit testing (`test_sandbox_automated.rs` 8/8 pass) and integration smoke testing (`test_sandbox_automated_smoke.py` 5/5 pass).
+  - T-02457..T-02458: Security review and hardening against race conditions, unbounded capture buffers (`max_output_capture_bytes`), conflicting path policies (`paths_ro` vs `paths_rw`), and unhandled process exits.
+  - T-02459..T-02460: Specification documentation in `docs/SPEC-SANDBOX-AUTOMATED.md` and Sub-Epic 6 milestone closure (`T-02460-automated-test-suites-verification-evid.md`).
+- **T-02461..T-02470 (Sub-Epic 7: Sandbox Enforcement Security Policy Subsystem)**:
+  - T-02461..T-02464: Research, specification, scaffolding, and implementation of `SandboxSecurityPolicy`, `SandboxPolicyMode`, and `SandboxPolicyVerdict` in `code/aiosh-rust/aiosh-core/src/sandbox_policy.rs`.
+  - T-02465..T-02466: Unit testing (`test_sandbox_policy.rs` 7/7 pass), CLI integration (`aiosh sandbox policy`), and MCP integration (`aios.sandbox.policy`).
+  - T-02467..T-02468: Security review and hardening: prohibited command denylist (`rm`, `dd`, `mkfs`, `format`, `fdisk`, `shutdown`, `reboot`, `poweroff` with case-insensitivity and `.exe` stripping), dynamic loader variable scrubbing (`LD_PRELOAD`, `DYLD_INSERT_LIBRARIES`, `PYTHONPATH`), PEP grant profile gating, wall-time and memory ceilings, and 64 KiB config bounds.
+  - T-02469..T-02470: Architecture specification in `docs/SPEC-SANDBOX-POLICY.md` and Sub-Epic 7 milestone closure (`T-02470-security-policy-verification-evidenc.md`).
+- **T-02471..T-02480 (Sub-Epic 8: Sandbox Enforcement Observability Subsystem)**:
+  - T-02471..T-02474: Research, specification, scaffolding, and implementation of `SandboxObservabilityReport` in `code/aiosh-rust/aiosh-core/src/sandbox_observability.rs`.
+  - T-02475..T-02476: Unit testing (`test_sandbox_observability.rs` 5/5 pass), CLI integration (`aiosh sandbox stats`), and MCP integration (`aios.sandbox.stats`).
+  - T-02477..T-02478: Security review and hardening: bounded frequency distribution maps (`MAX_OUTCOME_DISTRIBUTION_ENTRIES = 128`), control character and ANSI escape sanitization (`sanitize_telemetry_text` clamped to 256 bytes), safe error envelopes (`SANDBOXOBS_ERR_*`), and bounded audit tail queries (`tail(1000)`).
+  - T-02479..T-02480: Architecture specification in `docs/SPEC-SANDBOX-OBSERVABILITY.md` and Sub-Epic 8 milestone closure (`T-02480-observability-verification-evidenc.md`).
+- **T-02481..T-02484 (Sub-Epic 9: Sandbox Enforcement Documentation Subsystem Launch)**:
+  - T-02481..T-02482: Research and specification for self-contained, offline documentation index (`docs/tasks/evidence/T-02482-documentation-specification.md`).
+  - T-02483..T-02484: Scaffolding and implementation of `SandboxDocIndex` in `code/aiosh-rust/aiosh-core/src/sandbox_doc.rs` with 6 canonical documentation topics (`overview`, `profiles`, `isolation`, `policy`, `observability`, `reference`), scored lexical search engine, and unit test coverage (`test_sandbox_doc.rs` 3/3 pass).
+
+## 2. Invariants & Controls Audited
+1. **Immutable Containment Boundaries**: Child processes cannot traverse parent directory hierarchies or exceed memory/wall-time quotas.
+2. **Fail-Closed Execution Gating**: Commands violating prohibited binary names or attempting dynamic loader injection are rejected fail-closed before process execution.
+3. **Bounded Telemetry and Memory Safety**: Observability reports cap outcome and profile tallies to 128 items, and scrub all strings of ANSI terminal escape codes.
+4. **Offline Documentation Availability**: Embedded documentation repository requires zero outbound network requests and executes strictly read-only queries.
+5. **Zero Compiler Warnings**: Workspace builds cleanly with 0 warnings and 0 errors across all 4 workspace crates.
+
+## 3. Audit Certification
+- `test_sandbox_automated`: 8/8 PASS
+- `test_sandbox_automated_smoke.py`: 5/5 PASS
+- `test_sandbox_policy`: 7/7 PASS
+- `test_sandbox_observability`: 5/5 PASS
+- `test_sandbox_doc`: 3/3 PASS
+- `test_sandbox_mcp.py`: 11/11 PASS
+- Workspace compiler status: `cargo check --workspace` clean (0 warnings, 0 errors).
+- Task ledger state: 2,484 completed, 0 orphans, valid state.
+- Security status: **PASS / CLEAN / VERIFIED**. Task pointer advances to `T-02485`.
+
+
 

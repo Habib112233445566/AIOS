@@ -126,6 +126,9 @@ pub mod sandbox;
 pub mod sandbox_config;
 pub mod sandbox_data_model;
 pub mod sandbox_service;
+pub mod sandbox_policy;
+pub mod sandbox_observability;
+pub mod sandbox_doc;
 pub mod secrets;
 pub mod secrets_config;
 pub mod secrets_service;
@@ -372,6 +375,23 @@ pub use sandbox_service::{
     ERR_SANDBOX_PEP_UNAUTHORIZED, ERR_SANDBOX_PROFILE_EXISTS, ERR_SANDBOX_PROFILE_NOT_FOUND,
     MAX_PROFILES_IN_SERVICE,
 };
+pub use sandbox_policy::{
+    SandboxPolicyMode, SandboxPolicyVerdict, SandboxSecurityPolicy,
+    MAX_PEP_MANDATED_PROFILES, MAX_PROHIBITED_COMMANDS, MAX_PROHIBITED_ENV_VARS,
+    MAX_SANDBOX_POLICY_VERSION_LEN, MAX_SANDBOX_SECURITY_POLICY_BYTES,
+    SANDBOXPOL_ERR_DENIED, SANDBOXPOL_ERR_IO, SANDBOXPOL_ERR_PARSE, SANDBOXPOL_ERR_VALIDATION,
+};
+pub use sandbox_observability::{
+    SandboxObservabilityReport, MAX_OUTCOME_DISTRIBUTION_ENTRIES as SANDBOX_MAX_OUTCOME_DISTRIBUTION_ENTRIES,
+    MAX_TELEMETRY_TEXT_LEN as SANDBOX_MAX_TELEMETRY_TEXT_LEN, SANDBOXOBS_ERR_QUERY,
+    SANDBOXOBS_ERR_VALIDATION, sanitize_telemetry_text as sanitize_sandbox_telemetry_text,
+};
+pub use sandbox_doc::{
+    SandboxDocCategory, SandboxDocIndex, SandboxDocSearchResult, SandboxDocSection,
+    SandboxDocTopic, SandboxDocTopicSummary, MAX_DOC_QUERY_LEN as SANDBOX_MAX_DOC_QUERY_LEN,
+    SANDBOXDOC_ERR_EMPTY_QUERY, SANDBOXDOC_ERR_NOT_FOUND,
+};
+
 
 
 

@@ -94,6 +94,9 @@ def test_mcp_sandbox_tool_registration():
     assert "aios.sandbox.profiles" in tool_names
     assert "aios.sandbox.probe" in tool_names
     assert "aios.sandbox.exec" in tool_names
+    assert "aios.sandbox.config" in tool_names
+    assert "aios.sandbox.policy" in tool_names
+    assert "aios.sandbox.stats" in tool_names
 
 
 def test_mcp_sandbox_profiles():
@@ -185,6 +188,25 @@ def test_mcp_sandbox_config():
     assert cfg.get("max_output_capture_bytes") == 10 * 1024 * 1024
 
 
+def test_mcp_sandbox_policy():
+    res = call_mcp_tool("aios.sandbox.policy")
+    assert res.get("ok") is True
+    pol = res.get("policy", {})
+    assert pol.get("version") == "1.0.0"
+    assert pol.get("mode") == "enforcing"
+    assert "rm" in pol.get("prohibited_commands", [])
+    assert "LD_PRELOAD" in pol.get("prohibited_env_vars", [])
+
+
+def test_mcp_sandbox_stats():
+    res = call_mcp_tool("aios.sandbox.stats")
+    assert res.get("ok") is True
+    rep = res.get("report", {})
+    assert rep.get("is_healthy") is True
+    assert rep.get("total_profiles_registered") == 3
+    assert "generated_at_utc" in rep
+
+
 if __name__ == "__main__":
     test_mcp_sandbox_tool_registration()
     test_mcp_sandbox_profiles()
@@ -195,5 +217,7 @@ if __name__ == "__main__":
     test_mcp_sandbox_exec_unknown_profile()
     test_mcp_sandbox_audit_persistence()
     test_mcp_sandbox_config()
-    print("ALL 9 SANDBOX MCP TESTS PASSED!")
+    test_mcp_sandbox_policy()
+    test_mcp_sandbox_stats()
+    print("ALL 11 SANDBOX MCP TESTS PASSED!")
 

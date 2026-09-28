@@ -16785,6 +16785,90 @@ fn cmd_sandbox(args: &[String]) -> i32 {
             }
             0
         }
+        Some("policy") => {
+            let pol_path = parse_flag(rest, "--path");
+            let policy = match pol_path {
+                Some(ref p) => match aiosh_core::sandbox_policy::SandboxSecurityPolicy::load_from_path(p) {
+                    Ok(pol) => pol,
+                    Err(e) => {
+                        let msg = format!("failed to load policy from {}: {}", p, e);
+                        classify_and_emit(
+                            &mut ctx, "sandbox", "policy", json!({ "error": &msg, "path": p }),
+                            "failure", None, Some("Load policy failed"), "operator", None,
+                        );
+                        if is_json {
+                            println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "LOAD_ERROR", "message": msg } }));
+                        } else {
+                            eprintln!("ERROR: {}", sanitize_terminal(&msg));
+                        }
+                        return 1;
+                    }
+                },
+                None => aiosh_core::sandbox_policy::SandboxSecurityPolicy::default(),
+            };
+
+            classify_and_emit(
+                &mut ctx, "sandbox", "policy", json!({ "version": &policy.version, "mode": format!("{:?}", policy.mode) }),
+                "success", None, Some("Inspected sandbox security policy"), "operator", None,
+            );
+
+            if is_json {
+                println!("{}", json!({ "code": 0, "data": policy, "error": serde_json::Value::Null }));
+            } else {
+                println!("Sandbox Security Policy (v{}):", policy.version);
+                println!("  Mode:                      {:?}", policy.mode);
+                println!("  Prohibited Commands:       {:?}", policy.prohibited_commands);
+                println!("  Prohibited Env Vars:       {:?}", policy.prohibited_env_vars);
+                println!("  PEP Mandated Profiles:     {:?}", policy.require_pep_grant_for_profiles);
+                println!("  Max Permissible Wall Time: {} ms", policy.max_permissible_wall_time_ms);
+                println!("  Max Permissible Memory:    {} bytes", policy.max_permissible_memory_bytes);
+            }
+            0
+        }
+        Some("stats") => {
+            let ring = AuditRing::open(aiosh_core::audit::OpenOptions {
+                path: Some(db_path()),
+                home: None,
+            }).ok();
+            let svc = aiosh_core::sandbox_service::SandboxService::with_default_profiles(ring);
+            let report = match svc.generate_observability_report() {
+                Ok(r) => r,
+                Err(e) => {
+                    let msg = format!("failed to generate observability report: {}", e);
+                    classify_and_emit(
+                        &mut ctx, "sandbox", "stats", json!({ "error": &msg }),
+                        "failure", None, Some("Failed report generation"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "REPORT_ERROR", "message": msg } }));
+                    } else {
+                        eprintln!("ERROR: {}", sanitize_terminal(&msg));
+                    }
+                    return 1;
+                }
+            };
+
+            classify_and_emit(
+                &mut ctx, "sandbox", "stats", json!({ "total_profiles": report.total_profiles_registered, "total_executions": report.total_executions_recorded }),
+                "success", None, Some("Generated sandbox observability report"), "operator", None,
+            );
+
+            if is_json {
+                println!("{}", json!({ "code": 0, "data": report, "error": serde_json::Value::Null }));
+            } else {
+                println!("Sandbox Observability Report (UTC: {}):", report.generated_at_utc);
+                println!("  Healthy:                   {}", report.is_healthy);
+                println!("  Registered Profiles:       {}", report.total_profiles_registered);
+                println!("  Recorded Executions:       {}", report.total_executions_recorded);
+                println!("  Policy Mode:               {}", report.policy_mode);
+                println!("  Executions by Outcome:     {:?}", report.executions_by_outcome);
+                println!("  Executions by Profile:     {:?}", report.executions_by_profile);
+                println!("  Host Platform:             {}", report.host_capabilities.platform);
+                println!("  Landlock LSM:              {}", if report.host_capabilities.landlock_supported { "supported" } else { "unavailable" });
+                println!("  Seccomp-BPF:               {}", if report.host_capabilities.seccomp_bpf_supported { "supported" } else { "unavailable" });
+            }
+            0
+        }
         Some("exec") => {
             // Find delimiter `--`
             let dash_pos = rest.iter().position(|r| r == "--");
@@ -16932,7 +17016,7 @@ fn cmd_sandbox(args: &[String]) -> i32 {
             }
         }
         Some("--help") | Some("-h") | None => {
-            println!("aiosh sandbox — Sandbox Containment & Execution Control\n\nUsage: aiosh sandbox <profiles|probe|config|exec> [options]\n\nCommands:\n  profiles                   List registered sandbox containment profiles\n  probe                      Probe host kernel sandbox capabilities\n  config                     Inspect Sandbox Enforcement runtime configuration\n  exec                       Execute command under sandbox containment\n\nOptions for config:\n  --path <PATH>              Custom sandbox config JSON file\n\nOptions for exec:\n  --profile <NAME>           Target sandbox profile (standard, strict, permissive) [default: standard]\n  --grant <TOKEN>            PEP authorization grant token\n  --cwd <PATH>               Working directory for process execution\n  --                         Delimiter separating aiosh flags from the command to execute\n  --json                     Output structured JSON envelope\n  -h, --help                 Display this help message");
+            println!("aiosh sandbox — Sandbox Containment & Execution Control\n\nUsage: aiosh sandbox <profiles|probe|config|policy|stats|exec> [options]\n\nCommands:\n  profiles                   List registered sandbox containment profiles\n  probe                      Probe host kernel sandbox capabilities\n  config                     Inspect Sandbox Enforcement runtime configuration\n  policy                     Inspect Sandbox Enforcement security policy and rules\n  stats                      Display Sandbox Enforcement observability and telemetry report\n  exec                       Execute command under sandbox containment\n\nOptions for config/policy:\n  --path <PATH>              Custom config or policy JSON file\n\nOptions for exec:\n  --profile <NAME>           Target sandbox profile (standard, strict, permissive) [default: standard]\n  --grant <TOKEN>            PEP authorization grant token\n  --cwd <PATH>               Working directory for process execution\n  --                         Delimiter separating aiosh flags from the command to execute\n  --json                     Output structured JSON envelope\n  -h, --help                 Display this help message");
             0
         }
         Some(unknown) => {

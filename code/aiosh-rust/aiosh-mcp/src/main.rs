@@ -64,6 +64,8 @@ impl Server {
             json!({"name": "aios.sandbox.probe", "description": "Probe host kernel sandbox capabilities (Landlock, seccomp-bpf, no_new_privs)", "inputSchema": {"type": "object"}}),
             json!({"name": "aios.sandbox.exec", "description": "Execute a command under sandbox containment with watchdog supervision and output capture", "inputSchema": {"type": "object", "properties": {"command": {"type": "string"}, "args": {"type": "array", "items": {"type": "string"}}, "profile": {"type": "string"}, "cwd": {"type": "string"}, "grant_token": {"type": "string"}}, "required": ["command"]}}),
             json!({"name": "aios.sandbox.config", "description": "Inspect Sandbox Enforcement configuration parameters, defaults, and limits", "inputSchema": {"type": "object", "properties": {"config_path": {"type": "string"}}}}),
+            json!({"name": "aios.sandbox.policy", "description": "Inspect Sandbox Enforcement security policy, prohibited commands, and rules", "inputSchema": {"type": "object", "properties": {"policy_path": {"type": "string"}}}}),
+            json!({"name": "aios.sandbox.stats", "description": "Generate comprehensive Sandbox Enforcement observability and telemetry report", "inputSchema": {"type": "object"}}),
         ];
         for (name, desc) in [
             ("aios.pentest.nmap", "TCP recon (top-100 ports) [C-1]"),
@@ -5640,6 +5642,38 @@ fn validate_and_open_grant_service(path_str: Option<&str>) -> Result<(std::path:
                 dispatch::recorded_call(
                     &mut self.ring, &self.pep,
                     "aios.sandbox.config", "sandbox.config",
+                    &arguments,
+                    None, None, false,
+                    dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.sandbox.policy" => {
+                let policy_path = arguments.get("policy_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = move || -> Result<Value, String> {
+                    let pol = match policy_path {
+                        Some(ref p) => aiosh_core::sandbox_policy::SandboxSecurityPolicy::load_from_path(p)?,
+                        None => aiosh_core::sandbox_policy::SandboxSecurityPolicy::default(),
+                    };
+                    Ok(json!({"ok": true, "policy": pol}))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.sandbox.policy", "sandbox.policy",
+                    &arguments,
+                    None, None, false,
+                    dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.sandbox.stats" => {
+                let f = move || -> Result<Value, String> {
+                    let ring = aiosh_core::audit::AuditRing::open(aiosh_core::audit::OpenOptions::default()).ok();
+                    let svc = aiosh_core::sandbox_service::SandboxService::with_default_profiles(ring);
+                    let report = svc.generate_observability_report()?;
+                    Ok(json!({"ok": true, "report": report}))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.sandbox.stats", "sandbox.stats",
                     &arguments,
                     None, None, false,
                     dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
