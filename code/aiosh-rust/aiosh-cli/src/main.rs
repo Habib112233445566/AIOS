@@ -8464,8 +8464,11 @@ fn cmd_audit(args: &[String]) -> i32 {
         Some("sign-verify") => cmd_audit_sign_verify(&args[1..]),
         Some("inspect") => cmd_audit_inspect(&args[1..]),
         Some("config") => cmd_audit_config(&args[1..]),
+        Some("policy") => cmd_audit_policy(&args[1..]),
+        Some("stats") | Some("telemetry") => cmd_audit_stats(&args[1..]),
+        Some("doc") => cmd_audit_doc(&args[1..]),
         _ => {
-            eprintln!("usage: aiosh audit <tail|verify|rotate|segments|seen|query|ancestry|sign-verify|inspect|config>");
+            eprintln!("usage: aiosh audit <tail|verify|rotate|segments|seen|query|ancestry|sign-verify|inspect|config|policy|stats|doc>");
             2
         }
     }
@@ -8488,6 +8491,141 @@ fn cmd_audit_config(args: &[String]) -> i32 {
         println!("Strict Provenance:          {}", cfg.strict_provenance);
     }
     0
+}
+
+fn cmd_audit_policy(args: &[String]) -> i32 {
+    let is_json = args.iter().any(|a| a == "--json");
+    let mut path = None;
+    let mut iter = args.iter();
+    while let Some(arg) = iter.next() {
+        if arg == "--path" {
+            path = iter.next().cloned();
+        }
+    }
+
+    let policy = match path {
+        Some(p) => match aiosh_core::audit_chain_policy::AuditChainSecurityPolicy::load_from_file(&p) {
+            Ok(pol) => pol,
+            Err(err) => {
+                eprintln!("Error loading audit policy: {}", err);
+                return 1;
+            }
+        },
+        None => aiosh_core::audit_chain_policy::AuditChainSecurityPolicy::default(),
+    };
+
+    if is_json {
+        println!("{}", serde_json::to_string_pretty(&policy).unwrap_or_default());
+    } else {
+        println!("=== Audit Chain Security Policy ===");
+        println!("Version:                    {}", policy.version);
+        println!("Mode:                       {:?}", policy.mode);
+        println!("Description:                {}", policy.description);
+        println!("Disallow Anonymous:         {}", policy.disallow_anonymous);
+        println!("Max Causal Links:           {}", policy.max_allowed_causal_links);
+        println!("Max Future Skew (s):        {}", policy.allow_future_timestamps_max_secs);
+        println!("Prohibited Actors:          {:?}", policy.prohibited_actors);
+        println!("Prohibited Tools:           {:?}", policy.prohibited_tools);
+        println!("Signature Required:         {:?}", policy.signature_required_prefixes);
+    }
+    0
+}
+
+fn cmd_audit_stats(args: &[String]) -> i32 {
+    let is_json = args.iter().any(|a| a == "--json");
+    let ctx = open_context();
+    let service = aiosh_core::audit_chain_service::AuditChainService::new(ctx.ring);
+    let report = match aiosh_core::audit_chain_observability::AuditChainObservabilityReport::generate(&service) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("Error generating audit observability report: {}", e);
+            return 1;
+        }
+    };
+
+    if is_json {
+        println!("{}", serde_json::to_string_pretty(&report).unwrap_or_default());
+    } else {
+        println!("=== Audit Chain Observability & Telemetry ===");
+        println!("Generated At (UTC):          {}", report.generated_at_utc);
+        println!("Total Rows:                  {}", report.total_rows);
+        println!("Extended Rows:               {}", report.total_extended_rows);
+        println!("Total Causal Links:          {}", report.total_causal_links);
+        println!("Signed Events:               {}", report.total_signed_events);
+        println!("Unique Actors:               {}", report.unique_actors_count);
+        println!("Unique Tools:                {}", report.unique_tools_count);
+        println!("Unique Sessions:             {}", report.unique_sessions_count);
+        println!("Unique Traces:               {}", report.unique_traces_count);
+        println!("Active Policy Mode:          {}", report.active_policy_mode);
+        println!("DB File Bytes:               {}", report.db_file_bytes);
+        println!("Chain Integrity OK:          {}", report.chain_integrity_ok);
+        println!("System Healthy:              {}", report.is_healthy);
+        println!("Outcomes Distribution:       {:?}", report.outcomes_by_type);
+    }
+    0
+}
+
+fn cmd_audit_doc(args: &[String]) -> i32 {
+    let is_json = args.iter().any(|a| a == "--json");
+    let index = aiosh_core::audit_chain_doc::AuditChainDocIndex::new();
+
+    let non_flags: Vec<&str> = args
+        .iter()
+        .filter(|a| !a.starts_with("--"))
+        .map(|s| s.as_str())
+        .collect();
+
+    if non_flags.is_empty() {
+        if is_json {
+            println!("{}", serde_json::to_string_pretty(index.list_topics()).unwrap_or_default());
+        } else {
+            println!("=== Audit Chain Documentation Topics ===");
+            for t in index.list_topics() {
+                println!("{:<24} [{}] {}", t.id, t.category.as_str(), t.title);
+                println!("  Summary: {}", t.summary);
+            }
+        }
+        return 0;
+    }
+
+    let target = non_flags[0];
+    if let Some(topic) = index.get_topic(target) {
+        if is_json {
+            println!("{}", serde_json::to_string_pretty(topic).unwrap_or_default());
+        } else {
+            match index.render_markdown(target) {
+                Ok(md) => print!("{}", md),
+                Err(e) => {
+                    eprintln!("Error: {}", e);
+                    return 1;
+                }
+            }
+        }
+        return 0;
+    }
+
+    match index.search(target) {
+        Ok(results) => {
+            if is_json {
+                println!("{}", serde_json::to_string_pretty(&results).unwrap_or_default());
+            } else {
+                println!("=== Search Results for '{}' ===", target);
+                if results.is_empty() {
+                    println!("No matching topics found.");
+                } else {
+                    for r in results {
+                        println!("- {} (id: {}, score: {})", r.title, r.topic_id, r.score);
+                        println!("  {}", r.snippet);
+                    }
+                }
+            }
+            0
+        }
+        Err(e) => {
+            eprintln!("Error searching audit doc: {}", e);
+            1
+        }
+    }
 }
 
 fn cmd_audit_tail(args: &[String]) -> i32 {

@@ -5049,3 +5049,44 @@ Tasks completed: **T-02335 through T-02364** (30 consecutive tasks executed unde
 - Workspace compiler status: cargo check --workspace clean (0 warnings, 0 errors).
 - Task ledger state: 2,364 completed, 0 orphans, valid state.
 - Security status: **PASS / CLEAN / VERIFIED**. Task pointer advances to T-02365.
+
+---
+
+# ADDENDUM 31 — 2026-09-28: Audit Chain Extensions Subsystem (Sub-Epics 7–10: T-02365..T-02394)
+
+## 1. Scope & Progress
+Tasks completed: **T-02365 through T-02394** (30 consecutive tasks executed under strict No-Skip governance):
+- **T-02365..T-02370 (Sub-Epic 7: Security Policy Closure)**:
+  - T-02365..T-02366: Unit tests (`test_audit_chain_policy.rs` 4/4 pass, lib tests 4/4 pass) and integration for `aiosh audit policy` and `aios.audit.policy`.
+  - T-02367..T-02368: Security review and hardening against path traversal, anonymous actors, and invalid timestamps.
+  - T-02369..T-02370: Specification documentation in `docs/SPEC-AUDIT-EXTENSIONS.md` Section 6 and milestone verification (`T-02370-security-policy-verification-evidenc.md`).
+- **T-02371..T-02380 (Sub-Epic 8: Observability Subsystem)**:
+  - T-02371..T-02374: Research, specification, scaffolding, and implementation of `AuditChainObservabilityReport` (`audit_chain_observability.rs`).
+  - T-02375..T-02376: Unit testing (`test_audit_chain_observability.rs` 5/5 pass), CLI integration (`aiosh audit stats`), and MCP integration (`aios.audit.stats`).
+  - T-02377..T-02378: Security review and hardening: bounded frequency histograms (`MAX_OUTCOME_DISTRIBUTION_ENTRIES = 128`), bounded session/trace deduplication sets (`MAX_TRACKED_CARDINALITY_ITEMS = 100_000`), control char sanitization (`MAX_TELEMETRY_TEXT_LEN = 256`).
+  - T-02379..T-02380: Specification documentation in `docs/SPEC-AUDIT-EXTENSIONS.md` Section 7 and milestone verification (`T-02380-observability-verification-evidenc.md`).
+- **T-02381..T-02390 (Sub-Epic 9: Documentation Subsystem)**:
+  - T-02381..T-02384: Research, specification, scaffolding, and implementation of `AuditChainDocIndex` (`audit_chain_doc.rs`) with 7 canonical topics.
+  - T-02385..T-02386: Unit testing (`test_audit_chain_doc.rs` 6/6 pass), CLI integration (`aiosh audit doc`), and MCP integration (`aios.audit.doc`).
+  - T-02387..T-02388: Security review and hardening: query length bounds (1..128 chars), query token limit (16 tokens), topic slug validation (`[a-zA-Z0-9_-]`), snippet truncation (200 chars), control char sanitization.
+  - T-02389..T-02390: Specification documentation in `docs/SPEC-AUDIT-EXTENSIONS.md` Section 8 and milestone verification (`T-02390-documentation-verification-evidenc.md`).
+- **T-02391..T-02394 (Sub-Epic 10: Recovery & Validation Launch)**:
+  - T-02391..T-02394: Research, specification, scaffolding, and implementation of `AuditChainRecoveryManager` (`audit_chain_recovery.rs`), supporting structural validation, cycle detection, pre-flight atomic database snapshots, and forward repair anchor event emission (`test_audit_chain_recovery.rs` 3/3 pass, lib tests 4/4 pass).
+
+## 2. Invariants & Controls Audited
+1. **Hash Chain Continuity & Non-Repudiation**: Validates sequential SHA-256 links from `GENESIS_HASH`. Historical records are never rewritten or deleted; repairs append forward-anchored recovery events.
+2. **Cardinality & Memory Bounding**: Hard limits on telemetry outcome categories (128), in-memory cardinality tracking sets (100,000), search query lengths (128 chars), and parsed tokens (16).
+3. **Control Character & ANSI Sanitization**: All telemetry and documentation outputs are sanitized to prevent terminal injection, ANSI escape execution, and SIEM log pollution.
+4. **PEP Authorization & Audit-on-Operation**: Consequential MCP tools (`aios.audit.stats`, `aios.audit.doc`) route strictly through `dispatch::recorded_call`, writing exactly one audit row per execution.
+5. **Zero Compiler Warnings**: Workspace builds cleanly with 0 warnings and 0 errors across all workspace crates.
+
+## 3. Audit Certification
+- `test_audit_chain_policy`: 4/4 PASS
+- `test_audit_chain_observability`: 5/5 PASS
+- `test_audit_chain_doc`: 6/6 PASS
+- `test_audit_chain_recovery`: 3/3 PASS
+- Internal unit tests in `audit_chain_doc`, `audit_chain_recovery`, `audit_chain_observability`: 13/13 PASS
+- Workspace compiler status: `cargo check --workspace` clean (0 warnings, 0 errors).
+- Task ledger state: 2,394 completed, 0 orphans, valid state.
+- Security status: **PASS / CLEAN / VERIFIED**. Task pointer advances to `T-02395`.
+

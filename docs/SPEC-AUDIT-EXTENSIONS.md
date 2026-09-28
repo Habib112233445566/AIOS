@@ -115,3 +115,124 @@ cargo test --test test_audit_chain_automated
 python code/aiosh-mcp/tests/test_audit_chain_automated_smoke.py
 ```
 
+---
+
+## 6. Audit Chain Security Policy Subsystem (Sub-Epic 7)
+
+### 6.1 Policy Modes & Rules
+The security policy engine governs event ingestion, causal parent linking, and provenance integrity:
+- **`enforcing`**: Fail-closed rejection of policy violations with structured error codes (`AUDITPOL_ERR_*`).
+- **`permissive`**: Permits operations with a structured audit warning (`PermitWithWarning`).
+- **`disabled`**: Bypasses security policy evaluation.
+
+### 6.2 Key Constraints
+- **Anonymous Provenance**: Prohibits empty or `"anonymous"` actor and tool strings when `disallow_anonymous` is true.
+- **Sensitive Tool Signatures**: Tools matching `signature_required_prefixes` (`["kernel:", "sec:", "admin:", "pep:"]`) strictly require valid Ed25519 digital signatures.
+- **Causal Fan-out Bounding**: Maximum allowed causal links per event bounded to $\le 32$ (hard cap: 64).
+- **Temporal Validity**: Clock skew restricted to $\le 300\text{s}$ future skew; optional active window (`valid_from_epoch_secs`, `valid_until_epoch_secs`).
+
+### 6.3 Example Commands
+```bash
+# Inspect active audit chain security policy via CLI
+aiosh audit policy --json
+
+# Inspect custom policy file
+aiosh audit policy --path config/custom_audit_policy.json
+
+# Call via MCP JSON-RPC
+{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "aios.audit.policy", "arguments": {}}}
+```
+
+---
+
+## 7. Audit Chain Observability Subsystem (Sub-Epic 8)
+
+### 7.1 Overview & Metrics
+The observability subsystem (`AuditChainObservabilityReport`) provides point-in-time telemetry snapshot generation for audit chain storage, cryptographic posture, and causal graph density:
+- **Event Volume**: Total rows and extended structured rows count.
+- **Lineage Density**: Total causal parent-child link edges registered across the chain.
+- **Cryptographic Coverage**: Total verified Ed25519 digitally signed event records.
+- **Cardinality Metrics**: Distinct actor, tool, session, and distributed trace counts.
+- **Outcome Distribution**: Bounded frequency histogram of event outcomes (`success`, `denied`, `error`, etc.).
+- **Physical Health**: Database file size in bytes, policy enforcement mode, and cryptographic SHA-256 chain integrity verification.
+
+### 7.2 Safety & Hardening Constraints
+- **Text Sanitization**: Control characters and ANSI escape codes stripped from string telemetry; capped to 256 characters (`MAX_TELEMETRY_TEXT_LEN`).
+- **Cardinality Caps**: Outcome distribution bounded to top 128 classes (`MAX_OUTCOME_DISTRIBUTION_ENTRIES = 128`).
+- **Memory Bounding**: In-memory deduplication sets for sessions/traces capped at 100,000 items (`MAX_TRACKED_CARDINALITY_ITEMS`).
+- **Audit-on-Read**: Observability queries executed via MCP tools are intercepted and logged through PEP and audit rings (`dispatch::recorded_call`).
+
+### 7.3 Usage & Examples
+```bash
+# Print formatted observability summary to terminal
+aiosh audit stats
+
+# Retrieve structured JSON report for ingestion into monitoring/SIEM
+aiosh audit stats --json
+
+# Query observability telemetry via MCP tool call
+{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "aios.audit.stats", "arguments": {}}}
+```
+
+### 7.4 Evidence & Cross-References
+- Research: [T-02371 Evidence](docs/tasks/evidence/T-02371-observability-research.md)
+- Specification: [T-02372 Evidence](docs/tasks/evidence/T-02372-observability-specification.md)
+- Scaffold: [T-02373 Evidence](docs/tasks/evidence/T-02373-observability-scaffold.md)
+- Implementation: [T-02374 Evidence](docs/tasks/evidence/T-02374-observability-implementation.md)
+- Unit Tests: [T-02375 Evidence](docs/tasks/evidence/T-02375-observability-unit-test.md)
+- Integration: [T-02376 Evidence](docs/tasks/evidence/T-02376-observability-integration.md)
+- Security Review: [T-02377 Evidence](docs/tasks/evidence/T-02377-observability-security-review.md)
+- Hardening: [T-02378 Evidence](docs/tasks/evidence/T-02378-observability-hardening.md)
+- Verification: [T-02380 Evidence](docs/tasks/evidence/T-02380-observability-verification-evidenc.md)
+
+---
+
+## 8. Audit Chain Documentation Subsystem (Sub-Epic 9)
+
+### 8.1 Overview & Canonical Index
+The documentation subsystem (`AuditChainDocIndex`) provides an in-memory, zero-dependency, self-contained reference repository and lexical keyword search engine for all components of Audit Chain Extensions:
+- **Canonical Topics**:
+  - `audit-arch`: Architecture, SQLite ring tables, SHA-256 rolling chain.
+  - `audit-lineage`: Causal parent links, DAG topological traversal, cycle immunity.
+  - `audit-crypto`: Ed25519 digital signatures and tamper detection.
+  - `audit-policy`: Ingestion gating rules, modes (`enforcing`, `permissive`, `disabled`), actor bounds.
+  - `audit-observability`: Point-in-time telemetry reports, histograms, cardinality stats.
+  - `audit-recovery`: Integrity checking, verification, and repair workflows.
+  - `audit-reference`: Comprehensive CLI and MCP tool reference.
+
+### 8.2 Safety & Hardening Bounds
+- **Query Bounds**: Search queries constrained between 1 and 128 characters (`MAX_AUDIT_DOC_QUERY_LEN`).
+- **Token Limits**: Maximum 16 search tokens evaluated per query (`MAX_DOC_SEARCH_TOKENS`).
+- **Control Character Filtering**: Control characters stripped via `sanitize_doc_query` to prevent terminal injection.
+- **Topic ID Validation**: Topic slug restricted to alphanumeric and hyphen/underscore characters (`[a-zA-Z0-9_-]`).
+- **Result Limits**: Search results capped to top 10 matches (`MAX_AUDIT_DOC_SEARCH_RESULTS`); snippets capped to 200 chars.
+
+### 8.3 Invocations & Usage
+```bash
+# List all documentation topics
+aiosh audit doc
+
+# Display formatted Markdown for a specific topic
+aiosh audit doc audit-crypto
+
+# Search topics by keyword
+aiosh audit doc lineage
+
+# Query via MCP tool call
+{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "aios.audit.doc", "arguments": {"query": "signature"}}}
+```
+
+### 8.4 Evidence & Cross-References
+- Research: [T-02381 Evidence](docs/tasks/evidence/T-02381-documentation-research.md)
+- Specification: [T-02382 Evidence](docs/tasks/evidence/T-02382-documentation-specification.md)
+- Scaffold: [T-02383 Evidence](docs/tasks/evidence/T-02383-documentation-scaffold.md)
+- Implementation: [T-02384 Evidence](docs/tasks/evidence/T-02384-documentation-implementation.md)
+- Unit Tests: [T-02385 Evidence](docs/tasks/evidence/T-02385-documentation-unit-test.md)
+- Integration: [T-02386 Evidence](docs/tasks/evidence/T-02386-documentation-integration.md)
+- Security Review: [T-02387 Evidence](docs/tasks/evidence/T-02387-documentation-security-review.md)
+- Hardening: [T-02388 Evidence](docs/tasks/evidence/T-02388-documentation-hardening.md)
+- Verification: [T-02390 Evidence](docs/tasks/evidence/T-02390-documentation-verification-evidenc.md)
+
+
+
+

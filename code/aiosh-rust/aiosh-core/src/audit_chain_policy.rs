@@ -415,9 +415,10 @@ impl AuditChainSecurityPolicy {
             format!("{}: failed to write temporary policy: {}", AUDITPOL_ERR_IO, e)
         })?;
 
-        fs::rename(&tmp_path, p).map_err(|e| {
-            format!("{}: failed to atomically rename policy: {}", AUDITPOL_ERR_IO, e)
-        })?;
+        if let Err(e) = fs::rename(&tmp_path, p) {
+            let _ = fs::remove_file(&tmp_path);
+            return Err(format!("{}: failed to atomically rename policy: {}", AUDITPOL_ERR_IO, e));
+        }
 
         Ok(())
     }
@@ -486,6 +487,102 @@ mod tests {
         ));
         let signed_verdict = policy.evaluate_event(&signed_input, epoch);
         assert!(signed_verdict.is_permitted());
+    }
+
+    #[test]
+    fn test_policy_bounds_validation() {
+        let mut policy = AuditChainSecurityPolicy::default();
+        policy.version = "2.0.0".to_string(); // Invalid major version
+        assert!(policy.validate().is_err());
+
+        policy.version = "1.0.0".to_string();
+        policy.description = "x".repeat(MAX_AUDIT_POLICY_DESC_LEN + 1);
+        assert!(policy.validate().is_err());
+
+        policy.description = "Valid description".to_string();
+        policy.max_allowed_causal_links = 0;
+        assert!(policy.validate().is_err());
+
+        policy.max_allowed_causal_links = MAX_ALLOWED_CAUSAL_LINKS_UPPER_BOUND + 1;
+        assert!(policy.validate().is_err());
+
+        policy.max_allowed_causal_links = 16;
+        policy.valid_from_epoch_secs = Some(2000);
+        policy.valid_until_epoch_secs = Some(1000); // Invalid: from > until
+        assert!(policy.validate().is_err());
+    }
+
+    #[test]
+    fn test_policy_temporal_validity() {
+        let mut policy = AuditChainSecurityPolicy::default();
+        policy.valid_from_epoch_secs = Some(1000);
+        policy.valid_until_epoch_secs = Some(2000);
+
+        let mut row = AuditRowInput::default();
+        row.actor = "agent_time".into();
+        row.tool = "tool.test".into();
+        row.ts = "1970-01-01T00:25:00Z".into(); // exactly 1500 seconds epoch timestamp
+
+        // Before valid window
+        let verdict_early = policy.evaluate_base_event(&row, 500);
+        assert!(verdict_early.is_denied());
+
+        // After valid window
+        let verdict_late = policy.evaluate_base_event(&row, 2500);
+        assert!(verdict_late.is_denied());
+
+        // Within valid window
+        let verdict_ok = policy.evaluate_base_event(&row, 1500);
+        assert!(verdict_ok.is_permitted());
+    }
+
+    #[test]
+    fn test_policy_disallow_anonymous() {
+        let policy = AuditChainSecurityPolicy::default();
+
+        let mut row_empty_actor = AuditRowInput::default();
+        row_empty_actor.actor = "".into();
+        row_empty_actor.tool = "tool.test".into();
+        assert!(policy.evaluate_base_event(&row_empty_actor, now_epoch()).is_denied());
+
+        let mut row_empty_tool = AuditRowInput::default();
+        row_empty_tool.actor = "agent_valid".into();
+        row_empty_tool.tool = "".into();
+        assert!(policy.evaluate_base_event(&row_empty_tool, now_epoch()).is_denied());
+    }
+
+    #[test]
+    fn test_policy_disabled_mode() {
+        let mut policy = AuditChainSecurityPolicy::default();
+        policy.mode = AuditPolicyMode::Disabled;
+
+        let mut row = AuditRowInput::default();
+        row.actor = "anonymous".into();
+        row.tool = "kernel:destroy".into();
+
+        let input = ExtendedAuditRowInput::new(row);
+        let verdict = policy.evaluate_event(&input, now_epoch());
+        assert!(verdict.is_permitted());
+    }
+
+    #[test]
+    fn test_policy_causal_fanout_limit() {
+        let mut policy = AuditChainSecurityPolicy::default();
+        policy.max_allowed_causal_links = 2;
+
+        let link1 = AuditCausalLink::new("a".repeat(64), "cause1");
+        let link2 = AuditCausalLink::new("b".repeat(64), "cause2");
+        let link3 = AuditCausalLink::new("c".repeat(64), "cause3");
+
+        // Within limit (2 links)
+        assert!(policy.evaluate_causal_links(&[link1.clone(), link2.clone()]).is_permitted());
+
+        // Exceeds limit (3 links)
+        assert!(policy.evaluate_causal_links(&[link1, link2, link3]).is_denied());
+
+        // Malformed hash (not 64 hex chars)
+        let malformed = AuditCausalLink::new("not_hex", "cause");
+        assert!(policy.evaluate_causal_links(&[malformed]).is_denied());
     }
 
     #[test]

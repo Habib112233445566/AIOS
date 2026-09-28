@@ -55,6 +55,9 @@ impl Server {
             json!({"name": "aios.audit.ancestry", "description": "Trace causal DAG lineage upwards to root triggers", "inputSchema": {"type": "object", "properties": {"hash": {"type": "string"}, "depth": {"type": "integer"}}, "required": ["hash"]}}),
             json!({"name": "aios.audit.sign_verify", "description": "Verify digital signature attached to an audit event", "inputSchema": {"type": "object", "properties": {"hash": {"type": "string"}}, "required": ["hash"]}}),
             json!({"name": "aios.audit.config", "description": "Inspect Audit Chain Extensions configuration parameters and limits", "inputSchema": {"type": "object", "properties": {"config_path": {"type": "string"}}}}),
+            json!({"name": "aios.audit.policy", "description": "Inspect Audit Chain security policy enforcement rules and constraints", "inputSchema": {"type": "object", "properties": {"policy_path": {"type": "string"}}}}),
+            json!({"name": "aios.audit.stats", "description": "Retrieve comprehensive telemetry and observability report for the Audit Chain Extensions subsystem", "inputSchema": {"type": "object"}}),
+            json!({"name": "aios.audit.doc", "description": "Query, list, or search Audit Chain Extensions self-contained documentation topics", "inputSchema": {"type": "object", "properties": {"action": {"type": "string", "enum": ["list", "get", "search"]}, "topic_id": {"type": "string"}, "query": {"type": "string"}}}}),
         ];
         for (name, desc) in [
             ("aios.pentest.nmap", "TCP recon (top-100 ports) [C-1]"),
@@ -5387,6 +5390,103 @@ fn validate_and_open_grant_service(path_str: Option<&str>) -> Result<(std::path:
                     &mut self.ring, &self.pep,
                     "aios.audit.config", "audit.config",
                     &json!({"config_path": config_path}),
+                    None, None, false,
+                    dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.audit.policy" => {
+                let policy_path = arguments.get("policy_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let policy_path_for_closure = policy_path.clone();
+                let f = move || -> Result<Value, String> {
+                    let pol = if let Some(ref p) = policy_path_for_closure {
+                        aiosh_core::audit_chain_policy::AuditChainSecurityPolicy::load_from_file(p)?
+                    } else {
+                        aiosh_core::audit_chain_policy::AuditChainSecurityPolicy::default()
+                    };
+                    let mut res = serde_json::to_value(&pol).unwrap_or(Value::Null);
+                    if let Value::Object(ref mut m) = res {
+                        m.insert("ok".into(), json!(true));
+                        m.insert("tool".into(), json!("aios.audit.policy"));
+                    }
+                    Ok(res)
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.audit.policy", "audit.policy",
+                    &json!({"policy_path": policy_path}),
+                    None, None, false,
+                    dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.audit.stats" => {
+                let db_path = self.ring.path().to_string();
+                let f = move || -> Result<Value, String> {
+                    let query_ring = if db_path == ":memory:" {
+                        aiosh_core::audit::AuditRing::open_in_memory().map_err(|e| e.to_string())?
+                    } else {
+                        aiosh_core::audit::AuditRing::open(aiosh_core::audit::OpenOptions {
+                            path: Some(db_path.clone()),
+                            home: None,
+                        }).map_err(|e| e.to_string())?
+                    };
+                    let service = aiosh_core::audit_chain_service::AuditChainService::new(query_ring);
+                    let report = aiosh_core::audit_chain_observability::AuditChainObservabilityReport::generate(&service)?;
+                    let mut res = serde_json::to_value(&report).unwrap_or(Value::Null);
+                    if let Value::Object(ref mut m) = res {
+                        m.insert("ok".into(), json!(true));
+                        m.insert("tool".into(), json!("aios.audit.stats"));
+                    }
+                    Ok(res)
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.audit.stats", "audit.stats",
+                    &json!({}),
+                    None, None, false,
+                    dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.audit.doc" => {
+                let action = arguments.get("action").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let topic_id = arguments.get("topic_id").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let query = arguments.get("query").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = move || -> Result<Value, String> {
+                    let index = aiosh_core::audit_chain_doc::AuditChainDocIndex::new();
+                    let act = action.as_deref().unwrap_or(
+                        if topic_id.is_some() {
+                            "get"
+                        } else if query.is_some() {
+                            "search"
+                        } else {
+                            "list"
+                        }
+                    );
+                    let res = match act {
+                        "get" => {
+                            let tid = topic_id.as_deref().ok_or_else(|| "Missing topic_id for get action".to_string())?;
+                            let topic = index.get_topic(tid).ok_or_else(|| format!("{}: topic '{}' not found", aiosh_core::audit_chain_doc::AUDITDOC_ERR_NOT_FOUND, tid))?;
+                            serde_json::to_value(topic).unwrap_or(Value::Null)
+                        }
+                        "search" => {
+                            let q = query.as_deref().ok_or_else(|| "Missing query for search action".to_string())?;
+                            let results = index.search(q)?;
+                            serde_json::to_value(results).unwrap_or(Value::Null)
+                        }
+                        _ => {
+                            serde_json::to_value(index.list_topics()).unwrap_or(Value::Null)
+                        }
+                    };
+                    Ok(json!({
+                        "ok": true,
+                        "tool": "aios.audit.doc",
+                        "action": act,
+                        "data": res
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.audit.doc", "audit.doc",
+                    &arguments,
                     None, None, false,
                     dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
                 )
