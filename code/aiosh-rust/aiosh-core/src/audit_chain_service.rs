@@ -8,7 +8,9 @@ use rusqlite::params;
 use serde::{Deserialize, Serialize};
 
 use crate::audit::{row_to_extended_audit, AuditRing, ExtendedAuditRowInput, VerifyResult};
+use crate::audit_chain_config::AuditChainConfig;
 use crate::audit_chain_ext::ExtendedAuditRow;
+use crate::audit_chain_policy::{AuditChainSecurityPolicy, AuditPolicyVerdict};
 
 pub const MAX_LINEAGE_DEPTH: usize = 64;
 
@@ -52,12 +54,39 @@ pub struct SignatureVerificationReport {
 /// Core service orchestrating Audit Chain Extensions.
 pub struct AuditChainService {
     ring: AuditRing,
+    config: AuditChainConfig,
+    policy: AuditChainSecurityPolicy,
 }
 
 impl AuditChainService {
-    /// Creates a new service wrapping an existing `AuditRing`.
+    /// Creates a new service wrapping an existing `AuditRing` with default configuration and policy.
     pub fn new(ring: AuditRing) -> Self {
-        Self { ring }
+        Self::with_config(ring, AuditChainConfig::default())
+    }
+
+    /// Creates a new service with custom `AuditChainConfig` and default policy.
+    pub fn with_config(ring: AuditRing, config: AuditChainConfig) -> Self {
+        Self::with_config_and_policy(ring, config, AuditChainSecurityPolicy::default())
+    }
+
+    /// Creates a new service with custom `AuditChainConfig` and custom `AuditChainSecurityPolicy`.
+    pub fn with_config_and_policy(ring: AuditRing, config: AuditChainConfig, policy: AuditChainSecurityPolicy) -> Self {
+        Self { ring, config, policy }
+    }
+
+    /// Returns a reference to the active configuration.
+    pub fn config(&self) -> &AuditChainConfig {
+        &self.config
+    }
+
+    /// Returns a reference to the active security policy.
+    pub fn policy(&self) -> &AuditChainSecurityPolicy {
+        &self.policy
+    }
+
+    /// Sets the active security policy.
+    pub fn set_policy(&mut self, policy: AuditChainSecurityPolicy) {
+        self.policy = policy;
     }
 
     pub fn ring(&self) -> &AuditRing {
@@ -72,9 +101,19 @@ impl AuditChainService {
         self.ring
     }
 
-    /// Records an extended event, validating bounds before writing.
+    /// Records an extended event, validating bounds and security policy before writing.
     pub fn record_event(&mut self, input: ExtendedAuditRowInput) -> Result<ExtendedAuditRow, String> {
         input.validate()?;
+
+        let now_epoch = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+
+        let verdict = self.policy.evaluate_event(&input, now_epoch);
+        if let AuditPolicyVerdict::Deny { reason, error_code } = verdict {
+            return Err(format!("{}: {}", error_code, reason));
+        }
 
         self.ring
             .write_extended(input)

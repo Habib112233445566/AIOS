@@ -22,6 +22,8 @@ pub mod agent;
 pub mod audit;
 pub mod audit_chain_ext;
 pub mod audit_chain_service;
+pub mod audit_chain_config;
+pub mod audit_chain_policy;
 pub mod base_image;
 pub mod base_image_config;
 pub mod base_image_observability;

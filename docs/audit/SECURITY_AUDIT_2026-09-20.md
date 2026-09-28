@@ -5005,3 +5005,47 @@ Tasks completed: **T-02305 through T-02334** (30 consecutive tasks executed unde
 - Security status: **PASS / CLEAN / VERIFIED**. Task pointer advances to `T-02335`.
 
 
+
+
+---
+
+# ADDENDUM 30 — 2026-09-28: Audit Chain Extensions Subsystem (Sub-Epics 4–7: T-02335..T-02364)
+
+## 1. Scope & Progress
+Tasks completed: **T-02335 through T-02364** (30 consecutive tasks executed under strict No-Skip governance):
+- **T-02335..T-02340 (Sub-Epic 4: MCP/API Surface Closure)**:
+  - T-02335..T-02336: Unit and integration testing of ios.audit.query, ios.audit.inspect, ios.audit.ancestry, ios.audit.sign_verify (pytest 5/5 pass).
+  - T-02337..T-02338: Security review and hardening of MCP surface: parameter clamping, bounded string lengths (<= 128), isolated JSON-RPC error dispatching.
+  - T-02339..T-02340: MCP tooling documentation and formal Sub-Epic 4 verification and closure (T-02340-mcp-api-surface-verification-evidenc.md).
+- **T-02341..T-02350 (Sub-Epic 5: Configuration Subsystem)**:
+  - T-02341..T-02344: Research, specification, scaffolding, and implementation of AuditChainConfig (udit_chain_config.rs).
+  - T-02345..T-02346: Unit tests (	est_audit_chain_config.rs 6/6 pass), CLI integration (iosh audit config), and MCP integration (ios.audit.config).
+  - T-02347..T-02348: Security review and hardening: MAX_CONFIG_FILE_BYTES = 64 KiB, environment overrides, atomic persistence, clamp bounds.
+  - T-02349..T-02350: Architecture documentation in docs/SPEC-AUDIT-EXTENSIONS.md and Sub-Epic 5 milestone closure (T-02350-configuration-verification-evidenc.md).
+- **T-02351..T-02360 (Sub-Epic 6: Automated Test Suites)**:
+  - T-02351..T-02354: Research, specification, scaffolding, and implementation of automated test vectors AUTOAUDIT1 through AUTOAUDIT8 (	est_audit_chain_automated.rs 8/8 pass).
+  - T-02355..T-02356: Python smoke testing (	est_audit_chain_automated_smoke.py 3/3 pass) and integration testing across Rust and Python test runners.
+  - T-02357..T-02358: Security review and hardening of stress fixtures against deadlocks, SQLite lock contention, and cyclic loops.
+  - T-02359..T-02360: Automated testing methodology documentation and Sub-Epic 6 closure (T-02360-automated-tests-verification-evidenc.md).
+- **T-02361..T-02364 (Sub-Epic 7: Security Policy Launch)**:
+  - T-02361..T-02363: Research, specification, and scaffolding of AuditChainSecurityPolicy (udit_chain_policy.rs).
+  - T-02364: Implementation of tri-mode policy evaluation (Enforcing, Permissive, Disabled), signature mandates (kernel:, sec:, dmin:, pep:), prohibited actors/tools, timestamp clock skew limits, and wire-up to AuditChainService::record_event. Unit and integration test suites passing (8/8 pass).
+
+## 2. Invariants & Controls Audited
+1. **DAG Cycle & Depth Protection**: Diamond DAG deduplication and cyclic link loop immunity empirically proven under vectors AUTOAUDIT3 and AUTOAUDIT4.
+2. **Concurrency & Thread Safety**: Validated multi-threaded ingestion and querying across 4 reader threads and 2 writer threads without deadlocks or WAL corruption (AUTOAUDIT7).
+3. **Mandatory Signature Governance**: High-impact tool namespaces strictly require valid Ed25519 digital signatures and public keys, preventing forged administrative provenance (	est_policy_signature_required).
+4. **Denial of Anonymous Provenance**: Empty or nonymous actor/tool parameters are rejected fail-closed with structured error codes (AUDITPOL_ERR_DENIED).
+5. **Config Bounds & DoS Prevention**: Policy and config files bounded at 64 KiB; query rows clamped to 1,000; causal fan-out bounded to 32.
+6. **Zero Compiler Warnings**: Workspace builds cleanly with 0 warnings and 0 errors across all workspace crates.
+
+## 3. Audit Certification
+- 	est_audit_chain_automated: 8/8 PASS
+- 	est_audit_chain_config: 6/6 PASS
+- 	est_audit_chain_ext: 7/7 PASS
+- 	est_audit_chain_service: 6/6 PASS
+- 	est_audit_chain_policy: 4/4 PASS
+- udit_chain_policy::tests: 4/4 PASS
+- Workspace compiler status: cargo check --workspace clean (0 warnings, 0 errors).
+- Task ledger state: 2,364 completed, 0 orphans, valid state.
+- Security status: **PASS / CLEAN / VERIFIED**. Task pointer advances to T-02365.

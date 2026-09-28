@@ -54,6 +54,7 @@ impl Server {
             json!({"name": "aios.audit.inspect", "description": "Fetch detailed record and metadata for a specific audit event by hash", "inputSchema": {"type": "object", "properties": {"hash": {"type": "string"}}, "required": ["hash"]}}),
             json!({"name": "aios.audit.ancestry", "description": "Trace causal DAG lineage upwards to root triggers", "inputSchema": {"type": "object", "properties": {"hash": {"type": "string"}, "depth": {"type": "integer"}}, "required": ["hash"]}}),
             json!({"name": "aios.audit.sign_verify", "description": "Verify digital signature attached to an audit event", "inputSchema": {"type": "object", "properties": {"hash": {"type": "string"}}, "required": ["hash"]}}),
+            json!({"name": "aios.audit.config", "description": "Inspect Audit Chain Extensions configuration parameters and limits", "inputSchema": {"type": "object", "properties": {"config_path": {"type": "string"}}}}),
         ];
         for (name, desc) in [
             ("aios.pentest.nmap", "TCP recon (top-100 ports) [C-1]"),
@@ -5362,6 +5363,30 @@ fn validate_and_open_grant_service(path_str: Option<&str>) -> Result<(std::path:
                     &mut self.ring, &self.pep,
                     "aios.audit.sign_verify", &format!("audit.sign_verify {}", hash),
                     &json!({"hash": hash}),
+                    None, None, false,
+                    dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.audit.config" => {
+                let config_path = arguments.get("config_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let config_path_for_closure = config_path.clone();
+                let f = move || -> Result<Value, String> {
+                    let cfg = if let Some(ref p) = config_path_for_closure {
+                        aiosh_core::audit_chain_config::AuditChainConfig::from_file(p)?
+                    } else {
+                        aiosh_core::audit_chain_config::AuditChainConfig::from_env()
+                    };
+                    let mut res = serde_json::to_value(&cfg).unwrap_or(Value::Null);
+                    if let Value::Object(ref mut m) = res {
+                        m.insert("ok".into(), json!(true));
+                        m.insert("tool".into(), json!("aios.audit.config"));
+                    }
+                    Ok(res)
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.audit.config", "audit.config",
+                    &json!({"config_path": config_path}),
                     None, None, false,
                     dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
                 )

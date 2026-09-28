@@ -534,6 +534,37 @@ the tools.
 is hard-removed from our MCP manifest to eliminate the prompt-injection
 vector that asks a server to insert reasoning into a tool response.
 
+## Audit Chain Extensions MCP Tools
+
+Audit Chain Extensions expose query, inspection, causal ancestry DAG traversal, and cryptographic signature verification over standard MCP JSON-RPC 2.0:
+
+| Tool | Parameters | Description |
+| :--- | :--- | :--- |
+| `aios.audit.query` | `session_id`, `trace_id`, `actor`, `tool`, `parent_hash`, `limit` | Query and filter audit records by provenance and causal links |
+| `aios.audit.inspect` | `hash` (required) | Inspect full event details and extensions by SHA-256 row hash |
+| `aios.audit.ancestry` | `hash` (required), `depth` (opt, max 64) | Traverse causal DAG parent links to uncover event lineage |
+| `aios.audit.sign_verify` | `hash` (required) | Verify Ed25519 digital signature attached to an audit event |
+
+### Example Tool Invocation
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "aios.audit.inspect",
+    "arguments": {
+      "hash": "3a0b1c2d..."
+    }
+  }
+}
+```
+
+**Constraints & Boundaries**:
+- Query result limits are clamped between 1 and 1,000 rows (`MAX_QUERY_LIMIT = 1000`).
+- Causal ancestry traversal depth is clamped between 1 and 64 levels (`MAX_LINEAGE_DEPTH = 64`) with cyclic graph loop protection.
+
 ## Tests
 
 ```bash

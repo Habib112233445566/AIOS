@@ -221,7 +221,7 @@ fn main() {
         Some("capability") | Some("cap") => cmd_capability(&args[1..]),
         Some("pep") => cmd_pep(&args[1..]),
         Some("--help") | Some("-h") | None => {
-            println!("aiosh — AIOS shell CLI (Rust)\n\nUsage: aiosh <status|run|agent|audit|grant|pentest|classify|task|ci|release|backup|toolchain|doc|evidence|repo|secrets|triage|handoff|distro|image|package|service|session|layout|mod|hw|net|update|capability|pep> ...\n\n  aiosh audit <tail|verify|rotate|segments|seen|query|ancestry|sign-verify|inspect>  Audit ring & chain extensions control\n  aiosh task <status|done|block|unblock|skip|rebuild|check>  Task ledger control\n  aiosh ci <show|failures|check|config|metrics> [--file PATH]  CI smoke reports\n  aiosh release generate  Create bootable ISO\n  aiosh backup create  Create system snapshot zip\n  aiosh toolchain check [--config <path>]  Verify host environment against ToolchainManifest\n  aiosh toolchain show [--config <path>]   Display the resolved ToolchainManifest\n  aiosh doc <show|check|search>  Documentation Index Control\n  aiosh evidence <verify|hash|scan>   Evidence & Audit Trail Control\n  aiosh repo <health|check>  Repository Health Diagnostics\n  aiosh secrets <scan|check> [--config <path>]  Secrets & Access Hygiene Scanner\n  aiosh triage <list|show|record|resolve|ingest|check>  Regression Triage Manager\n  aiosh handoff <list|show|initiate|accept|reject|complete|cancel>  Agent Handoff Protocol Manager\n  aiosh distro <list|show|evaluate|recommend|policy|stats|check>  Linux Distro Selection & Justification Manager\n  aiosh image <list|show|plan|filter>  Linux Base Image Build & Packaging Manager\n  aiosh package <list|show|search|plan|apply|validate>  Linux Package Management & Store Control\n  aiosh service <validate|list|show|status|action|start|stop|restart|reload|order>  Init & Service Supervision Control\n  aiosh session <validate|list|show|status|create|action|activate|lock|unlock|terminate|config>  User Session Bootstrap Control\n  aiosh layout <list|show|validate|check|probe|diff|fstab|register|set-active|remove|import-fstab>  Filesystem Layout & Target Partitioning Manager\n  aiosh mod <list|show|blacklist|unblacklist|options|autoload|unautoload|preset|export>  Kernel Module Management\n  aiosh hw <scan|list|show|summary|verify>  Hardware Detection & Inventory Control\n  aiosh net <list|show|routes|dns|state|up|down>  Network Bootstrap & Interface Control\n  aiosh update <status|slots|check|apply|confirm|rollback>  System Update & Dual-Slot Control\n  aiosh capability <list|show|issue|attenuate|revoke|check|prune>  Capability & Zero-Ambient Authority Control\n  aiosh pep <evaluate|rule-add|rule-list|rule-remove|status|report|doc>  PEP Decision Engine & Policy Control");
+            println!("aiosh — AIOS shell CLI (Rust)\n\nUsage: aiosh <status|run|agent|audit|grant|pentest|classify|task|ci|release|backup|toolchain|doc|evidence|repo|secrets|triage|handoff|distro|image|package|service|session|layout|mod|hw|net|update|capability|pep> ...\n\n  aiosh audit <tail|verify|rotate|segments|seen|query|ancestry|sign-verify|inspect|config>  Audit ring & chain extensions control\n  aiosh task <status|done|block|unblock|skip|rebuild|check>  Task ledger control\n  aiosh ci <show|failures|check|config|metrics> [--file PATH]  CI smoke reports\n  aiosh release generate  Create bootable ISO\n  aiosh backup create  Create system snapshot zip\n  aiosh toolchain check [--config <path>]  Verify host environment against ToolchainManifest\n  aiosh toolchain show [--config <path>]   Display the resolved ToolchainManifest\n  aiosh doc <show|check|search>  Documentation Index Control\n  aiosh evidence <verify|hash|scan>   Evidence & Audit Trail Control\n  aiosh repo <health|check>  Repository Health Diagnostics\n  aiosh secrets <scan|check> [--config <path>]  Secrets & Access Hygiene Scanner\n  aiosh triage <list|show|record|resolve|ingest|check>  Regression Triage Manager\n  aiosh handoff <list|show|initiate|accept|reject|complete|cancel>  Agent Handoff Protocol Manager\n  aiosh distro <list|show|evaluate|recommend|policy|stats|check>  Linux Distro Selection & Justification Manager\n  aiosh image <list|show|plan|filter>  Linux Base Image Build & Packaging Manager\n  aiosh package <list|show|search|plan|apply|validate>  Linux Package Management & Store Control\n  aiosh service <validate|list|show|status|action|start|stop|restart|reload|order>  Init & Service Supervision Control\n  aiosh session <validate|list|show|status|create|action|activate|lock|unlock|terminate|config>  User Session Bootstrap Control\n  aiosh layout <list|show|validate|check|probe|diff|fstab|register|set-active|remove|import-fstab>  Filesystem Layout & Target Partitioning Manager\n  aiosh mod <list|show|blacklist|unblacklist|options|autoload|unautoload|preset|export>  Kernel Module Management\n  aiosh hw <scan|list|show|summary|verify>  Hardware Detection & Inventory Control\n  aiosh net <list|show|routes|dns|state|up|down>  Network Bootstrap & Interface Control\n  aiosh update <status|slots|check|apply|confirm|rollback>  System Update & Dual-Slot Control\n  aiosh capability <list|show|issue|attenuate|revoke|check|prune>  Capability & Zero-Ambient Authority Control\n  aiosh pep <evaluate|rule-add|rule-list|rule-remove|status|report|doc>  PEP Decision Engine & Policy Control");
             0
         }
         Some(other) => {
@@ -8463,11 +8463,31 @@ fn cmd_audit(args: &[String]) -> i32 {
         Some("ancestry") => cmd_audit_ancestry(&args[1..]),
         Some("sign-verify") => cmd_audit_sign_verify(&args[1..]),
         Some("inspect") => cmd_audit_inspect(&args[1..]),
+        Some("config") => cmd_audit_config(&args[1..]),
         _ => {
-            eprintln!("usage: aiosh audit <tail|verify|rotate|segments|seen|query|ancestry|sign-verify|inspect>");
+            eprintln!("usage: aiosh audit <tail|verify|rotate|segments|seen|query|ancestry|sign-verify|inspect|config>");
             2
         }
     }
+}
+
+fn cmd_audit_config(args: &[String]) -> i32 {
+    let is_json = args.iter().any(|a| a == "--json");
+    let cfg = aiosh_core::audit_chain_config::AuditChainConfig::from_env();
+    if is_json {
+        println!("{}", serde_json::to_string_pretty(&cfg).unwrap_or_default());
+    } else {
+        println!("=== Audit Chain Configuration ===");
+        println!("Version:                    {}", cfg.version);
+        println!("DB Path:                    {}", cfg.db_path.display());
+        println!("Max Query Limit:            {}", cfg.max_query_limit);
+        println!("Default Lineage Depth:      {}", cfg.default_lineage_depth);
+        println!("Max Causal Links:           {}", cfg.max_causal_links);
+        println!("Max Extensions Bytes:       {}", cfg.max_extensions_bytes);
+        println!("Verify Signatures on Read:  {}", cfg.verify_signatures_on_read);
+        println!("Strict Provenance:          {}", cfg.strict_provenance);
+    }
+    0
 }
 
 fn cmd_audit_tail(args: &[String]) -> i32 {
