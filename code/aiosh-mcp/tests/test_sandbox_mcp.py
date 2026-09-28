@@ -207,6 +207,48 @@ def test_mcp_sandbox_stats():
     assert "generated_at_utc" in rep
 
 
+def test_mcp_sandbox_doc():
+    # 1. List topics
+    res = call_mcp_tool("aios.sandbox.doc")
+    assert res.get("ok") is True
+    topics = res.get("topics", [])
+    assert len(topics) >= 6
+    ids = [t.get("id") for t in topics]
+    assert "overview" in ids
+    assert "isolation" in ids
+
+    # 2. Get specific topic
+    res_topic = call_mcp_tool("aios.sandbox.doc", {"topic": "isolation"})
+    assert res_topic.get("ok") is True
+    topic = res_topic.get("topic", {})
+    assert topic.get("id") == "isolation"
+    assert "Landlock" in str(topic.get("sections", []))
+
+    # 3. Search query
+    res_search = call_mcp_tool("aios.sandbox.doc", {"search": "landlock"})
+    assert res_search.get("ok") is True
+    results = res_search.get("results", [])
+    assert len(results) >= 1
+    assert results[0].get("topic_id") == "isolation"
+
+
+def test_mcp_sandbox_validate():
+    res = call_mcp_tool("aios.sandbox.validate")
+    assert res.get("ok") is True
+    report = res.get("report", {})
+    assert report.get("is_healthy") is True
+    assert report.get("factory_profiles_intact") is True
+    assert report.get("valid_profiles_count") == 3
+
+
+def test_mcp_sandbox_recover():
+    res = call_mcp_tool("aios.sandbox.recover", {"strategy": "dry_run"})
+    assert res.get("ok") is True
+    result = res.get("result", {})
+    assert result.get("success") is True
+    assert result.get("strategy") == "dry_run"
+
+
 if __name__ == "__main__":
     test_mcp_sandbox_tool_registration()
     test_mcp_sandbox_profiles()
@@ -219,5 +261,10 @@ if __name__ == "__main__":
     test_mcp_sandbox_config()
     test_mcp_sandbox_policy()
     test_mcp_sandbox_stats()
-    print("ALL 11 SANDBOX MCP TESTS PASSED!")
+    test_mcp_sandbox_doc()
+    test_mcp_sandbox_validate()
+    test_mcp_sandbox_recover()
+    print("ALL 14 SANDBOX MCP TESTS PASSED!")
+
+
 

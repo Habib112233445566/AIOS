@@ -16869,6 +16869,173 @@ fn cmd_sandbox(args: &[String]) -> i32 {
             }
             0
         }
+        Some("doc") => {
+            let index = aiosh_core::sandbox_doc::SandboxDocIndex::new();
+            let search_query = parse_flag(rest, "--search");
+            let topic_id = rest.iter().find(|s| !s.starts_with("--")).map(|s| s.as_str());
+
+            if let Some(ref q) = search_query {
+                let results = index.search(q);
+                classify_and_emit(
+                    &mut ctx, "sandbox", "doc", json!({ "query": q, "count": results.len() }),
+                    "success", None, Some("Searched sandbox documentation"), "operator", None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 0, "data": { "query": q, "results": results }, "error": serde_json::Value::Null }));
+                } else {
+                    println!("Sandbox Documentation Search Results for '{}' ({} found):", q, results.len());
+                    for r in &results {
+                        println!("  - [{}] {} (score: {})", r.topic_id, r.title, r.score);
+                        println!("    {}", r.snippet);
+                    }
+                }
+                0
+            } else if let Some(t_id) = topic_id {
+                match index.get_topic(t_id) {
+                    Some(topic) => {
+                        classify_and_emit(
+                            &mut ctx, "sandbox", "doc", json!({ "topic": t_id }),
+                            "success", None, Some("Viewed sandbox documentation topic"), "operator", None,
+                        );
+                        if is_json {
+                            println!("{}", json!({ "code": 0, "data": topic, "error": serde_json::Value::Null }));
+                        } else {
+                            println!("=== {} (Category: {:?}) ===", topic.title, topic.category);
+                            println!("Summary: {}", topic.summary);
+                            println!("Tags: {}", topic.tags.join(", "));
+                            println!();
+                            for sec in &topic.sections {
+                                println!("--- {} ---", sec.title);
+                                println!("{}\n", sec.content);
+                            }
+                            if !topic.examples.is_empty() {
+                                println!("Examples:");
+                                for ex in &topic.examples {
+                                    println!("  $ {}", ex);
+                                }
+                            }
+                        }
+                        0
+                    }
+                    None => {
+                        let msg = format!("topic '{}' not found", t_id);
+                        classify_and_emit(
+                            &mut ctx, "sandbox", "doc", json!({ "topic": t_id, "error": &msg }),
+                            "failure", None, Some("Topic not found"), "operator", None,
+                        );
+                        if is_json {
+                            println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "TOPIC_NOT_FOUND", "message": msg } }));
+                        } else {
+                            eprintln!("ERROR: {}", sanitize_terminal(&msg));
+                        }
+                        2
+                    }
+                }
+            } else {
+                let topics = index.list_topics();
+                classify_and_emit(
+                    &mut ctx, "sandbox", "doc", json!({ "count": topics.len() }),
+                    "success", None, Some("Listed sandbox documentation topics"), "operator", None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 0, "data": topics, "error": serde_json::Value::Null }));
+                } else {
+                    println!("Sandbox Documentation Topics ({} total):", topics.len());
+                    for t in &topics {
+                        println!("  - {:<15} {:<45} [{}]", t.id, t.title, t.category.as_str());
+                        println!("    {}", t.summary);
+                    }
+                }
+                0
+            }
+        }
+        Some("validate") => {
+            let dir_flag = parse_flag(rest, "--dir");
+            let dir_path = dir_flag.as_deref().map(std::path::Path::new);
+
+            let ring = AuditRing::open(aiosh_core::audit::OpenOptions {
+                path: Some(db_path()),
+                home: None,
+            }).ok();
+            let svc = aiosh_core::sandbox_service::SandboxService::with_default_profiles(ring);
+            let report = svc.validate_state(dir_path);
+
+            classify_and_emit(
+                &mut ctx, "sandbox", "validate", json!({ "healthy": report.is_healthy, "issues": report.issues.len() }),
+                if report.is_healthy { "success" } else { "failure" }, None, Some("Validated sandbox state"), "operator", None,
+            );
+
+            if is_json {
+                println!("{}", json!({ "code": if report.is_healthy { 0 } else { 1 }, "data": report, "error": serde_json::Value::Null }));
+            } else {
+                println!("Sandbox Validation Report:");
+                println!("  Healthy:                   {}", report.is_healthy);
+                println!("  Factory Profiles Intact:   {}", report.factory_profiles_intact);
+                println!("  Checked Profiles:          {}", report.total_profiles_checked);
+                println!("  Valid Profiles:            {}", report.valid_profiles_count);
+                println!("  Corrupt Profiles:          {}", report.corrupt_profiles_count);
+                if !report.issues.is_empty() {
+                    println!("  Issues ({}):", report.issues.len());
+                    for issue in &report.issues {
+                        println!("    [{:?}] {}: {}", issue.severity, issue.code, issue.message);
+                    }
+                }
+            }
+            if report.is_healthy { 0 } else { 1 }
+        }
+        Some("recover") => {
+            let dir_flag = parse_flag(rest, "--dir");
+            let dir_path = dir_flag.as_deref().map(std::path::Path::new);
+            let strategy_flag = parse_flag(rest, "--strategy").unwrap_or_else(|| "defaults".into());
+
+            let strategy = match strategy_flag.to_lowercase().as_str() {
+                "dry_run" | "dryrun" => aiosh_core::sandbox_recovery::SandboxRecoveryStrategy::DryRun,
+                "quarantine" | "quarantine_and_reset" => aiosh_core::sandbox_recovery::SandboxRecoveryStrategy::QuarantineAndReset,
+                _ => aiosh_core::sandbox_recovery::SandboxRecoveryStrategy::RestoreFactoryDefaults,
+            };
+
+            let ring = AuditRing::open(aiosh_core::audit::OpenOptions {
+                path: Some(db_path()),
+                home: None,
+            }).ok();
+            let mut svc = aiosh_core::sandbox_service::SandboxService::with_default_profiles(ring);
+            let res = match svc.recover_state(strategy, dir_path) {
+                Ok(r) => r,
+                Err(e) => {
+                    let msg = format!("sandbox recovery failed: {}", e);
+                    classify_and_emit(
+                        &mut ctx, "sandbox", "recover", json!({ "error": &msg }),
+                        "failure", None, Some("Recovery error"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "RECOVERY_FAILED", "message": msg } }));
+                    } else {
+                        eprintln!("ERROR: {}", sanitize_terminal(&msg));
+                    }
+                    return 1;
+                }
+            };
+
+            classify_and_emit(
+                &mut ctx, "sandbox", "recover", json!({ "success": res.success, "strategy": format!("{:?}", res.strategy), "restored": res.profiles_restored }),
+                if res.success { "success" } else { "failure" }, None, Some("Executed sandbox recovery"), "operator", None,
+            );
+
+            if is_json {
+                println!("{}", json!({ "code": if res.success { 0 } else { 1 }, "data": res, "error": serde_json::Value::Null }));
+            } else {
+                println!("Sandbox Recovery Result:");
+                println!("  Success:                   {}", res.success);
+                println!("  Strategy:                  {:?}", res.strategy);
+                println!("  Profiles Restored:         {}", res.profiles_restored);
+                println!("  Issues Resolved:           {}", res.issues_resolved);
+                println!("  Message:                   {}", res.message);
+                if let Some(ref q) = res.quarantine_path {
+                    println!("  Quarantine Path:           {}", q);
+                }
+            }
+            if res.success { 0 } else { 1 }
+        }
         Some("exec") => {
             // Find delimiter `--`
             let dash_pos = rest.iter().position(|r| r == "--");
@@ -17016,7 +17183,7 @@ fn cmd_sandbox(args: &[String]) -> i32 {
             }
         }
         Some("--help") | Some("-h") | None => {
-            println!("aiosh sandbox — Sandbox Containment & Execution Control\n\nUsage: aiosh sandbox <profiles|probe|config|policy|stats|exec> [options]\n\nCommands:\n  profiles                   List registered sandbox containment profiles\n  probe                      Probe host kernel sandbox capabilities\n  config                     Inspect Sandbox Enforcement runtime configuration\n  policy                     Inspect Sandbox Enforcement security policy and rules\n  stats                      Display Sandbox Enforcement observability and telemetry report\n  exec                       Execute command under sandbox containment\n\nOptions for config/policy:\n  --path <PATH>              Custom config or policy JSON file\n\nOptions for exec:\n  --profile <NAME>           Target sandbox profile (standard, strict, permissive) [default: standard]\n  --grant <TOKEN>            PEP authorization grant token\n  --cwd <PATH>               Working directory for process execution\n  --                         Delimiter separating aiosh flags from the command to execute\n  --json                     Output structured JSON envelope\n  -h, --help                 Display this help message");
+            println!("aiosh sandbox — Sandbox Containment & Execution Control\n\nUsage: aiosh sandbox <profiles|probe|config|policy|stats|doc|validate|recover|exec> [options]\n\nCommands:\n  profiles                   List registered sandbox containment profiles\n  probe                      Probe host kernel sandbox capabilities\n  config                     Inspect Sandbox Enforcement runtime configuration\n  policy                     Inspect Sandbox Enforcement security policy and rules\n  stats                      Display Sandbox Enforcement observability and telemetry report\n  doc                        Browse and search offline Sandbox Enforcement documentation\n  validate                   Validate integrity of sandbox profiles and manifests\n  recover                    Restore factory profiles and quarantine corrupt manifests\n  exec                       Execute command under sandbox containment\n\nOptions for config/policy:\n  --path <PATH>              Custom config or policy JSON file\n\nOptions for doc:\n  --search <QUERY>           Search topics by keyword\n\nOptions for validate/recover:\n  --dir <PATH>               Custom profiles directory to scan/repair\n  --strategy <STRATEGY>      Recovery strategy (defaults, quarantine, dry_run) [default: defaults]\n\nOptions for exec:\n  --profile <NAME>           Target sandbox profile (standard, strict, permissive) [default: standard]\n  --grant <TOKEN>            PEP authorization grant token\n  --cwd <PATH>               Working directory for process execution\n  --                         Delimiter separating aiosh flags from the command to execute\n  --json                     Output structured JSON envelope\n  -h, --help                 Display this help message");
             0
         }
         Some(unknown) => {

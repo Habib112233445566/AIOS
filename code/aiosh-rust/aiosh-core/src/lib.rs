@@ -115,6 +115,8 @@ pub mod pep_grant_security_policy;
 pub mod pep_grant_observability;
 pub mod pep_grant_doc;
 pub mod pep_grant_recovery;
+pub mod privilege_data_model;
+pub mod privilege_service;
 pub mod release;
 pub mod release_config;
 pub mod repo_health;
@@ -129,6 +131,7 @@ pub mod sandbox_service;
 pub mod sandbox_policy;
 pub mod sandbox_observability;
 pub mod sandbox_doc;
+pub mod sandbox_recovery;
 pub mod secrets;
 pub mod secrets_config;
 pub mod secrets_service;
@@ -391,6 +394,30 @@ pub use sandbox_doc::{
     SandboxDocTopic, SandboxDocTopicSummary, MAX_DOC_QUERY_LEN as SANDBOX_MAX_DOC_QUERY_LEN,
     SANDBOXDOC_ERR_EMPTY_QUERY, SANDBOXDOC_ERR_NOT_FOUND,
 };
+pub use sandbox_recovery::{
+    SandboxRecoveryManager, SandboxRecoveryResult, SandboxRecoveryStrategy,
+    SandboxValidationIssue, SandboxValidationReport, SandboxValidationSeverity,
+    MAX_PROFILE_FILE_BYTES, SANDBOXRECV_ERR_CORRUPT, SANDBOXRECV_ERR_IO,
+    SANDBOXRECV_ERR_LIMIT_BOUNDS, SANDBOXRECV_ERR_MISSING_FACTORY,
+    SANDBOXRECV_ERR_TRAVERSAL,
+};
+pub use privilege_data_model::{
+    PrivilegeCapability, PrivilegeContext, PrivilegeEscalationVerdict, PrivilegeLevel,
+    PrivilegeTransitionRequest, MAX_ACTOR_ID_LEN as PRIVESC_MAX_ACTOR_ID_LEN,
+    MAX_CAPABILITIES_COUNT as PRIVESC_MAX_CAPABILITIES_COUNT,
+    MAX_GRANT_ID_LEN as PRIVESC_MAX_GRANT_ID_LEN, PRIVESC_ERR_CAPABILITY_OVERFLOW,
+    PRIVESC_ERR_CAPABILITY_UNAUTHORIZED, PRIVESC_ERR_INVALID_ACTOR,
+    PRIVESC_ERR_INVALID_GRANT, PRIVESC_ERR_KERNEL_TIER_IMMUTABLE,
+    PRIVESC_ERR_UNAUTHORIZED_ELEVATION,
+};
+pub use privilege_service::{
+    PrivilegeService, DEFAULT_MAX_ACTIVE_CONTEXTS as PRIVESC_DEFAULT_MAX_ACTIVE_CONTEXTS,
+    MAX_MAX_ACTIVE_CONTEXTS as PRIVESC_MAX_MAX_ACTIVE_CONTEXTS,
+    MIN_MAX_ACTIVE_CONTEXTS as PRIVESC_MIN_MAX_ACTIVE_CONTEXTS,
+    PRIVESC_ERR_ACTOR_NOT_FOUND, PRIVESC_ERR_CAPACITY_EXCEEDED, PRIVESC_ERR_CONTEXT_EXISTS,
+};
+
+
 
 
 

@@ -66,6 +66,9 @@ impl Server {
             json!({"name": "aios.sandbox.config", "description": "Inspect Sandbox Enforcement configuration parameters, defaults, and limits", "inputSchema": {"type": "object", "properties": {"config_path": {"type": "string"}}}}),
             json!({"name": "aios.sandbox.policy", "description": "Inspect Sandbox Enforcement security policy, prohibited commands, and rules", "inputSchema": {"type": "object", "properties": {"policy_path": {"type": "string"}}}}),
             json!({"name": "aios.sandbox.stats", "description": "Generate comprehensive Sandbox Enforcement observability and telemetry report", "inputSchema": {"type": "object"}}),
+            json!({"name": "aios.sandbox.doc", "description": "Offline documentation repository and search index for Sandbox Enforcement", "inputSchema": {"type": "object", "properties": {"topic": {"type": "string", "description": "Optional topic ID to fetch"}, "search": {"type": "string", "description": "Optional search query"}}}}),
+            json!({"name": "aios.sandbox.validate", "description": "Validate integrity and invariants of Sandbox Enforcement profiles", "inputSchema": {"type": "object", "properties": {"custom_dir": {"type": "string", "description": "Optional directory of custom profile JSON manifests to inspect"}}}}),
+            json!({"name": "aios.sandbox.recover", "description": "Recover and repair Sandbox Enforcement profile integrity by restoring factory presets or quarantining corrupt manifests", "inputSchema": {"type": "object", "properties": {"strategy": {"type": "string", "enum": ["dry_run", "defaults", "quarantine"], "description": "Recovery strategy to execute"}, "custom_dir": {"type": "string", "description": "Optional custom profiles directory"}}}})
         ];
         for (name, desc) in [
             ("aios.pentest.nmap", "TCP recon (top-100 ports) [C-1]"),
@@ -5674,6 +5677,72 @@ fn validate_and_open_grant_service(path_str: Option<&str>) -> Result<(std::path:
                 dispatch::recorded_call(
                     &mut self.ring, &self.pep,
                     "aios.sandbox.stats", "sandbox.stats",
+                    &arguments,
+                    None, None, false,
+                    dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.sandbox.doc" => {
+                let topic_opt = arguments.get("topic").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let search_opt = arguments.get("search").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = move || -> Result<Value, String> {
+                    let index = aiosh_core::sandbox_doc::SandboxDocIndex::new();
+                    if let Some(ref t) = topic_opt {
+                        match index.get_topic(t) {
+                            Some(topic) => Ok(json!({"ok": true, "topic": topic})),
+                            None => Err(format!("{}: topic '{}' not found", aiosh_core::sandbox_doc::SANDBOXDOC_ERR_NOT_FOUND, t)),
+                        }
+                    } else if let Some(ref q) = search_opt {
+                        let results = index.search(q);
+                        Ok(json!({"ok": true, "query": q, "results": results}))
+                    } else {
+                        let topics = index.list_topics();
+                        Ok(json!({"ok": true, "topics": topics}))
+                    }
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.sandbox.doc", "sandbox.doc",
+                    &arguments,
+                    None, None, false,
+                    dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.sandbox.validate" => {
+                let dir_opt = arguments.get("custom_dir").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = move || -> Result<Value, String> {
+                    let ring = aiosh_core::audit::AuditRing::open(aiosh_core::audit::OpenOptions::default()).ok();
+                    let svc = aiosh_core::sandbox_service::SandboxService::with_default_profiles(ring);
+                    let path_ref = dir_opt.as_deref().map(std::path::Path::new);
+                    let report = svc.validate_state(path_ref);
+                    Ok(json!({"ok": true, "report": report}))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.sandbox.validate", "sandbox.validate",
+                    &arguments,
+                    None, None, false,
+                    dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.sandbox.recover" => {
+                let strategy_str = arguments.get("strategy").and_then(|v| v.as_str()).unwrap_or("defaults").to_string();
+                let dir_opt = arguments.get("custom_dir").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = move || -> Result<Value, String> {
+                    let strategy = match strategy_str.to_lowercase().as_str() {
+                        "dry_run" | "dryrun" => aiosh_core::sandbox_recovery::SandboxRecoveryStrategy::DryRun,
+                        "quarantine" | "quarantine_and_reset" => aiosh_core::sandbox_recovery::SandboxRecoveryStrategy::QuarantineAndReset,
+                        _ => aiosh_core::sandbox_recovery::SandboxRecoveryStrategy::RestoreFactoryDefaults,
+                    };
+                    let ring = aiosh_core::audit::AuditRing::open(aiosh_core::audit::OpenOptions::default()).ok();
+                    let mut svc = aiosh_core::sandbox_service::SandboxService::with_default_profiles(ring);
+                    let path_ref = dir_opt.as_deref().map(std::path::Path::new);
+                    let result = svc.recover_state(strategy, path_ref)?;
+                    Ok(json!({"ok": true, "result": result}))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.sandbox.recover", "sandbox.recover",
                     &arguments,
                     None, None, false,
                     dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,

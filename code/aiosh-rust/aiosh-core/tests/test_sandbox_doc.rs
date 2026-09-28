@@ -54,4 +54,60 @@ fn test_sandbox_doc_search() {
     // Empty query returns empty results
     let empty_res = index.search("   ");
     assert!(empty_res.is_empty());
+
+    // Non-matching query
+    let no_match = index.search("zzzznonexistentterm999");
+    assert!(no_match.is_empty());
 }
+
+#[test]
+fn test_sandbox_doc_categories_and_completeness() {
+    let index = SandboxDocIndex::new();
+    let topics = index.list_topics();
+
+    for summary in &topics {
+        let topic = index.get_topic(&summary.id).expect("topic exists");
+        assert!(!topic.title.trim().is_empty(), "Topic title cannot be empty");
+        assert!(!topic.summary.trim().is_empty(), "Topic summary cannot be empty");
+        assert!(!topic.sections.is_empty(), "Topic must have at least one section");
+        for sec in &topic.sections {
+            assert!(!sec.title.trim().is_empty());
+            assert!(!sec.content.trim().is_empty());
+        }
+        assert!(!topic.category.as_str().is_empty());
+    }
+}
+
+#[test]
+fn test_sandbox_doc_serialization() {
+    let index = SandboxDocIndex::new();
+    let topic = index.get_topic("overview").unwrap();
+
+    let json = serde_json::to_string(&topic).expect("serialize topic");
+    assert!(json.contains("overview"));
+
+    let deserialized: SandboxDocTopic = serde_json::from_str(&json).expect("deserialize topic");
+    assert_eq!(deserialized.id, "overview");
+    assert_eq!(deserialized.category, SandboxDocCategory::Architecture);
+}
+
+#[test]
+fn test_sandbox_doc_hardening() {
+    let index = SandboxDocIndex::new();
+
+    // Query with control characters
+    let dirty_query = "\x00\t\r\nlandlock\x00\x07";
+    let results = index.search(dirty_query);
+    assert!(!results.is_empty(), "Should sanitize control chars and find matches");
+    assert_eq!(results[0].topic_id, "isolation");
+
+    // Oversized query is clamped without panic
+    let long_query = "a".repeat(500);
+    let clamped_res = index.search(&long_query);
+    assert!(clamped_res.is_empty());
+
+    // Non-existent control-only topic lookup
+    assert!(index.get_topic("\x00\x01\x02").is_none());
+}
+
+

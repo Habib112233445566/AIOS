@@ -5219,5 +5219,45 @@ Tasks completed: **T-02455 through T-02484** (30 consecutive tasks executed unde
 - Task ledger state: 2,484 completed, 0 orphans, valid state.
 - Security status: **PASS / CLEAN / VERIFIED**. Task pointer advances to `T-02485`.
 
+---
 
+# ADDENDUM 35 — 2026-09-29: Sandbox Recovery Epic Closure, Privilege Escalation Prevention Data Model & Core Service Sub-Epics (T-02491..T-02520)
 
+## 1. Scope & Progress
+Tasks completed: **T-02491 through T-02520** (30 consecutive tasks executed under strict No-Skip governance):
+- **T-02491..T-02500 (Sub-Epic 10: Sandbox Enforcement Recovery & Validation Subsystem — Entire Sandbox Epic Closure)**:
+  - T-02491..T-02494: Research, specification, scaffolding, and implementation of `SandboxRecoveryManager` in `code/aiosh-rust/aiosh-core/src/sandbox_recovery.rs`.
+  - T-02495..T-02496: Unit testing (`test_sandbox_recovery.rs` 7/7 pass), CLI integration (`aiosh sandbox validate` & `recover`), and MCP integration (`aios.sandbox.validate` & `recover`, `test_sandbox_mcp.py` 14/14 pass).
+  - T-02497..T-02498: Security review and hardening against path traversal (`..`), directory limits (`MAX_SCANNED_PROFILES = 256`), file size caps (64 KiB), and corrupt profile forensic quarantine into `.quarantine_<timestamp>`.
+  - T-02499..T-02500: Documentation in `docs/SPEC-SANDBOX-RECOVERY.md` and Sub-Epic 10 / Sandbox Enforcement Epic milestone closure (`T-02500-recovery-validation-verification-evidenc.md`).
+- **T-02501..T-02510 (Privilege Escalation Prevention Sub-Epic 1: Data Model Subsystem)**:
+  - T-02501..T-02504: Research, specification, scaffolding, and implementation of `PrivilegeLevel`, `PrivilegeCapability`, `PrivilegeContext`, and `PrivilegeTransitionRequest` in `code/aiosh-rust/aiosh-core/src/privilege_data_model.rs`.
+  - T-02505..T-02506: Unit testing (`test_privilege_data_model.rs` 5/5 pass) and integration testing (`test_privilege_data_model_integration.rs` 3/3 pass).
+  - T-02507..T-02508: Security review and hardening: monotonic escalation law, kernel tier immutability (`PRIVESC_ERR_KERNEL_TIER_IMMUTABLE`), actor ID length bounds (`MAX_ACTOR_ID_LEN = 128`), grant ID length bounds (`MAX_GRANT_ID_LEN = 256`), capability count ceiling (`MAX_CAPABILITIES_COUNT = 32`), and control character rejection.
+  - T-02509..T-02510: Documentation in `docs/SPEC-PRIVILEGE-DATA-MODEL.md` and Sub-Epic 1 milestone closure (`T-02510-data-model-verification-evidenc.md`).
+- **T-02511..T-02520 (Privilege Escalation Prevention Sub-Epic 2: Core Service Subsystem)**:
+  - T-02511..T-02514: Research, specification, scaffolding, and implementation of `PrivilegeService` in `code/aiosh-rust/aiosh-core/src/privilege_service.rs`.
+  - T-02515..T-02516: Unit testing (`test_privilege_service.rs` 5/5 pass) and integration testing (`test_privilege_service_integration.rs` 2/2 pass).
+  - T-02517..T-02518: Security review and hardening: capacity bounds clamping (`PRIVESC_MIN_MAX_ACTIVE_CONTEXTS = 1`, `PRIVESC_MAX_MAX_ACTIVE_CONTEXTS = 16384`, default 1024), pre-flight context validation, actor identifier sanitization, and double-checkpoint kernel lockout.
+  - T-02519..T-02520: Documentation in `docs/SPEC-PRIVILEGE-SERVICE.md` and Sub-Epic 2 milestone closure (`T-02520-core-service-verification-evidenc.md`).
+
+## 2. Invariants & Controls Audited
+1. **Factory Baseline Mandate (`SANDBOXRECV1`)**: `SandboxRecoveryManager` ensures factory profiles (`standard`, `strict`, `permissive`) are permanently available and valid.
+2. **Non-Destructive Quarantine (`SANDBOXRECV4`)**: Corrupt files are isolated with forensic timestamps preserved; no user data is silently destroyed.
+3. **Monotonic Escalation Law (`PRIVESC1`)**: Dynamic level increases require valid, non-empty PEP grant tokens; unauthenticated jumps fail-closed.
+4. **Kernel Tier Immutability (`PRIVESC2`)**: Userspace transitions targeting `SystemKernel` are unconditionally denied regardless of token status.
+5. **Safe Downgrade Principle (`PRIVESC3`)**: Privilege dropping is unprivileged and immediately strips capabilities requiring higher tiers, wiping active elevation tokens.
+6. **Bounded Capacity & DoS Defense (`PRIVESC_SRV1`)**: Registry capped between 1 and 16,384 contexts with `PRIVESC_ERR_CAPACITY_EXCEEDED` guard.
+7. **Thread Safety & Multi-Tenant Isolation**: Concurrency tested with `Arc<RwLock<PrivilegeService>>` across worker threads with 0 race conditions.
+8. **Zero Compiler Warnings**: Workspace builds with strictly 0 warnings and 0 errors across all 4 workspace crates.
+
+## 3. Audit Certification
+- `test_sandbox_recovery`: 7/7 PASS
+- `test_sandbox_mcp.py`: 14/14 PASS
+- `test_privilege_data_model`: 5/5 PASS
+- `test_privilege_data_model_integration`: 3/3 PASS
+- `test_privilege_service`: 5/5 PASS
+- `test_privilege_service_integration`: 2/2 PASS
+- Workspace compiler status: `cargo check --workspace` clean (0 warnings, 0 errors).
+- Task ledger state: 2,520 completed, 0 orphans, valid state.
+- Security status: **PASS / CLEAN / VERIFIED**. Task pointer advances to `T-02521`.

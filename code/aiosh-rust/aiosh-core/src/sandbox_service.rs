@@ -105,6 +105,17 @@ impl SandboxService {
         Self::new(ring, SandboxConfig::default())
     }
 
+    /// Constructs an uninitialized SandboxService without pre-populated factory profiles.
+    pub fn empty(ring: Option<AuditRing>, config: SandboxConfig) -> Self {
+        Self {
+            ring,
+            config,
+            policy: SandboxSecurityPolicy::default(),
+            profiles: HashMap::new(),
+        }
+    }
+
+
     pub fn config(&self) -> &SandboxConfig {
         &self.config
     }
@@ -140,6 +151,28 @@ impl SandboxService {
         self.profiles.insert(profile.name.clone(), profile);
         Ok(())
     }
+
+    pub fn upsert_profile(&mut self, profile: SandboxProfile) -> Result<(), String> {
+        profile.validate()?;
+        if !self.profiles.contains_key(&profile.name) && self.profiles.len() >= MAX_PROFILES_IN_SERVICE {
+            return Err(format!("{}: maximum profile capacity of {} reached", ERR_SANDBOX_CAPACITY_EXCEEDED, MAX_PROFILES_IN_SERVICE));
+        }
+        self.profiles.insert(profile.name.clone(), profile);
+        Ok(())
+    }
+
+    pub fn validate_state(&self, custom_dir: Option<&std::path::Path>) -> crate::sandbox_recovery::SandboxValidationReport {
+        crate::sandbox_recovery::SandboxRecoveryManager::validate(self, custom_dir)
+    }
+
+    pub fn recover_state(
+        &mut self,
+        strategy: crate::sandbox_recovery::SandboxRecoveryStrategy,
+        custom_dir: Option<&std::path::Path>,
+    ) -> Result<crate::sandbox_recovery::SandboxRecoveryResult, String> {
+        crate::sandbox_recovery::SandboxRecoveryManager::recover(self, strategy, custom_dir)
+    }
+
 
     pub fn get_profile(&self, name: &str) -> Option<SandboxProfile> {
         self.profiles.get(name).cloned()

@@ -15,6 +15,10 @@ pub const SANDBOXDOC_ERR_EMPTY_QUERY: &str = "SANDBOXDOC_ERR_EMPTY_QUERY";
 /// Maximum length for queries or topic IDs.
 pub const MAX_DOC_QUERY_LEN: usize = 128;
 
+/// Maximum number of search results returned per query.
+pub const MAX_DOC_RESULTS: usize = 32;
+
+
 /// Categories for Sandbox documentation topics (SANDBOXDOC1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -239,15 +243,30 @@ impl SandboxDocIndex {
             .collect()
     }
 
-    /// Looks up a documentation topic by its identifier (case-insensitive).
+    /// Looks up a documentation topic by its identifier (case-insensitive, clamped).
     pub fn get_topic(&self, id: &str) -> Option<&SandboxDocTopic> {
-        let needle = id.trim().to_lowercase();
+        let needle: String = id
+            .chars()
+            .filter(|c| !c.is_control())
+            .take(MAX_DOC_QUERY_LEN)
+            .collect::<String>()
+            .trim()
+            .to_lowercase();
+        if needle.is_empty() {
+            return None;
+        }
         self.topics.iter().find(|t| t.id.to_lowercase() == needle)
     }
 
     /// Performs lexical search across topic titles, summaries, tags, and section content.
     pub fn search(&self, query: &str) -> Vec<SandboxDocSearchResult> {
-        let q = query.trim().to_lowercase();
+        let q: String = query
+            .chars()
+            .filter(|c| !c.is_control())
+            .take(MAX_DOC_QUERY_LEN)
+            .collect::<String>()
+            .trim()
+            .to_lowercase();
         if q.is_empty() {
             return Vec::new();
         }
@@ -303,6 +322,8 @@ impl SandboxDocIndex {
         }
 
         results.sort_by(|a, b| b.score.cmp(&a.score));
+        results.truncate(MAX_DOC_RESULTS);
         results
     }
+
 }
