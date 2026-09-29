@@ -82,6 +82,33 @@ pub enum PrivilegeCapability {
 }
 
 impl PrivilegeCapability {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            PrivilegeCapability::ProcessSpawn => "process_spawn",
+            PrivilegeCapability::NetworkConnect => "network_connect",
+            PrivilegeCapability::NetworkListen => "network_listen",
+            PrivilegeCapability::FilesystemWrite => "filesystem_write",
+            PrivilegeCapability::MemoryInspect => "memory_inspect",
+            PrivilegeCapability::AuditLogAdmin => "audit_log_admin",
+            PrivilegeCapability::SystemReboot => "system_reboot",
+            PrivilegeCapability::KernelModuleLoad => "kernel_module_load",
+        }
+    }
+
+    pub fn parse_capability(s: &str) -> Option<Self> {
+        match s.trim().to_lowercase().as_str() {
+            "process_spawn" | "processspawn" => Some(PrivilegeCapability::ProcessSpawn),
+            "network_connect" | "networkconnect" => Some(PrivilegeCapability::NetworkConnect),
+            "network_listen" | "networklisten" => Some(PrivilegeCapability::NetworkListen),
+            "filesystem_write" | "filesystemwrite" => Some(PrivilegeCapability::FilesystemWrite),
+            "memory_inspect" | "memoryinspect" => Some(PrivilegeCapability::MemoryInspect),
+            "audit_log_admin" | "auditlogadmin" => Some(PrivilegeCapability::AuditLogAdmin),
+            "system_reboot" | "systemreboot" => Some(PrivilegeCapability::SystemReboot),
+            "kernel_module_load" | "kernelmoduleload" => Some(PrivilegeCapability::KernelModuleLoad),
+            _ => None,
+        }
+    }
+
     /// Returns the minimum required privilege level for this capability.
     pub fn minimum_level(&self) -> PrivilegeLevel {
         match self {

@@ -117,6 +117,7 @@ pub mod pep_grant_doc;
 pub mod pep_grant_recovery;
 pub mod privilege_data_model;
 pub mod privilege_service;
+pub mod privilege_config;
 pub mod release;
 pub mod release_config;
 pub mod repo_health;
@@ -416,6 +417,11 @@ pub use privilege_service::{
     MIN_MAX_ACTIVE_CONTEXTS as PRIVESC_MIN_MAX_ACTIVE_CONTEXTS,
     PRIVESC_ERR_ACTOR_NOT_FOUND, PRIVESC_ERR_CAPACITY_EXCEEDED, PRIVESC_ERR_CONTEXT_EXISTS,
 };
+pub use privilege_config::{
+    PrivilegeConfig, DEFAULT_PRIVILEGE_CONFIG_PATH, DEFAULT_PRIVILEGE_STORE_PATH,
+    PRIVESCCONF_ERR_BOUNDS, PRIVESCCONF_ERR_IO, PRIVESCCONF_ERR_PARSE, PRIVESCCONF_ERR_VALIDATION,
+};
+
 
 
 

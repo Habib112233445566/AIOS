@@ -5261,3 +5261,47 @@ Tasks completed: **T-02491 through T-02520** (30 consecutive tasks executed unde
 - Workspace compiler status: `cargo check --workspace` clean (0 warnings, 0 errors).
 - Task ledger state: 2,520 completed, 0 orphans, valid state.
 - Security status: **PASS / CLEAN / VERIFIED**. Task pointer advances to `T-02521`.
+
+---
+
+# ADDENDUM 36 — 2026-09-29: Privilege Escalation Prevention CLI Surface, MCP/API Surface & Configuration Sub-Epics (T-02521..T-02550)
+
+## 1. Scope & Progress
+Tasks completed: **T-02521 through T-02550** (30 consecutive tasks executed under strict No-Skip governance):
+- **T-02521..T-02530 (Privilege Escalation Prevention Sub-Epic 3: CLI Surface Subsystem)**:
+  - T-02521..T-02524: Research, specification, scaffolding, and implementation of `aiosh privilege {status, elevate, drop, revoke, check, list, config}` in `code/aiosh-rust/aiosh-cli/src/main.rs`.
+  - T-02525..T-02526: Unit testing (`privilege_cli_tests` 3/3 pass) and integration testing (`code/aiosh-cli/tests/test_privilege_cli.py` 100% pass).
+  - T-02527..T-02528: Security review and hardening against path traversal (`..`), input length bounds ($\le 128$ byte actor, $\le 256$ byte grant, $\le 32$ caps), control character filtering, and 1 MiB store payload limits.
+  - T-02529..T-02530: Documentation in `docs/SPEC-PRIVILEGE-CLI.md` and Sub-Epic 3 milestone closure (`T-02530-cli-surface-verification-evidenc.md`).
+- **T-02531..T-02540 (Privilege Escalation Prevention Sub-Epic 4: MCP/API Surface Subsystem)**:
+  - T-02531..T-02534: Research, specification, scaffolding, and implementation of Model Context Protocol tools (`aios.privilege.status`, `aios.privilege.elevate`, `aios.privilege.drop`, `aios.privilege.revoke`, `aios.privilege.check`, `aios.privilege.config`) in `code/aiosh-rust/aiosh-mcp/src/main.rs`.
+  - T-02535..T-02536: Unit testing (`code/aiosh-mcp/tests/test_privilege_mcp.py` 100% pass) and integration smoke testing (`code/aiosh-mcp/tests/test_privilege_automated_smoke.py` 100% pass).
+  - T-02537..T-02538: Security review and hardening: directory traversal rejection in `get_privilege_store_path`, payload size protection in `load_safe_privilege_service` (1 MiB ceiling), strict draft-07 JSON Schema validation, and SystemKernel immutability.
+  - T-02539..T-02540: Documentation in `docs/SPEC-PRIVILEGE-MCP.md` and Sub-Epic 4 milestone closure (`T-02540-mcp-api-surface-verification-evidenc.md`).
+- **T-02541..T-02550 (Privilege Escalation Prevention Sub-Epic 5: Configuration Subsystem)**:
+  - T-02541..T-02544: Research, specification, scaffolding, and implementation of `PrivilegeConfig` in `code/aiosh-rust/aiosh-core/src/privilege_config.rs`.
+  - T-02545..T-02546: In-crate unit testing (4/4 pass) and integration testing (`test_privilege_config.rs` 3/3 pass).
+  - T-02547..T-02548: Security review and hardening: 64 KiB config file ceiling (`MAX_CONFIG_FILE_BYTES`), path traversal shielding (`..` rejection in store and config paths), `AIOS_PRIVILEGE_DEFAULT_TIER` parsing with SystemKernel lockout, and bounds clamping on numerical parameters.
+  - T-02549..T-02550: Documentation in `docs/SPEC-PRIVILEGE-CONFIG.md` and Sub-Epic 5 milestone closure (`T-02550-configuration-verification-evidenc.md`).
+
+## 2. Invariants & Controls Audited
+1. **Audit Provenance Mandate (`PRIVESC_CLI1`, `PRIVESC_MCP1`)**: Every privilege action across CLI and MCP surfaces emits classified telemetry to `AuditRing`.
+2. **Terminal & String Sanitization (`PRIVESC_CLI2`, `PRIVESC_MCP4`)**: Output passed through `sanitize_terminal` and zero tolerance for control characters (`c.is_control()`).
+3. **Kernel Tier Immutability (`PRIVESC_CLI4`, `PRIVESC_MCP2`)**: Elevation requests specifying `SystemKernel` fail-fast with explicit security denial across all interfaces.
+4. **Multi-Tenant Context Isolation**: Verified that independent actor contexts execute in complete isolation without privilege leakage.
+5. **Path Traversal Shielding (`PRIVESC_CFG2`)**: Paths containing `..` are strictly rejected across configuration files, environment variables, and state stores.
+6. **Bounded Sizing & DoS Mitigations (`PRIVESC_CFG1`)**: Hard payload limits enforced: 64 KiB for config files, 1 MiB for state stores, 128 bytes for actors, 256 bytes for grants, 32/64 capabilities max.
+7. **Secure Defaults (`PRIVESC_CFG3`)**: Defaults enforce transition auditing (`audit_all_transitions: true`), grant signatures (`enforce_grant_signatures: true`), and User baseline tier.
+8. **Zero Compiler Warnings**: Workspace builds with strictly 0 warnings and 0 errors across all workspace crates.
+
+## 3. Audit Certification
+- `test_privilege_cli`: 3/3 PASS
+- `test_privilege_cli.py`: 100% PASS
+- `test_privilege_mcp.py`: 100% PASS
+- `test_privilege_automated_smoke.py`: 100% PASS
+- `privilege_config::tests`: 4/4 PASS
+- `test_privilege_config.rs`: 3/3 PASS
+- Workspace compiler status: `cargo check --workspace` clean (0 warnings, 0 errors).
+- Task ledger state: 2,550 completed, 0 orphans, valid state.
+- Security status: **PASS / CLEAN / VERIFIED**. Task pointer advances to `T-02551`.
+

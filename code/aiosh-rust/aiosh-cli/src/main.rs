@@ -228,6 +228,7 @@ fn main() {
         Some("capability") | Some("cap") => cmd_capability(&args[1..]),
         Some("pep") => cmd_pep(&args[1..]),
         Some("sandbox") | Some("sb") => cmd_sandbox(&args[1..]),
+        Some("privilege") | Some("priv") => cmd_privilege(&args[1..]),
         Some("--help") | Some("-h") | None => {
             println!("aiosh — AIOS shell CLI (Rust)\n\nUsage: aiosh <status|run|agent|audit|grant|pentest|classify|task|ci|release|backup|toolchain|doc|evidence|repo|secrets|triage|handoff|distro|image|package|service|session|layout|mod|hw|net|update|capability|pep|sandbox> ...\n\n  aiosh audit <tail|verify|rotate|segments|seen|query|ancestry|sign-verify|inspect|config>  Audit ring & chain extensions control\n  aiosh task <status|done|block|unblock|skip|rebuild|check>  Task ledger control\n  aiosh ci <show|failures|check|config|metrics> [--file PATH]  CI smoke reports\n  aiosh release generate  Create bootable ISO\n  aiosh backup create  Create system snapshot zip\n  aiosh toolchain check [--config <path>]  Verify host environment against ToolchainManifest\n  aiosh toolchain show [--config <path>]   Display the resolved ToolchainManifest\n  aiosh doc <show|check|search>  Documentation Index Control\n  aiosh evidence <verify|hash|scan>   Evidence & Audit Trail Control\n  aiosh repo <health|check>  Repository Health Diagnostics\n  aiosh secrets <scan|check> [--config <path>]  Secrets & Access Hygiene Scanner\n  aiosh triage <list|show|record|resolve|ingest|check>  Regression Triage Manager\n  aiosh handoff <list|show|initiate|accept|reject|complete|cancel>  Agent Handoff Protocol Manager\n  aiosh distro <list|show|evaluate|recommend|policy|stats|check>  Linux Distro Selection & Justification Manager\n  aiosh image <list|show|plan|filter>  Linux Base Image Build & Packaging Manager\n  aiosh package <list|show|search|plan|apply|validate>  Linux Package Management & Store Control\n  aiosh service <validate|list|show|status|action|start|stop|restart|reload|order>  Init & Service Supervision Control\n  aiosh session <validate|list|show|status|create|action|activate|lock|unlock|terminate|config>  User Session Bootstrap Control\n  aiosh layout <list|show|validate|check|probe|diff|fstab|register|set-active|remove|import-fstab>  Filesystem Layout & Target Partitioning Manager\n  aiosh mod <list|show|blacklist|unblacklist|options|autoload|unautoload|preset|export>  Kernel Module Management\n  aiosh hw <scan|list|show|summary|verify>  Hardware Detection & Inventory Control\n  aiosh net <list|show|routes|dns|state|up|down>  Network Bootstrap & Interface Control\n  aiosh update <status|slots|check|apply|confirm|rollback>  System Update & Dual-Slot Control\n  aiosh capability <list|show|issue|attenuate|revoke|check|prune>  Capability & Zero-Ambient Authority Control\n  aiosh pep <evaluate|rule-add|rule-list|rule-remove|status|report|doc>  PEP Decision Engine & Policy Control\n  aiosh sandbox <profiles|probe|exec>  Sandbox Containment & Execution Control");
             0
@@ -17202,6 +17203,432 @@ fn cmd_sandbox(args: &[String]) -> i32 {
     }
 }
 
+fn cmd_privilege(args: &[String]) -> i32 {
+    let mut ctx = open_context();
+    let sub = args.first().map(|s| s.as_str());
+    let rest = if args.len() > 1 { &args[1..] } else { &[] };
+    let is_json = has_flag(rest, "--json");
+
+    let store_path_str = parse_flag(rest, "--store").unwrap_or_else(|| format!("{}/privileges.json", ai_home()));
+    let store_path = std::path::Path::new(&store_path_str);
+
+    if store_path_str.len() > 1024 || store_path_str.contains("..") || store_path_str.chars().any(|c| c.is_control()) {
+        let msg = "invalid store path: path contains traversal or control characters or exceeds 1024 bytes";
+        classify_and_emit(
+            &mut ctx, "privilege", sub.unwrap_or("unknown"), json!({ "error": msg }),
+            "failure", None, Some("Invalid store path"), "operator", None,
+        );
+        if is_json {
+            println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_PATH", "message": msg } }));
+        } else {
+            eprintln!("{}", sanitize_terminal(msg));
+        }
+        return 2;
+    }
+
+    if store_path.exists() {
+        if let Ok(metadata) = std::fs::metadata(store_path) {
+            if metadata.len() > 1024 * 1024 {
+                let msg = "store file exceeds maximum permitted size of 1 MiB";
+                classify_and_emit(
+                    &mut ctx, "privilege", sub.unwrap_or("unknown"), json!({ "error": msg }),
+                    "failure", None, Some("Oversized store file"), "operator", None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "STORE_OVERSIZED", "message": msg } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(msg));
+                }
+                return 1;
+            }
+        }
+    }
+
+    let mut service = if store_path.exists() {
+        aiosh_core::privilege_service::PrivilegeService::load_from_path(store_path).unwrap_or_default()
+    } else {
+        aiosh_core::privilege_service::PrivilegeService::new()
+    };
+
+    match sub {
+        Some("status") => {
+            let actor = parse_flag(rest, "--actor").unwrap_or_else(|| ctx.actor_id.clone());
+            if actor.trim().is_empty() || actor.chars().any(|c| c.is_control()) || actor.trim().len() > aiosh_core::privilege_data_model::MAX_ACTOR_ID_LEN {
+                let msg = "invalid actor identifier";
+                if is_json {
+                    println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ACTOR", "message": msg } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(msg));
+                }
+                return 2;
+            }
+
+            let context = match service.get_or_create_context(&actor, aiosh_core::privilege_data_model::PrivilegeLevel::User) {
+                Ok(c) => c.clone(),
+                Err(e) => {
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "CONTEXT_ERROR", "message": e } }));
+                    } else {
+                        eprintln!("ERROR: {}", sanitize_terminal(&e));
+                    }
+                    return 1;
+                }
+            };
+            let _ = service.save_to_path(store_path);
+
+            classify_and_emit(
+                &mut ctx, "privilege", "status", json!({ "actor": &actor, "level": context.active_level.as_str() }),
+                "success", Some(&actor), Some("Queried privilege status"), "operator", context.elevation_grant_id.as_deref(),
+            );
+
+            if is_json {
+                println!("{}", json!({ "code": 0, "data": context, "error": serde_json::Value::Null }));
+            } else {
+                println!("Privilege Context for '{}':", context.actor_id);
+                println!("  Active Level:        {:?}", context.active_level);
+                println!("  Elevation Active:    {}", context.is_elevation_active);
+                if let Some(ref gid) = context.elevation_grant_id {
+                    println!("  Elevation Grant:     {}", gid);
+                }
+                let mut caps: Vec<_> = context.capabilities.iter().map(|c| c.as_str()).collect();
+                caps.sort();
+                println!("  Capabilities ({}):   {}", caps.len(), if caps.is_empty() { "(none)".to_string() } else { caps.join(", ") });
+            }
+            0
+        }
+        Some("elevate") => {
+            let target_str = match parse_flag(rest, "--to") {
+                Some(t) => t,
+                None => {
+                    let msg = "missing required flag: --to <tier>";
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_FLAG", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(msg));
+                    }
+                    return 2;
+                }
+            };
+
+            let target_level = match aiosh_core::privilege_data_model::PrivilegeLevel::parse_level(&target_str) {
+                Some(l) => l,
+                None => {
+                    let msg = format!("invalid privilege tier: {}", target_str);
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_TIER", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    return 2;
+                }
+            };
+
+            let actor = parse_flag(rest, "--actor").unwrap_or_else(|| ctx.actor_id.clone());
+            if actor.trim().is_empty() || actor.chars().any(|c| c.is_control()) || actor.trim().len() > aiosh_core::privilege_data_model::MAX_ACTOR_ID_LEN {
+                let msg = "invalid actor identifier";
+                if is_json {
+                    println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_ACTOR", "message": msg } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(msg));
+                }
+                return 2;
+            }
+
+            let _ = service.get_or_create_context(&actor, aiosh_core::privilege_data_model::PrivilegeLevel::User);
+            let current_level = service.get_context(&actor).map(|c| c.active_level).unwrap_or(aiosh_core::privilege_data_model::PrivilegeLevel::User);
+
+            let mut req_caps = Vec::new();
+            if let Some(caps_arg) = parse_flag(rest, "--caps") {
+                for part in caps_arg.split(',') {
+                    let trimmed = part.trim();
+                    if trimmed.is_empty() { continue; }
+                    match aiosh_core::privilege_data_model::PrivilegeCapability::parse_capability(trimmed) {
+                        Some(c) => req_caps.push(c),
+                        None => {
+                            let msg = format!("unknown capability: {}", trimmed);
+                            if is_json {
+                                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_CAPABILITY", "message": msg } }));
+                            } else {
+                                eprintln!("{}", sanitize_terminal(&msg));
+                            }
+                            return 2;
+                        }
+                    }
+                }
+            }
+
+            if req_caps.len() > aiosh_core::privilege_data_model::MAX_CAPABILITIES_COUNT {
+                let msg = "requested capabilities exceed maximum limit (32)";
+                if is_json {
+                    println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "CAPABILITY_OVERFLOW", "message": msg } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(msg));
+                }
+                return 2;
+            }
+
+            let grant_id = parse_flag(rest, "--grant");
+            if let Some(ref gid) = grant_id {
+                if gid.chars().any(|c| c.is_control()) || gid.trim().len() > aiosh_core::privilege_data_model::MAX_GRANT_ID_LEN {
+                    let msg = "invalid grant token: contains control characters or exceeds 256 bytes";
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_GRANT", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(msg));
+                    }
+                    return 2;
+                }
+            }
+            let req = aiosh_core::privilege_data_model::PrivilegeTransitionRequest {
+                actor_id: actor.clone(),
+                from_level: current_level,
+                target_level,
+                requested_capabilities: req_caps,
+                grant_id: grant_id.clone(),
+            };
+
+            match service.request_elevation(req) {
+                Ok(new_ctx) => {
+                    let _ = service.save_to_path(store_path);
+                    classify_and_emit(
+                        &mut ctx, "privilege", "elevate", json!({ "actor": &actor, "to": target_level.as_str(), "grant": grant_id }),
+                        "success", Some(&actor), Some("Privilege elevated"), "operator", grant_id.as_deref(),
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 0, "data": new_ctx, "error": serde_json::Value::Null }));
+                    } else {
+                        println!("ELEVATED: actor '{}' promoted to {:?}", actor, new_ctx.active_level);
+                    }
+                    0
+                }
+                Err(e) => {
+                    classify_and_emit(
+                        &mut ctx, "privilege", "elevate", json!({ "actor": &actor, "to": target_level.as_str(), "error": &e }),
+                        "failure", Some(&actor), Some("Elevation failed"), "operator", grant_id.as_deref(),
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "ELEVATION_DENIED", "message": e } }));
+                    } else {
+                        eprintln!("ERROR: {}", sanitize_terminal(&e));
+                    }
+                    1
+                }
+            }
+        }
+        Some("drop") => {
+            let target_str = match parse_flag(rest, "--to") {
+                Some(t) => t,
+                None => {
+                    let msg = "missing required flag: --to <tier>";
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_FLAG", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(msg));
+                    }
+                    return 2;
+                }
+            };
+
+            let target_level = match aiosh_core::privilege_data_model::PrivilegeLevel::parse_level(&target_str) {
+                Some(l) => l,
+                None => {
+                    let msg = format!("invalid privilege tier: {}", target_str);
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_TIER", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    return 2;
+                }
+            };
+
+            let actor = parse_flag(rest, "--actor").unwrap_or_else(|| ctx.actor_id.clone());
+            let _ = service.get_or_create_context(&actor, aiosh_core::privilege_data_model::PrivilegeLevel::User);
+
+            match service.drop_privilege(&actor, target_level) {
+                Ok(new_ctx) => {
+                    let _ = service.save_to_path(store_path);
+                    classify_and_emit(
+                        &mut ctx, "privilege", "drop", json!({ "actor": &actor, "to": target_level.as_str() }),
+                        "success", Some(&actor), Some("Privilege dropped"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 0, "data": new_ctx, "error": serde_json::Value::Null }));
+                    } else {
+                        println!("DROPPED: actor '{}' demoted to {:?}", actor, new_ctx.active_level);
+                    }
+                    0
+                }
+                Err(e) => {
+                    classify_and_emit(
+                        &mut ctx, "privilege", "drop", json!({ "actor": &actor, "error": &e }),
+                        "failure", Some(&actor), Some("Drop failed"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "DROP_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("ERROR: {}", sanitize_terminal(&e));
+                    }
+                    1
+                }
+            }
+        }
+        Some("revoke") => {
+            let actor = parse_flag(rest, "--actor").unwrap_or_else(|| ctx.actor_id.clone());
+            let _ = service.get_or_create_context(&actor, aiosh_core::privilege_data_model::PrivilegeLevel::User);
+
+            match service.revoke_elevation(&actor) {
+                Ok(new_ctx) => {
+                    let _ = service.save_to_path(store_path);
+                    classify_and_emit(
+                        &mut ctx, "privilege", "revoke", json!({ "actor": &actor }),
+                        "success", Some(&actor), Some("Privilege elevation revoked"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 0, "data": new_ctx, "error": serde_json::Value::Null }));
+                    } else {
+                        println!("REVOKED: actor '{}' restored to base level {:?}", actor, new_ctx.active_level);
+                    }
+                    0
+                }
+                Err(e) => {
+                    classify_and_emit(
+                        &mut ctx, "privilege", "revoke", json!({ "actor": &actor, "error": &e }),
+                        "failure", Some(&actor), Some("Revocation failed"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "REVOKE_FAILED", "message": e } }));
+                    } else {
+                        eprintln!("ERROR: {}", sanitize_terminal(&e));
+                    }
+                    1
+                }
+            }
+        }
+        Some("check") => {
+            let cap_str = match parse_flag(rest, "--cap") {
+                Some(c) => c,
+                None => {
+                    let msg = "missing required flag: --cap <capability>";
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_FLAG", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(msg));
+                    }
+                    return 2;
+                }
+            };
+
+            let cap = match aiosh_core::privilege_data_model::PrivilegeCapability::parse_capability(&cap_str) {
+                Some(c) => c,
+                None => {
+                    let msg = format!("unknown capability: {}", cap_str);
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_CAPABILITY", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    return 2;
+                }
+            };
+
+            let actor = parse_flag(rest, "--actor").unwrap_or_else(|| ctx.actor_id.clone());
+            let _ = service.get_or_create_context(&actor, aiosh_core::privilege_data_model::PrivilegeLevel::User);
+            let has_cap = service.check_capability(&actor, cap);
+
+            classify_and_emit(
+                &mut ctx, "privilege", "check", json!({ "actor": &actor, "capability": cap.as_str(), "allowed": has_cap }),
+                if has_cap { "success" } else { "failure" }, Some(&actor), Some("Checked capability"), "operator", None,
+            );
+
+            if is_json {
+                println!("{}", json!({ "code": if has_cap { 0 } else { 1 }, "data": { "actor": actor, "capability": cap.as_str(), "allowed": has_cap }, "error": serde_json::Value::Null }));
+            } else {
+                if has_cap {
+                    println!("ALLOWED: actor '{}' holds capability {:?}", actor, cap);
+                } else {
+                    println!("DENIED: actor '{}' does NOT hold capability {:?}", actor, cap);
+                }
+            }
+            if has_cap { 0 } else { 1 }
+        }
+        Some("list") => {
+            let actors = service.list_actors();
+            classify_and_emit(
+                &mut ctx, "privilege", "list", json!({ "count": actors.len() }),
+                "success", None, Some("Listed privilege actors"), "operator", None,
+            );
+
+            if is_json {
+                println!("{}", json!({ "code": 0, "data": actors, "error": serde_json::Value::Null }));
+            } else {
+                println!("Registered Privilege Actors ({} total):", actors.len());
+                for a in &actors {
+                    let lvl = service.get_context(a).map(|c| c.active_level).unwrap_or(aiosh_core::privilege_data_model::PrivilegeLevel::User);
+                    println!("  - {}: {:?}", a, lvl);
+                }
+            }
+            0
+        }
+        Some("config") => {
+            let config_path = parse_flag(rest, "--config");
+            let cfg = match config_path {
+                Some(p) => match aiosh_core::privilege_config::PrivilegeConfig::load_from_path(&p) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        let msg = format!("failed to load config from {}: {}", p, e);
+                        if is_json {
+                            println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "CONFIG_ERROR", "message": msg } }));
+                        } else {
+                            eprintln!("ERROR: {}", sanitize_terminal(&msg));
+                        }
+                        return 1;
+                    }
+                },
+                None => aiosh_core::privilege_config::PrivilegeConfig::load_with_env_overrides(),
+            };
+
+            classify_and_emit(
+                &mut ctx, "privilege", "config", json!({ "config": &cfg }),
+                "success", None, Some("Inspected privilege configuration"), "operator", None,
+            );
+
+            if is_json {
+                println!("{}", json!({ "code": 0, "data": cfg, "error": serde_json::Value::Null }));
+            } else {
+                println!("Privilege Escalation Prevention Configuration:");
+                println!("  Version:                     {}", cfg.version);
+                println!("  Store Path:                  {:?}", cfg.store_path);
+                println!("  Default Tier:                {:?}", cfg.default_tier);
+                println!("  Max Active Contexts:         {}", cfg.max_active_contexts);
+                println!("  Max Grant Duration (s):      {}", cfg.max_grant_duration_seconds);
+                println!("  Max Capabilities / Context:  {}", cfg.max_capabilities_per_context);
+                println!("  Allow Guest Contexts:        {}", cfg.allow_guest_contexts);
+                println!("  Enforce Grant Signatures:    {}", cfg.enforce_grant_signatures);
+                println!("  Audit All Transitions:       {}", cfg.audit_all_transitions);
+            }
+            0
+        }
+        Some("--help") | Some("-h") | None => {
+            println!("aiosh privilege — Privilege Escalation Prevention & Context Control\n\nUsage: aiosh privilege <status|elevate|drop|revoke|check|list|config> [options]\n\nCommands:\n  status                     Display active privilege context for an actor\n  elevate                    Request dynamic privilege elevation with grant token\n  drop                       Safely de-escalate privilege level\n  revoke                     Restore baseline privilege level and revoke elevation\n  check                      Check if active context holds a specific capability\n  list                       List registered actors and privilege tiers\n  config                     Inspect privilege configuration parameters and limits\n\nOptions:\n  --actor <ID>               Target actor identifier (default: current actor)\n  --to <TIER>                Target privilege level (guest, user, operator, admin)\n  --grant <TOKEN>            PEP authorization grant token required for elevation\n  --caps <LIST>              Comma-separated list of capabilities to request\n  --cap <CAPABILITY>         Capability to test\n  --config <PATH>            Custom config file path\n  --json                     Output structured JSON envelope\n  -h, --help                 Display this help message");
+            0
+        }
+        Some(unknown) => {
+            let msg = format!("unknown privilege subcommand: {}", unknown);
+            classify_and_emit(
+                &mut ctx, "privilege", unknown, json!({ "error": &msg }),
+                "failure", None, Some("Unknown subcommand"), "operator", None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "UNKNOWN_SUBCOMMAND", "message": msg } }));
+            } else {
+                eprintln!("{}", sanitize_terminal(&msg));
+            }
+            2
+        }
+    }
+}
+
 #[cfg(test)]
 mod update_cli_tests {
     use super::*;
@@ -17692,6 +18119,70 @@ mod sandbox_cli_tests {
         assert_eq!(cmd_sandbox(&s(&["config"])), 0);
         assert_eq!(cmd_sandbox(&s(&["config", "--json"])), 0);
         assert_eq!(cmd_sandbox(&s(&["config", "--path", "nonexistent_conf.json"])), 1);
+    }
+}
+
+#[cfg(test)]
+mod privilege_cli_tests {
+    use super::*;
+
+    fn s(v: &[&str]) -> Vec<String> {
+        v.iter().map(|x| x.to_string()).collect()
+    }
+
+    #[test]
+    fn test_privilege_cli_help_and_unknown() {
+        assert_eq!(cmd_privilege(&[]), 0);
+        assert_eq!(cmd_privilege(&s(&["--help"])), 0);
+        assert_eq!(cmd_privilege(&s(&["-h"])), 0);
+        assert_eq!(cmd_privilege(&s(&["unknown_cmd"])), 2);
+        assert_eq!(cmd_privilege(&s(&["unknown_cmd", "--json"])), 2);
+    }
+
+    #[test]
+    fn test_privilege_cli_path_hygiene() {
+        assert_eq!(cmd_privilege(&s(&["status", "--store", "../bad_path.json"])), 2);
+        assert_eq!(cmd_privilege(&s(&["status", "--store", "path\nwith\ncontrol.json"])), 2);
+        let long_path = "a".repeat(1025);
+        assert_eq!(cmd_privilege(&s(&["status", "--store", &long_path])), 2);
+    }
+
+    #[test]
+    fn test_privilege_cli_lifecycle() {
+        let tmp_dir = std::env::temp_dir().join(format!("aiosh_priv_cli_test_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&tmp_dir);
+        let store = tmp_dir.join("privileges.json").to_string_lossy().to_string();
+
+        // 1. Status query initializes User context
+        assert_eq!(cmd_privilege(&s(&["status", "--actor", "agent_1", "--store", &store])), 0);
+        assert_eq!(cmd_privilege(&s(&["status", "--actor", "agent_1", "--store", &store, "--json"])), 0);
+
+        // 2. Elevate without grant fails with code 1
+        assert_eq!(cmd_privilege(&s(&["elevate", "--to", "operator", "--actor", "agent_1", "--store", &store])), 1);
+
+        // 3. Elevate to SystemKernel is blocked with code 1
+        assert_eq!(cmd_privilege(&s(&["elevate", "--to", "system_kernel", "--grant", "TOKEN", "--actor", "agent_1", "--store", &store])), 1);
+
+        // 4. Elevate with grant succeeds with code 0
+        assert_eq!(cmd_privilege(&s(&["elevate", "--to", "operator", "--grant", "GRANT-1", "--caps", "network_listen", "--actor", "agent_1", "--store", &store])), 0);
+
+        // 5. Check capability
+        assert_eq!(cmd_privilege(&s(&["check", "--cap", "network_listen", "--actor", "agent_1", "--store", &store])), 0);
+        assert_eq!(cmd_privilege(&s(&["check", "--cap", "system_reboot", "--actor", "agent_1", "--store", &store])), 1);
+
+        // 6. Drop to User
+        assert_eq!(cmd_privilege(&s(&["drop", "--to", "user", "--actor", "agent_1", "--store", &store])), 0);
+        // Capability pruned
+        assert_eq!(cmd_privilege(&s(&["check", "--cap", "network_listen", "--actor", "agent_1", "--store", &store])), 1);
+
+        // 7. Revoke elevation
+        assert_eq!(cmd_privilege(&s(&["revoke", "--actor", "agent_1", "--store", &store])), 0);
+
+        // 8. List actors
+        assert_eq!(cmd_privilege(&s(&["list", "--store", &store])), 0);
+        assert_eq!(cmd_privilege(&s(&["list", "--store", &store, "--json"])), 0);
+
+        let _ = std::fs::remove_dir_all(&tmp_dir);
     }
 }
 

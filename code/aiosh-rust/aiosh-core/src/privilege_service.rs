@@ -75,6 +75,11 @@ impl PrivilegeService {
         self.contexts.get(actor_id.trim())
     }
 
+    /// Retrieves the baseline privilege tier for an actor.
+    pub fn get_base_level(&self, actor_id: &str) -> Option<PrivilegeLevel> {
+        self.base_levels.get(actor_id.trim()).copied()
+    }
+
     /// Registers a new context. Fails if actor already registered, invalid, or capacity exceeded.
     pub fn register_context(&mut self, context: PrivilegeContext) -> Result<(), String> {
         context.validate()?;
@@ -178,9 +183,31 @@ impl PrivilegeService {
         actors
     }
 
-    /// Returns the baseline privilege level recorded during registration.
-    pub fn get_base_level(&self, actor_id: &str) -> Option<PrivilegeLevel> {
-        self.base_levels.get(actor_id.trim()).copied()
+    /// Retrieves mutable reference to an actor's context, creating baseline User context if missing.
+    pub fn get_or_create_context(&mut self, actor_id: &str, default_level: PrivilegeLevel) -> Result<&mut PrivilegeContext, String> {
+        let actor = actor_id.trim();
+        if !self.contexts.contains_key(actor) {
+            let ctx = PrivilegeContext::new(actor, default_level)?;
+            self.register_context(ctx)?;
+        }
+        Ok(self.contexts.get_mut(actor).unwrap())
+    }
+
+    /// Loads PrivilegeService state from a JSON file path.
+    pub fn load_from_path(path: impl AsRef<std::path::Path>) -> Result<Self, String> {
+        let path = path.as_ref();
+        let content = std::fs::read_to_string(path).map_err(|e| format!("IO error: {}", e))?;
+        serde_json::from_str(&content).map_err(|e| format!("parse error: {}", e))
+    }
+
+    /// Saves PrivilegeService state to a JSON file path.
+    pub fn save_to_path(&self, path: impl AsRef<std::path::Path>) -> Result<(), String> {
+        let path = path.as_ref();
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let serialized = serde_json::to_string_pretty(self).map_err(|e| format!("serialize error: {}", e))?;
+        std::fs::write(path, serialized).map_err(|e| format!("write error: {}", e))
     }
 
     /// Clears all registered contexts.

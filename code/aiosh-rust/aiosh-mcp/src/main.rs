@@ -21,6 +21,30 @@ use std::io::Write;
 
 const SCHEMA_VERSION: &str = "2025-06-18";
 
+fn get_privilege_store_path() -> std::path::PathBuf {
+    if let Ok(path) = std::env::var("AIOS_PRIVILEGE_STORE") {
+        if !path.contains("..") {
+            return std::path::PathBuf::from(path);
+        }
+    }
+    if let Ok(dir) = std::env::var("AIOS_STATE_DIR") {
+        if !dir.contains("..") {
+            return std::path::PathBuf::from(dir).join("privilege_state.json");
+        }
+    }
+    std::path::PathBuf::from("target").join("privilege_state.json")
+}
+
+fn load_safe_privilege_service(store_path: &std::path::Path) -> aiosh_core::privilege_service::PrivilegeService {
+    if let Ok(meta) = std::fs::metadata(store_path) {
+        if meta.len() > 1024 * 1024 {
+            return aiosh_core::privilege_service::PrivilegeService::new();
+        }
+    }
+    aiosh_core::privilege_service::PrivilegeService::load_from_path(store_path)
+        .unwrap_or_else(|_| aiosh_core::privilege_service::PrivilegeService::new())
+}
+
 struct Server {
     ring: AuditRing,
     pep: PepStore,
@@ -68,8 +92,15 @@ impl Server {
             json!({"name": "aios.sandbox.stats", "description": "Generate comprehensive Sandbox Enforcement observability and telemetry report", "inputSchema": {"type": "object"}}),
             json!({"name": "aios.sandbox.doc", "description": "Offline documentation repository and search index for Sandbox Enforcement", "inputSchema": {"type": "object", "properties": {"topic": {"type": "string", "description": "Optional topic ID to fetch"}, "search": {"type": "string", "description": "Optional search query"}}}}),
             json!({"name": "aios.sandbox.validate", "description": "Validate integrity and invariants of Sandbox Enforcement profiles", "inputSchema": {"type": "object", "properties": {"custom_dir": {"type": "string", "description": "Optional directory of custom profile JSON manifests to inspect"}}}}),
-            json!({"name": "aios.sandbox.recover", "description": "Recover and repair Sandbox Enforcement profile integrity by restoring factory presets or quarantining corrupt manifests", "inputSchema": {"type": "object", "properties": {"strategy": {"type": "string", "enum": ["dry_run", "defaults", "quarantine"], "description": "Recovery strategy to execute"}, "custom_dir": {"type": "string", "description": "Optional custom profiles directory"}}}})
+            json!({"name": "aios.sandbox.recover", "description": "Recover and repair Sandbox Enforcement profile integrity by restoring factory presets or quarantining corrupt manifests", "inputSchema": {"type": "object", "properties": {"strategy": {"type": "string", "enum": ["dry_run", "defaults", "quarantine"], "description": "Recovery strategy to execute"}, "custom_dir": {"type": "string", "description": "Optional custom profiles directory"}}}}),
+            json!({"name": "aios.privilege.status", "description": "Query active privilege context, current tier, baseline tier, grant ID, and held capabilities for an actor", "inputSchema": {"type": "object", "properties": {"actor": {"type": "string"}}, "additionalProperties": false}}),
+            json!({"name": "aios.privilege.elevate", "description": "Request dynamic privilege elevation to a target tier with grant token validation and capability expansion", "inputSchema": {"type": "object", "properties": {"to": {"type": "string"}, "grant": {"type": "string"}, "actor": {"type": "string"}, "caps": {"type": "array", "items": {"type": "string"}}}, "required": ["to"], "additionalProperties": false}}),
+            json!({"name": "aios.privilege.drop", "description": "De-escalate privilege level to a lower tier, shedding higher capabilities and clearing active grants", "inputSchema": {"type": "object", "properties": {"to": {"type": "string"}, "actor": {"type": "string"}}, "required": ["to"], "additionalProperties": false}}),
+            json!({"name": "aios.privilege.revoke", "description": "Restore baseline privilege level, clearing dynamic grants and revoking elevated capabilities", "inputSchema": {"type": "object", "properties": {"actor": {"type": "string"}}, "additionalProperties": false}}),
+            json!({"name": "aios.privilege.check", "description": "Verify whether an actor context holds a specific capability", "inputSchema": {"type": "object", "properties": {"cap": {"type": "string"}, "actor": {"type": "string"}}, "required": ["cap"], "additionalProperties": false}}),
+            json!({"name": "aios.privilege.config", "description": "Inspect Privilege Escalation Prevention configuration parameters, limits, and defaults", "inputSchema": {"type": "object", "properties": {"config_path": {"type": "string"}}, "additionalProperties": false}})
         ];
+
         for (name, desc) in [
             ("aios.pentest.nmap", "TCP recon (top-100 ports) [C-1]"),
             ("aios.pentest.nikto", "web-misconfig scan (safe tuning) [C-1]"),
@@ -5743,6 +5774,258 @@ fn validate_and_open_grant_service(path_str: Option<&str>) -> Result<(std::path:
                 dispatch::recorded_call(
                     &mut self.ring, &self.pep,
                     "aios.sandbox.recover", "sandbox.recover",
+                    &arguments,
+                    None, None, false,
+                    dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.privilege.status" => {
+                let actor_arg = arguments.get("actor").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = move || -> Result<Value, String> {
+                    let actor = actor_arg.as_deref().unwrap_or("mcp-agent");
+                    if actor.len() > aiosh_core::privilege_data_model::MAX_ACTOR_ID_LEN || actor.chars().any(|c| c.is_control()) {
+                        return Err("ERR_PRIVESC_INVALID_INPUT: actor identifier violates bounds".into());
+                    }
+                    let store_path = get_privilege_store_path();
+                    let mut srv = load_safe_privilege_service(&store_path);
+                    let ctx = srv.get_or_create_context(actor, aiosh_core::privilege_data_model::PrivilegeLevel::User)
+                        .map_err(|e| format!("ERR_PRIVESC_INVALID_INPUT: {}", e))?
+                        .clone();
+                    let base_level = srv.get_base_level(actor).unwrap_or(aiosh_core::privilege_data_model::PrivilegeLevel::User);
+                    let caps_str: Vec<String> = ctx.capabilities.iter().map(|c| c.as_str().to_string()).collect();
+                    Ok(json!({
+                        "ok": true,
+                        "context": {
+                            "actor": ctx.actor_id,
+                            "tier": format!("{:?}", ctx.active_level),
+                            "base_tier": format!("{:?}", base_level),
+                            "elevated": ctx.is_elevation_active,
+                            "grant_id": ctx.elevation_grant_id,
+                            "capabilities": caps_str,
+                        }
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.privilege.status", "privilege.status",
+                    &arguments,
+                    None, None, false,
+                    dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.privilege.elevate" => {
+                let to_str = arguments.get("to").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let grant_opt = arguments.get("grant").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let actor_arg = arguments.get("actor").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let caps_arg = arguments.get("caps").and_then(|v| v.as_array()).map(|arr| {
+                    arr.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect::<Vec<String>>()
+                });
+                let f = move || -> Result<Value, String> {
+                    let actor = actor_arg.as_deref().unwrap_or("mcp-agent");
+                    if actor.len() > aiosh_core::privilege_data_model::MAX_ACTOR_ID_LEN || actor.chars().any(|c| c.is_control()) {
+                        return Err("ERR_PRIVESC_INVALID_INPUT: actor identifier violates bounds".into());
+                    }
+                    if let Some(ref g) = grant_opt {
+                        if g.len() > aiosh_core::privilege_data_model::MAX_GRANT_ID_LEN || g.chars().any(|c| c.is_control()) {
+                            return Err("ERR_PRIVESC_INVALID_INPUT: grant token violates bounds".into());
+                        }
+                    }
+                    if let Some(ref caps) = caps_arg {
+                        if caps.len() > aiosh_core::privilege_data_model::MAX_CAPABILITIES_COUNT {
+                            return Err("ERR_PRIVESC_INVALID_INPUT: requested capabilities count exceeds 32".into());
+                        }
+                    }
+                    let target_level = aiosh_core::privilege_data_model::PrivilegeLevel::parse_level(&to_str)
+                        .ok_or_else(|| format!("ERR_PRIVESC_INVALID_TIER: unknown privilege tier: {}", to_str))?;
+
+                    if target_level == aiosh_core::privilege_data_model::PrivilegeLevel::SystemKernel {
+                        return Err("ERR_PRIVESC_KERNEL_TIER_IMMUTABLE: elevation to SystemKernel is strictly forbidden".into());
+                    }
+
+                    let store_path = get_privilege_store_path();
+                    let mut srv = load_safe_privilege_service(&store_path);
+                    let _ = srv.get_or_create_context(actor, aiosh_core::privilege_data_model::PrivilegeLevel::User)
+                        .map_err(|e| format!("ERR_PRIVESC_INVALID_INPUT: {}", e))?;
+
+                    let current_level = srv.get_context(actor).map(|c| c.active_level).unwrap_or(aiosh_core::privilege_data_model::PrivilegeLevel::User);
+
+                    let mut requested_caps = Vec::new();
+                    if let Some(ref caps) = caps_arg {
+                        for c in caps {
+                            if let Some(cap) = aiosh_core::privilege_data_model::PrivilegeCapability::parse_capability(c) {
+                                requested_caps.push(cap);
+                            } else {
+                                return Err(format!("ERR_PRIVESC_INVALID_INPUT: unknown capability '{}'", c));
+                            }
+                        }
+                    }
+
+                    if target_level > current_level && grant_opt.is_none() {
+                        return Err("ERR_PRIVESC_GRANT_REQUIRED: grant token required for privilege escalation".to_string());
+                    }
+
+                    let req = aiosh_core::privilege_data_model::PrivilegeTransitionRequest {
+                        actor_id: actor.to_string(),
+                        from_level: current_level,
+                        target_level,
+                        requested_capabilities: requested_caps,
+                        grant_id: grant_opt.clone(),
+                    };
+
+                    let new_ctx = srv.request_elevation(req)
+                        .map_err(|e| format!("ERR_PRIVESC_UNAUTHORIZED: elevation denied: {}", e))?;
+
+                    let _ = srv.save_to_path(&store_path);
+
+                    let base_level = srv.get_base_level(actor).unwrap_or(aiosh_core::privilege_data_model::PrivilegeLevel::User);
+                    let caps_str: Vec<String> = new_ctx.capabilities.iter().map(|c| c.as_str().to_string()).collect();
+
+                    Ok(json!({
+                        "ok": true,
+                        "context": {
+                            "actor": new_ctx.actor_id,
+                            "tier": format!("{:?}", new_ctx.active_level),
+                            "base_tier": format!("{:?}", base_level),
+                            "elevated": new_ctx.is_elevation_active,
+                            "grant_id": new_ctx.elevation_grant_id,
+                            "capabilities": caps_str,
+                        }
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.privilege.elevate", "privilege.elevate",
+                    &arguments,
+                    None, None, false,
+                    dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.privilege.drop" => {
+                let to_str = arguments.get("to").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let actor_arg = arguments.get("actor").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = move || -> Result<Value, String> {
+                    let actor = actor_arg.as_deref().unwrap_or("mcp-agent");
+                    if actor.len() > aiosh_core::privilege_data_model::MAX_ACTOR_ID_LEN || actor.chars().any(|c| c.is_control()) {
+                        return Err("ERR_PRIVESC_INVALID_INPUT: actor identifier violates bounds".into());
+                    }
+                    let target_level = aiosh_core::privilege_data_model::PrivilegeLevel::parse_level(&to_str)
+                        .ok_or_else(|| format!("ERR_PRIVESC_INVALID_TIER: unknown privilege tier: {}", to_str))?;
+
+                    let store_path = get_privilege_store_path();
+                    let mut srv = load_safe_privilege_service(&store_path);
+                    let _ = srv.get_or_create_context(actor, aiosh_core::privilege_data_model::PrivilegeLevel::User)
+                        .map_err(|e| format!("ERR_PRIVESC_INVALID_INPUT: {}", e))?;
+
+                    let new_ctx = srv.drop_privilege(actor, target_level)
+                        .map_err(|e| format!("ERR_PRIVESC_DROP_FAILED: {}", e))?;
+
+                    let _ = srv.save_to_path(&store_path);
+                    let base_level = srv.get_base_level(actor).unwrap_or(aiosh_core::privilege_data_model::PrivilegeLevel::User);
+                    let caps_str: Vec<String> = new_ctx.capabilities.iter().map(|c| c.as_str().to_string()).collect();
+
+                    Ok(json!({
+                        "ok": true,
+                        "context": {
+                            "actor": new_ctx.actor_id,
+                            "tier": format!("{:?}", new_ctx.active_level),
+                            "base_tier": format!("{:?}", base_level),
+                            "elevated": new_ctx.is_elevation_active,
+                            "grant_id": new_ctx.elevation_grant_id,
+                            "capabilities": caps_str,
+                        }
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.privilege.drop", "privilege.drop",
+                    &arguments,
+                    None, None, false,
+                    dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.privilege.revoke" => {
+                let actor_arg = arguments.get("actor").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = move || -> Result<Value, String> {
+                    let actor = actor_arg.as_deref().unwrap_or("mcp-agent");
+                    if actor.len() > aiosh_core::privilege_data_model::MAX_ACTOR_ID_LEN || actor.chars().any(|c| c.is_control()) {
+                        return Err("ERR_PRIVESC_INVALID_INPUT: actor identifier violates bounds".into());
+                    }
+                    let store_path = get_privilege_store_path();
+                    let mut srv = load_safe_privilege_service(&store_path);
+                    let _ = srv.get_or_create_context(actor, aiosh_core::privilege_data_model::PrivilegeLevel::User)
+                        .map_err(|e| format!("ERR_PRIVESC_INVALID_INPUT: {}", e))?;
+
+                    let new_ctx = srv.revoke_elevation(actor)
+                        .map_err(|e| format!("ERR_PRIVESC_REVOKE_FAILED: {}", e))?;
+
+                    let _ = srv.save_to_path(&store_path);
+                    let base_level = srv.get_base_level(actor).unwrap_or(aiosh_core::privilege_data_model::PrivilegeLevel::User);
+                    let caps_str: Vec<String> = new_ctx.capabilities.iter().map(|c| c.as_str().to_string()).collect();
+
+                    Ok(json!({
+                        "ok": true,
+                        "context": {
+                            "actor": new_ctx.actor_id,
+                            "tier": format!("{:?}", new_ctx.active_level),
+                            "base_tier": format!("{:?}", base_level),
+                            "elevated": new_ctx.is_elevation_active,
+                            "grant_id": new_ctx.elevation_grant_id,
+                            "capabilities": caps_str,
+                        }
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.privilege.revoke", "privilege.revoke",
+                    &arguments,
+                    None, None, false,
+                    dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.privilege.check" => {
+                let cap_str = arguments.get("cap").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let actor_arg = arguments.get("actor").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = move || -> Result<Value, String> {
+                    let actor = actor_arg.as_deref().unwrap_or("mcp-agent");
+                    if actor.len() > aiosh_core::privilege_data_model::MAX_ACTOR_ID_LEN || actor.chars().any(|c| c.is_control()) {
+                        return Err("ERR_PRIVESC_INVALID_INPUT: actor identifier violates bounds".into());
+                    }
+                    let cap = aiosh_core::privilege_data_model::PrivilegeCapability::parse_capability(&cap_str)
+                        .ok_or_else(|| format!("ERR_PRIVESC_INVALID_INPUT: unknown capability '{}'", cap_str))?;
+
+                    let store_path = get_privilege_store_path();
+                    let mut srv = load_safe_privilege_service(&store_path);
+                    let _ = srv.get_or_create_context(actor, aiosh_core::privilege_data_model::PrivilegeLevel::User)
+                        .map_err(|e| format!("ERR_PRIVESC_INVALID_INPUT: {}", e))?;
+
+                    let held = srv.check_capability(actor, cap);
+                    Ok(json!({
+                        "ok": true,
+                        "actor": actor,
+                        "capability": cap.as_str(),
+                        "held": held,
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.privilege.check", "privilege.check",
+                    &arguments,
+                    None, None, false,
+                    dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.privilege.config" => {
+                let cfg_path = arguments.get("config_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = move || -> Result<Value, String> {
+                    let cfg = match cfg_path {
+                        Some(ref p) => aiosh_core::privilege_config::PrivilegeConfig::load_from_path(p)?,
+                        None => aiosh_core::privilege_config::PrivilegeConfig::load_with_env_overrides(),
+                    };
+                    Ok(json!({"ok": true, "config": cfg}))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.privilege.config", "privilege.config",
                     &arguments,
                     None, None, false,
                     dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
