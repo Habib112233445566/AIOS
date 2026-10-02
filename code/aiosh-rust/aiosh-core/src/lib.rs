@@ -123,6 +123,7 @@ pub mod privilege_observability;
 pub mod privilege_doc;
 pub mod privilege_recovery;
 pub mod secret_data_model;
+pub mod secret_service;
 pub mod release;
 pub mod release_config;
 pub mod repo_health;
@@ -455,6 +456,14 @@ pub use secret_data_model::{
     SECDATA_ERR_INVALID_SCOPE, SECDATA_ERR_INVALID_STATE, SECDATA_ERR_LABEL_BOUNDS,
     SECDATA_ERR_NAME_TOO_LONG, SECDATA_ERR_PAYLOAD_TOO_LARGE, SECDATA_ERR_STATE_TRANSITION,
 };
+pub use secret_service::{
+    SecretService, StoredSecretRecord, VaultPayload, hex_decode, hex_encode,
+    DEFAULT_SECRETS_VAULT_PATH, MAX_SECRETS_STORE_SIZE, MAX_SECRETS_VAULT_CAPACITY,
+    SECSVC_ERR_ACCESS_DENIED, SECSVC_ERR_CAPACITY_EXCEEDED, SECSVC_ERR_FILE_SIZE,
+    SECSVC_ERR_INACCESSIBLE, SECSVC_ERR_IO, SECSVC_ERR_NOT_FOUND, SECSVC_ERR_PARSE,
+    SECSVC_ERR_PATH_TRAVERSAL,
+};
+
 
 
 

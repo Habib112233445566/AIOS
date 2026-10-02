@@ -45,6 +45,30 @@ fn load_safe_privilege_service(store_path: &std::path::Path) -> aiosh_core::priv
         .unwrap_or_else(|_| aiosh_core::privilege_service::PrivilegeService::new())
 }
 
+fn get_secrets_store_path() -> std::path::PathBuf {
+    if let Ok(path) = std::env::var("AIOS_SECRETS_STORE") {
+        if !path.contains("..") {
+            return std::path::PathBuf::from(path);
+        }
+    }
+    if let Ok(dir) = std::env::var("AIOS_STATE_DIR") {
+        if !dir.contains("..") {
+            return std::path::PathBuf::from(dir).join("secrets_store.json");
+        }
+    }
+    std::path::PathBuf::from("target").join("secrets_store.json")
+}
+
+fn load_safe_secret_service(store_path: &std::path::Path) -> aiosh_core::secret_service::SecretService {
+    if let Ok(meta) = std::fs::symlink_metadata(store_path) {
+        if meta.len() > 1024 * 1024 {
+            return aiosh_core::secret_service::SecretService::new();
+        }
+    }
+    aiosh_core::secret_service::SecretService::load_from_path(store_path)
+        .unwrap_or_else(|_| aiosh_core::secret_service::SecretService::new())
+}
+
 struct Server {
     ring: AuditRing,
     pep: PepStore,
@@ -104,7 +128,12 @@ impl Server {
             json!({"name": "aios.privilege.observability", "description": "Retrieve comprehensive Privilege Escalation Prevention telemetry and observability report", "inputSchema": {"type": "object", "properties": {"config_path": {"type": "string"}}, "additionalProperties": false}}),
             json!({"name": "aios.privilege.doc", "description": "Offline reference manual and search index for Privilege Escalation Prevention", "inputSchema": {"type": "object", "properties": {"action": {"type": "string", "enum": ["list", "get", "search"]}, "topic_id": {"type": "string"}, "query": {"type": "string"}}, "additionalProperties": false}}),
             json!({"name": "aios.privilege.validate", "description": "Diagnostically validate the Privilege Escalation Prevention state store file", "inputSchema": {"type": "object", "properties": {"store_path": {"type": "string"}}, "additionalProperties": false}}),
-            json!({"name": "aios.privilege.repair", "description": "Non-destructively recover and repair the Privilege Escalation Prevention state store file", "inputSchema": {"type": "object", "properties": {"store_path": {"type": "string"}}, "additionalProperties": false}})
+            json!({"name": "aios.privilege.repair", "description": "Non-destructively recover and repair the Privilege Escalation Prevention state store file", "inputSchema": {"type": "object", "properties": {"store_path": {"type": "string"}}, "additionalProperties": false}}),
+            json!({"name": "aios.secret.store", "description": "Store or register a secret into the runtime vault with metadata, scope, and payload", "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}, "name": {"type": "string"}, "kind": {"type": "string"}, "value": {"type": "string"}, "scope": {"type": "string"}, "target": {"type": "string"}, "description": {"type": "string"}, "store_path": {"type": "string"}}, "required": ["id", "name", "kind"], "additionalProperties": false}}),
+            json!({"name": "aios.secret.get", "description": "Retrieve secret metadata and payload. Masked by default unless expose=true.", "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}, "scope": {"type": "string"}, "target": {"type": "string"}, "expose": {"type": "boolean"}, "store_path": {"type": "string"}}, "required": ["id"], "additionalProperties": false}}),
+            json!({"name": "aios.secret.list", "description": "List vaulted secret metadata without disclosing plaintext values", "inputSchema": {"type": "object", "properties": {"kind": {"type": "string"}, "scope": {"type": "string"}, "target": {"type": "string"}, "store_path": {"type": "string"}}, "additionalProperties": false}}),
+            json!({"name": "aios.secret.rotate", "description": "Rotate an existing secret's payload, updating its version and SHA-256 fingerprint", "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}, "value": {"type": "string"}, "store_path": {"type": "string"}}, "required": ["id", "value"], "additionalProperties": false}}),
+            json!({"name": "aios.secret.revoke", "description": "Revoke an active secret, disabling future retrieval", "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}, "store_path": {"type": "string"}}, "required": ["id"], "additionalProperties": false}})
         ];
 
         for (name, desc) in [
@@ -6189,6 +6218,222 @@ fn validate_and_open_grant_service(path_str: Option<&str>) -> Result<(std::path:
                     dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
                 )
             }
+            "aios.secret.store" => {
+                let id_opt = arguments.get("id").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let name_opt = arguments.get("name").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let kind_opt = arguments.get("kind").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let val_opt = arguments.get("value").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let scope_opt = arguments.get("scope").and_then(|v| v.as_str()).unwrap_or("global").to_string();
+                let target_opt = arguments.get("target").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let desc_opt = arguments.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = move || -> Result<Value, String> {
+                    let id = id_opt.as_deref().ok_or_else(|| "ERR_SECRET_INVALID_INPUT: missing required parameter 'id'".to_string())?;
+                    let name = name_opt.as_deref().ok_or_else(|| "ERR_SECRET_INVALID_INPUT: missing required parameter 'name'".to_string())?;
+                    let kind_str = kind_opt.as_deref().ok_or_else(|| "ERR_SECRET_INVALID_INPUT: missing required parameter 'kind'".to_string())?;
+
+                    if id.len() > 128 || id.chars().any(|c| c.is_control()) {
+                        return Err("ERR_SECRET_INVALID_INPUT: secret id violates bounds".into());
+                    }
+                    if val_opt.len() > aiosh_core::secret_data_model::MAX_SECRET_PAYLOAD_SIZE {
+                        return Err(format!("ERR_SECRET_PAYLOAD_TOO_LARGE: payload exceeds {} bytes", aiosh_core::secret_data_model::MAX_SECRET_PAYLOAD_SIZE));
+                    }
+                    if let Some(ref sp) = store_path_opt {
+                        if sp.contains("..") {
+                            return Err("ERR_SECRET_PATH_TRAVERSAL: store_path contains invalid components".into());
+                        }
+                    }
+
+                    let kind = aiosh_core::secret_data_model::SecretKind::parse_kind(kind_str)
+                        .ok_or_else(|| format!("ERR_SECRET_INVALID_KIND: unknown secret kind '{}'", kind_str))?;
+                    let scope = aiosh_core::secret_data_model::SecretScope::parse_scope(&scope_opt, target_opt.as_deref())
+                        .map_err(|e| format!("ERR_SECRET_INVALID_SCOPE: {}", e))?;
+
+                    let mut entry = aiosh_core::secret_data_model::SecretEntry::new(id, name, kind, scope, val_opt.as_bytes())
+                        .map_err(|e| format!("ERR_SECRET_VALIDATION_ERROR: {}", e))?;
+                    entry.metadata.description = desc_opt.clone();
+                    entry.metadata.validate().map_err(|e| format!("ERR_SECRET_VALIDATION_ERROR: {}", e))?;
+
+                    let path = match store_path_opt {
+                        Some(ref p) => std::path::PathBuf::from(p),
+                        None => get_secrets_store_path(),
+                    };
+                    let mut srv = load_safe_secret_service(&path);
+                    let meta = entry.metadata.clone();
+                    srv.store_secret(entry).map_err(|e| format!("ERR_SECRET_STORE_FAILED: {}", e))?;
+                    srv.save_to_path(&path).map_err(|e| format!("ERR_SECRET_PERSISTENCE_FAILED: {}", e))?;
+
+                    Ok(json!({
+                        "ok": true,
+                        "metadata": meta
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.secret.store", "secret.store",
+                    &arguments,
+                    None, None, false,
+                    dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.secret.get" => {
+                let id_opt = arguments.get("id").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let scope_opt = arguments.get("scope").and_then(|v| v.as_str()).unwrap_or("global").to_string();
+                let target_opt = arguments.get("target").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let expose = arguments.get("expose").and_then(|v| v.as_bool()).unwrap_or(false);
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = move || -> Result<Value, String> {
+                    let id = id_opt.as_deref().ok_or_else(|| "ERR_SECRET_INVALID_INPUT: missing required parameter 'id'".to_string())?;
+                    if let Some(ref sp) = store_path_opt {
+                        if sp.contains("..") {
+                            return Err("ERR_SECRET_PATH_TRAVERSAL: store_path contains invalid components".into());
+                        }
+                    }
+                    let caller_scope = aiosh_core::secret_data_model::SecretScope::parse_scope(&scope_opt, target_opt.as_deref())
+                        .map_err(|e| format!("ERR_SECRET_INVALID_SCOPE: {}", e))?;
+
+                    let path = match store_path_opt {
+                        Some(ref p) => std::path::PathBuf::from(p),
+                        None => get_secrets_store_path(),
+                    };
+                    let srv = load_safe_secret_service(&path);
+                    let meta = srv.get_metadata(id).map_err(|e| format!("ERR_SECRET_NOT_FOUND: {}", e))?;
+                    let val = srv.get_secret(id, &caller_scope).map_err(|e| format!("ERR_SECRET_ACCESS_DENIED: {}", e))?;
+
+                    let display_val = if expose {
+                        val.as_str().unwrap_or("[BINARY]").to_string()
+                    } else {
+                        val.masked_display()
+                    };
+
+                    Ok(json!({
+                        "ok": true,
+                        "metadata": meta,
+                        "value": display_val,
+                        "exposed": expose
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.secret.get", "secret.get",
+                    &arguments,
+                    None, None, false,
+                    dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.secret.list" => {
+                let kind_opt = arguments.get("kind").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let scope_opt = arguments.get("scope").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let target_opt = arguments.get("target").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = move || -> Result<Value, String> {
+                    if let Some(ref sp) = store_path_opt {
+                        if sp.contains("..") {
+                            return Err("ERR_SECRET_PATH_TRAVERSAL: store_path contains invalid components".into());
+                        }
+                    }
+                    let filter_kind = kind_opt.as_deref().and_then(aiosh_core::secret_data_model::SecretKind::parse_kind);
+                    let filter_scope = if let Some(ref st) = scope_opt {
+                        aiosh_core::secret_data_model::SecretScope::parse_scope(st, target_opt.as_deref()).ok()
+                    } else {
+                        None
+                    };
+
+                    let path = match store_path_opt {
+                        Some(ref p) => std::path::PathBuf::from(p),
+                        None => get_secrets_store_path(),
+                    };
+                    let srv = load_safe_secret_service(&path);
+                    let secrets = srv.list_metadata(filter_kind, filter_scope.as_ref());
+
+                    Ok(json!({
+                        "ok": true,
+                        "count": secrets.len(),
+                        "secrets": secrets
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.secret.list", "secret.list",
+                    &arguments,
+                    None, None, false,
+                    dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.secret.rotate" => {
+                let id_opt = arguments.get("id").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let val_opt = arguments.get("value").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = move || -> Result<Value, String> {
+                    let id = id_opt.as_deref().ok_or_else(|| "ERR_SECRET_INVALID_INPUT: missing required parameter 'id'".to_string())?;
+                    let val = val_opt.as_deref().ok_or_else(|| "ERR_SECRET_INVALID_INPUT: missing required parameter 'value'".to_string())?;
+
+                    if val.len() > aiosh_core::secret_data_model::MAX_SECRET_PAYLOAD_SIZE {
+                        return Err(format!("ERR_SECRET_PAYLOAD_TOO_LARGE: payload exceeds {} bytes", aiosh_core::secret_data_model::MAX_SECRET_PAYLOAD_SIZE));
+                    }
+                    if let Some(ref sp) = store_path_opt {
+                        if sp.contains("..") {
+                            return Err("ERR_SECRET_PATH_TRAVERSAL: store_path contains invalid components".into());
+                        }
+                    }
+
+                    let path = match store_path_opt {
+                        Some(ref p) => std::path::PathBuf::from(p),
+                        None => get_secrets_store_path(),
+                    };
+                    let mut srv = load_safe_secret_service(&path);
+                    srv.rotate_secret(id, val.as_bytes()).map_err(|e| format!("ERR_SECRET_ROTATE_FAILED: {}", e))?;
+                    srv.save_to_path(&path).map_err(|e| format!("ERR_SECRET_PERSISTENCE_FAILED: {}", e))?;
+                    let meta = srv.get_metadata(id).map_err(|e| format!("ERR_SECRET_NOT_FOUND: {}", e))?;
+
+                    Ok(json!({
+                        "ok": true,
+                        "id": id,
+                        "version": meta.version,
+                        "fingerprint": meta.fingerprint
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.secret.rotate", "secret.rotate",
+                    &arguments,
+                    None, None, false,
+                    dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.secret.revoke" => {
+                let id_opt = arguments.get("id").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = move || -> Result<Value, String> {
+                    let id = id_opt.as_deref().ok_or_else(|| "ERR_SECRET_INVALID_INPUT: missing required parameter 'id'".to_string())?;
+                    if let Some(ref sp) = store_path_opt {
+                        if sp.contains("..") {
+                            return Err("ERR_SECRET_PATH_TRAVERSAL: store_path contains invalid components".into());
+                        }
+                    }
+
+                    let path = match store_path_opt {
+                        Some(ref p) => std::path::PathBuf::from(p),
+                        None => get_secrets_store_path(),
+                    };
+                    let mut srv = load_safe_secret_service(&path);
+                    srv.revoke_secret(id).map_err(|e| format!("ERR_SECRET_REVOKE_FAILED: {}", e))?;
+                    srv.save_to_path(&path).map_err(|e| format!("ERR_SECRET_PERSISTENCE_FAILED: {}", e))?;
+
+                    Ok(json!({
+                        "ok": true,
+                        "id": id,
+                        "state": "revoked"
+                    }))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.secret.revoke", "secret.revoke",
+                    &arguments,
+                    None, None, false,
+                    dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
             "aios.pentest.nmap" => {
                 let target = arguments.get("target").and_then(|v| v.as_str()).unwrap_or("");
                 let timeout = arguments.get("timeout_s").and_then(|v| v.as_u64()).unwrap_or(60);
@@ -11751,6 +11996,130 @@ mod tests {
             "store_path": store_str
         }));
         assert_eq!(res_prune.get("ok").and_then(|v| v.as_bool()), Some(true));
+
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+    }
+
+    #[test]
+    fn test_mcp_secret_tools_execution() {
+        let mut server = Server::open();
+
+        // 1. Tool advertisement
+        let manifest = server.tool_manifest();
+        let tool_names: std::collections::HashSet<_> = manifest
+            .iter()
+            .filter_map(|t| t.get("name").and_then(|v| v.as_str()))
+            .collect();
+        for expected in &[
+            "aios.secret.store",
+            "aios.secret.get",
+            "aios.secret.list",
+            "aios.secret.rotate",
+            "aios.secret.revoke",
+        ] {
+            assert!(tool_names.contains(expected), "manifest missing {}", expected);
+        }
+
+        let tmp_dir = std::env::temp_dir().join(format!("aiosh_mcp_sec_test_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&tmp_dir);
+        let store_path = tmp_dir.join("vault.json");
+        let store_str = store_path.to_string_lossy().to_string();
+
+        // 2. Traversal rejection
+        let res_traversal = server.call_tool("aios.secret.list", &json!({
+            "store_path": "../forbidden/vault.json"
+        }));
+        assert_eq!(res_traversal.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 3. Store validation error (missing required fields)
+        let res_bad_store = server.call_tool("aios.secret.store", &json!({
+            "name": "Missing ID",
+            "kind": "api_key",
+            "store_path": store_str
+        }));
+        assert_eq!(res_bad_store.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 4. Store secret successfully
+        let res_store = server.call_tool("aios.secret.store", &json!({
+            "id": "sec_test_mcp_key",
+            "name": "MCP Secret API Key",
+            "kind": "api_key",
+            "value": "mcp_secret_value_12345",
+            "scope": "actor",
+            "target": "mcp-agent",
+            "store_path": store_str
+        }));
+        assert_eq!(res_store.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_store.pointer("/metadata/id").and_then(|v| v.as_str()), Some("sec_test_mcp_key"));
+
+        // 5. Get secret: masked by default
+        let res_get_masked = server.call_tool("aios.secret.get", &json!({
+            "id": "sec_test_mcp_key",
+            "store_path": store_str
+        }));
+        assert_eq!(res_get_masked.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_get_masked.get("exposed").and_then(|v| v.as_bool()), Some(false));
+        let masked_val = res_get_masked.get("value").and_then(|v| v.as_str()).unwrap();
+        assert_ne!(masked_val, "mcp_secret_value_12345");
+        assert!(masked_val.contains("...") || masked_val.contains("********"));
+
+        // 6. Get secret with expose: true
+        let res_get_exposed = server.call_tool("aios.secret.get", &json!({
+            "id": "sec_test_mcp_key",
+            "expose": true,
+            "store_path": store_str
+        }));
+        assert_eq!(res_get_exposed.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_get_exposed.get("exposed").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_get_exposed.get("value").and_then(|v| v.as_str()), Some("mcp_secret_value_12345"));
+
+        // 7. Get non-existent secret
+        let res_get_missing = server.call_tool("aios.secret.get", &json!({
+            "id": "sec_missing_key",
+            "store_path": store_str
+        }));
+        assert_eq!(res_get_missing.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 8. List secrets
+        let res_list = server.call_tool("aios.secret.list", &json!({
+            "store_path": store_str
+        }));
+        assert_eq!(res_list.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_list.get("count").and_then(|v| v.as_u64()), Some(1));
+        let list_str = res_list.to_string();
+        assert!(!list_str.contains("mcp_secret_value_12345"), "List leaked raw secret payload!");
+
+        // 9. Rotate secret
+        let res_rotate = server.call_tool("aios.secret.rotate", &json!({
+            "id": "sec_test_mcp_key",
+            "value": "mcp_secret_rotated_67890",
+            "store_path": store_str
+        }));
+        assert_eq!(res_rotate.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_rotate.get("version").and_then(|v| v.as_u64()), Some(2));
+
+        // Verify exposed get returns rotated value
+        let res_get_rotated = server.call_tool("aios.secret.get", &json!({
+            "id": "sec_test_mcp_key",
+            "expose": true,
+            "store_path": store_str
+        }));
+        assert_eq!(res_get_rotated.get("value").and_then(|v| v.as_str()), Some("mcp_secret_rotated_67890"));
+
+        // 10. Revoke secret
+        let res_revoke = server.call_tool("aios.secret.revoke", &json!({
+            "id": "sec_test_mcp_key",
+            "store_path": store_str
+        }));
+        assert_eq!(res_revoke.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_revoke.get("state").and_then(|v| v.as_str()), Some("revoked"));
+
+        // 11. Accessing revoked secret is denied
+        let res_get_revoked = server.call_tool("aios.secret.get", &json!({
+            "id": "sec_test_mcp_key",
+            "store_path": store_str
+        }));
+        assert_eq!(res_get_revoked.get("ok").and_then(|v| v.as_bool()), Some(false));
 
         let _ = std::fs::remove_dir_all(&tmp_dir);
     }

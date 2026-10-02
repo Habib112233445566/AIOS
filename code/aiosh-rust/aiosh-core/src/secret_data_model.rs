@@ -359,6 +359,12 @@ impl SecretValue {
     }
 }
 
+impl fmt::Debug for SecretValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "SecretValue({})", self.masked_display())
+    }
+}
+
 /// Zeroize memory upon Drop.
 impl Drop for SecretValue {
     fn drop(&mut self) {

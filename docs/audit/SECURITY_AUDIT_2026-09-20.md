@@ -5390,3 +5390,47 @@ Tasks completed: **T-02581 through T-02610** (30 consecutive tasks executed unde
 - Task ledger state: 2,610 completed, 0 orphans, valid state.
 - Security status: **PASS / CLEAN / VERIFIED**. Task pointer advances to `T-02611`.
 
+
+
+---
+
+# ADDENDUM 39 — 2026-10-02: Secrets Handling Core Service, CLI & MCP Tool Surfaces (T-02611..T-02640)
+
+## 1. Scope & Progress
+Tasks completed: **T-02611 through T-02640** (30 consecutive tasks executed under strict No-Skip governance):
+- **T-02611..T-02620 (Secrets Handling Sub-Epic 2: Core Service Subsystem)**:
+  - T-02611..T-02614: Research, specification, scaffolding, and implementation of `SecretService` in `code/aiosh-rust/aiosh-core/src/secret_service.rs` managing in-memory secret registry, scope-checked retrieval (`SecretScope::allows`), rotation, and revocation.
+  - T-02615..T-02616: Unit testing (`test_secret_service.rs` 9/9 pass) and multi-actor integration testing (`test_secret_service_integration.rs` 1/1 pass).
+  - T-02617..T-02618: Security review and hardening: store file size ceiling (1 MiB), vault capacity ceiling (1,024 entries), symlink rejection via `symlink_metadata`, atomic write-and-replace (`.tmp.{pid}.{nanos}`) with auto-cleanup, and redacted `Debug` implementations on `SecretValue` and `SecretService`.
+  - T-02619..T-02620: Documentation in `docs/SPEC-SECRETS-SERVICE.md` and Sub-Epic 2 milestone closure (`T-02620-core-service-verification-evidenc.md`).
+- **T-02621..T-02630 (Secrets Handling Sub-Epic 3: CLI Surface Subsystem)**:
+  - T-02621..T-02624: Research, specification, scaffolding, and implementation of `aiosh secret` and alias `aiosh sec` in `code/aiosh-rust/aiosh-cli/src/main.rs` covering subcommands `store`, `get`, `list`, `rotate`, and `revoke`.
+  - T-02625..T-02626: Unit testing (`secret_cli_tests` in `aiosh-cli` 3/3 pass) and end-to-end Python subprocess integration testing (`test_secret_cli.py` 10/10 scenarios pass).
+  - T-02627..T-02628: Security review and hardening: default masked terminal display, `--expose` plaintext opt-in flag, directory traversal (`..`) defense, payload ceiling checks (64 KiB), and terminal sanitization via `sanitize_terminal()`.
+  - T-02629..T-02630: Documentation in `docs/SPEC-SECRETS-CLI.md` and Sub-Epic 3 milestone closure (`T-02630-cli-surface-verification-evidenc.md`).
+- **T-02631..T-02640 (Secrets Handling Sub-Epic 4: MCP/API Surface Subsystem)**:
+  - T-02631..T-02634: Research, specification, scaffolding, and implementation of 5 MCP tools in `code/aiosh-rust/aiosh-mcp/src/main.rs`: `aios.secret.store`, `aios.secret.get`, `aios.secret.list`, `aios.secret.rotate`, `aios.secret.revoke`.
+  - T-02635..T-02636: Unit testing (`test_mcp_secret_tools_execution` in `aiosh-mcp` 1/1 pass) and Python stdio JSON-RPC integration testing (`test_secret_mcp.py` 10/10 scenarios pass).
+  - T-02637..T-02638: Security review and hardening: prompt injection and bulk credential harvesting mitigations (payload omitted from list schema), masked default retrieval, scope hierarchy verification, size caps (64 KiB payload, 1 MiB store), explicit error envelopes (`ERR_SECRET_*`), and audit trail recording via `dispatch::recorded_call`.
+  - T-02639..T-02640: Documentation in `docs/SPEC-SECRETS-MCP.md` and Sub-Epic 4 / Batch 6 milestone closure (`T-02640-mcp-api-surface-verification-evidenc.md`).
+
+## 2. Invariants & Controls Audited
+1. **Scoped Access Authorization (`SECSVC1`, `SECMCP5`)**: In-depth scope containment evaluation (`Global > Environment > Actor > Session`) prevents unauthorized cross-actor secret ingestion.
+2. **Information Disclosure Shielding (`SECCLI1`, `SECMCP1`, `SECMCP2`)**: Plaintext payloads require explicit opt-in (`--expose` or `expose: true`); list operations strictly return `SecretMetadata` with zero payload bytes.
+3. **Atomic File Persistence & Fault Cleanliness (`SECSVC4`)**: Storage serialization writes to temporary paths before renaming, cleanly removing temporary buffers on failure.
+4. **Denial of Service & File Hijacking Defense (`SECSVC3`, `SECSVC5`, `SECCLI3`, `SECMCP4`)**: Vault file sizes capped at 1 MiB, entry count capped at 1,024, payloads capped at 64 KiB, with immediate rejection of symlinks and path traversal attempts (`..`).
+5. **Memory Dump Obfuscation (`SECSVC7`)**: Custom `Debug` formatting on `SecretValue` and `SecretService` redacts sensitive memory buffers from panic traces and loggers.
+6. **Zero Compiler Warnings**: Workspace builds with strictly 0 warnings and 0 errors across all 4 crates (`aiosh-core`, `aiosh-cli`, `aiosh-mcp`, `aiosh-sandbox`).
+
+## 3. Audit Certification
+- `test_secret_service.rs`: 9/9 PASS
+- `test_secret_service_integration.rs`: 1/1 PASS
+- `aiosh-cli secret_cli_tests`: 3/3 PASS
+- `test_secret_cli.py`: 10/10 PASS
+- `aiosh-mcp test_mcp_secret_tools_execution`: 1/1 PASS
+- `test_secret_mcp.py`: 10/10 PASS
+- `test_secret_data_model.rs`: 8/8 PASS
+- `test_secret_data_model_integration.rs`: 2/2 PASS
+- Workspace compiler status: `cargo check --workspace` clean (0 warnings, 0 errors).
+- Task ledger state: 2,640 completed, 0 orphans, valid state.
+- Security status: **PASS / CLEAN / VERIFIED**. Task pointer advances to `T-02641`.

@@ -229,8 +229,9 @@ fn main() {
         Some("pep") => cmd_pep(&args[1..]),
         Some("sandbox") | Some("sb") => cmd_sandbox(&args[1..]),
         Some("privilege") | Some("priv") => cmd_privilege(&args[1..]),
+        Some("secret") | Some("sec") => cmd_secret(&args[1..]),
         Some("--help") | Some("-h") | None => {
-            println!("aiosh — AIOS shell CLI (Rust)\n\nUsage: aiosh <status|run|agent|audit|grant|pentest|classify|task|ci|release|backup|toolchain|doc|evidence|repo|secrets|triage|handoff|distro|image|package|service|session|layout|mod|hw|net|update|capability|pep|sandbox> ...\n\n  aiosh audit <tail|verify|rotate|segments|seen|query|ancestry|sign-verify|inspect|config>  Audit ring & chain extensions control\n  aiosh task <status|done|block|unblock|skip|rebuild|check>  Task ledger control\n  aiosh ci <show|failures|check|config|metrics> [--file PATH]  CI smoke reports\n  aiosh release generate  Create bootable ISO\n  aiosh backup create  Create system snapshot zip\n  aiosh toolchain check [--config <path>]  Verify host environment against ToolchainManifest\n  aiosh toolchain show [--config <path>]   Display the resolved ToolchainManifest\n  aiosh doc <show|check|search>  Documentation Index Control\n  aiosh evidence <verify|hash|scan>   Evidence & Audit Trail Control\n  aiosh repo <health|check>  Repository Health Diagnostics\n  aiosh secrets <scan|check> [--config <path>]  Secrets & Access Hygiene Scanner\n  aiosh triage <list|show|record|resolve|ingest|check>  Regression Triage Manager\n  aiosh handoff <list|show|initiate|accept|reject|complete|cancel>  Agent Handoff Protocol Manager\n  aiosh distro <list|show|evaluate|recommend|policy|stats|check>  Linux Distro Selection & Justification Manager\n  aiosh image <list|show|plan|filter>  Linux Base Image Build & Packaging Manager\n  aiosh package <list|show|search|plan|apply|validate>  Linux Package Management & Store Control\n  aiosh service <validate|list|show|status|action|start|stop|restart|reload|order>  Init & Service Supervision Control\n  aiosh session <validate|list|show|status|create|action|activate|lock|unlock|terminate|config>  User Session Bootstrap Control\n  aiosh layout <list|show|validate|check|probe|diff|fstab|register|set-active|remove|import-fstab>  Filesystem Layout & Target Partitioning Manager\n  aiosh mod <list|show|blacklist|unblacklist|options|autoload|unautoload|preset|export>  Kernel Module Management\n  aiosh hw <scan|list|show|summary|verify>  Hardware Detection & Inventory Control\n  aiosh net <list|show|routes|dns|state|up|down>  Network Bootstrap & Interface Control\n  aiosh update <status|slots|check|apply|confirm|rollback>  System Update & Dual-Slot Control\n  aiosh capability <list|show|issue|attenuate|revoke|check|prune>  Capability & Zero-Ambient Authority Control\n  aiosh pep <evaluate|rule-add|rule-list|rule-remove|status|report|doc>  PEP Decision Engine & Policy Control\n  aiosh sandbox <profiles|probe|exec>  Sandbox Containment & Execution Control");
+            println!("aiosh — AIOS shell CLI (Rust)\n\nUsage: aiosh <status|run|agent|audit|grant|pentest|classify|task|ci|release|backup|toolchain|doc|evidence|repo|secrets|triage|handoff|distro|image|package|service|session|layout|mod|hw|net|update|capability|pep|sandbox|privilege|secret> ...\n\n  aiosh audit <tail|verify|rotate|segments|seen|query|ancestry|sign-verify|inspect|config>  Audit ring & chain extensions control\n  aiosh task <status|done|block|unblock|skip|rebuild|check>  Task ledger control\n  aiosh ci <show|failures|check|config|metrics> [--file PATH]  CI smoke reports\n  aiosh release generate  Create bootable ISO\n  aiosh backup create  Create system snapshot zip\n  aiosh toolchain check [--config <path>]  Verify host environment against ToolchainManifest\n  aiosh toolchain show [--config <path>]   Display the resolved ToolchainManifest\n  aiosh doc <show|check|search>  Documentation Index Control\n  aiosh evidence <verify|hash|scan>   Evidence & Audit Trail Control\n  aiosh repo <health|check>  Repository Health Diagnostics\n  aiosh secrets <scan|check> [--config <path>]  Secrets & Access Hygiene Scanner\n  aiosh triage <list|show|record|resolve|ingest|check>  Regression Triage Manager\n  aiosh handoff <list|show|initiate|accept|reject|complete|cancel>  Agent Handoff Protocol Manager\n  aiosh distro <list|show|evaluate|recommend|policy|stats|check>  Linux Distro Selection & Justification Manager\n  aiosh image <list|show|plan|filter>  Linux Base Image Build & Packaging Manager\n  aiosh package <list|show|search|plan|apply|validate>  Linux Package Management & Store Control\n  aiosh service <validate|list|show|status|action|start|stop|restart|reload|order>  Init & Service Supervision Control\n  aiosh session <validate|list|show|status|create|action|activate|lock|unlock|terminate|config>  User Session Bootstrap Control\n  aiosh layout <list|show|validate|check|probe|diff|fstab|register|set-active|remove|import-fstab>  Filesystem Layout & Target Partitioning Manager\n  aiosh mod <list|show|blacklist|unblacklist|options|autoload|unautoload|preset|export>  Kernel Module Management\n  aiosh hw <scan|list|show|summary|verify>  Hardware Detection & Inventory Control\n  aiosh net <list|show|routes|dns|state|up|down>  Network Bootstrap & Interface Control\n  aiosh update <status|slots|check|apply|confirm|rollback>  System Update & Dual-Slot Control\n  aiosh capability <list|show|issue|attenuate|revoke|check|prune>  Capability & Zero-Ambient Authority Control\n  aiosh pep <evaluate|rule-add|rule-list|rule-remove|status|report|doc>  PEP Decision Engine & Policy Control\n  aiosh sandbox <profiles|probe|exec>  Sandbox Containment & Execution Control\n  aiosh privilege <eval|status|policy-list|policy-add|policy-remove|report>  Privilege Escalation Prevention Control\n  aiosh secret <store|get|list|rotate|revoke>  Secrets Handling & Runtime Vault Control");
             0
         }
         Some(other) => {
@@ -17909,6 +17910,418 @@ fn cmd_privilege(args: &[String]) -> i32 {
     }
 }
 
+fn cmd_secret(args: &[String]) -> i32 {
+    let mut ctx = open_context();
+    let sub = args.first().map(|s| s.as_str());
+    let rest = if args.len() > 1 { &args[1..] } else { &[] };
+    let is_json = has_flag(rest, "--json");
+
+    let store_path_str = parse_flag(rest, "--store")
+        .or_else(|| std::env::var("AIOS_SECRETS_STORE_PATH").ok())
+        .or_else(|| std::env::var("AIOS_SECRETS_STORE").ok())
+        .unwrap_or_else(|| format!("{}/secrets_vault.json", ai_home()));
+    let store_path = std::path::Path::new(&store_path_str);
+
+    if store_path_str.len() > 1024 || store_path_str.contains("..") || store_path_str.chars().any(|c| c.is_control()) {
+        let msg = "invalid store path: path contains traversal or control characters or exceeds 1024 bytes";
+        classify_and_emit(
+            &mut ctx, "secret", sub.unwrap_or("unknown"), json!({ "error": msg }),
+            "failure", None, Some("Invalid store path"), "operator", None,
+        );
+        if is_json {
+            println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_PATH", "message": msg } }));
+        } else {
+            eprintln!("{}", sanitize_terminal(msg));
+        }
+        return 2;
+    }
+
+    if store_path.exists() {
+        if let Ok(metadata) = std::fs::symlink_metadata(store_path) {
+            if metadata.len() > 1024 * 1024 {
+                let msg = "store file exceeds maximum permitted size of 1 MiB";
+                classify_and_emit(
+                    &mut ctx, "secret", sub.unwrap_or("unknown"), json!({ "error": msg }),
+                    "failure", None, Some("Oversized store file"), "operator", None,
+                );
+                if is_json {
+                    println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "STORE_OVERSIZED", "message": msg } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(msg));
+                }
+                return 1;
+            }
+        }
+    }
+
+    let mut service = if store_path.exists() {
+        aiosh_core::secret_service::SecretService::load_from_path(store_path).unwrap_or_default()
+    } else {
+        aiosh_core::secret_service::SecretService::new()
+    };
+
+    match sub {
+        Some("store") => {
+            let id = match parse_flag(rest, "--id") {
+                Some(i) => i,
+                None => {
+                    let msg = "missing required flag: --id <id>";
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_FLAG", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(msg));
+                    }
+                    return 2;
+                }
+            };
+            let name = match parse_flag(rest, "--name") {
+                Some(n) => n,
+                None => {
+                    let msg = "missing required flag: --name <name>";
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_FLAG", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(msg));
+                    }
+                    return 2;
+                }
+            };
+            let kind_str = match parse_flag(rest, "--kind") {
+                Some(k) => k,
+                None => {
+                    let msg = "missing required flag: --kind <kind>";
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_FLAG", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(msg));
+                    }
+                    return 2;
+                }
+            };
+            let kind = match aiosh_core::secret_data_model::SecretKind::parse_kind(&kind_str) {
+                Some(k) => k,
+                None => {
+                    let msg = format!("invalid secret kind: {}", kind_str);
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_KIND", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    return 2;
+                }
+            };
+
+            let scope_type = parse_flag(rest, "--scope").unwrap_or_else(|| "global".to_string());
+            let target_opt = parse_flag(rest, "--target");
+            let scope = match aiosh_core::secret_data_model::SecretScope::parse_scope(&scope_type, target_opt.as_deref()) {
+                Ok(s) => s,
+                Err(e) => {
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_SCOPE", "message": e } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&e));
+                    }
+                    return 2;
+                }
+            };
+
+            let value_str = parse_flag(rest, "--value").unwrap_or_default();
+            let entry = match aiosh_core::secret_data_model::SecretEntry::new(
+                &id,
+                &name,
+                kind,
+                scope,
+                value_str.as_bytes(),
+            ) {
+                Ok(e) => e,
+                Err(e) => {
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "STORE_ERROR", "message": e } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&e));
+                    }
+                    return 1;
+                }
+            };
+
+            let mut entry = entry;
+            let desc = parse_flag(rest, "--desc").or_else(|| parse_flag(rest, "--description")).unwrap_or_default();
+            entry.metadata.description = desc;
+            if let Some(labels_arg) = parse_flag(rest, "--labels") {
+                for pair in labels_arg.split(',') {
+                    let mut parts = pair.splitn(2, '=');
+                    if let (Some(k), Some(v)) = (parts.next(), parts.next()) {
+                        entry.metadata.labels.insert(k.trim().to_string(), v.trim().to_string());
+                    }
+                }
+            }
+            if let Err(e) = entry.metadata.validate() {
+                if is_json {
+                    println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "VALIDATION_ERROR", "message": e } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(&e));
+                }
+                return 2;
+            }
+
+            let meta = entry.metadata.clone();
+            if let Err(e) = service.store_secret(entry) {
+                if is_json {
+                    println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "STORE_ERROR", "message": e } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(&e));
+                }
+                return 1;
+            }
+
+            if let Err(e) = service.save_to_path(store_path) {
+                if is_json {
+                    println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "SAVE_ERROR", "message": e } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(&e));
+                }
+                return 1;
+            }
+
+            classify_and_emit(
+                &mut ctx, "secret", "store", json!({ "id": &id, "name": &name, "kind": meta.kind.as_str() }),
+                "success", None, Some("Stored secret in vault"), "operator", None,
+            );
+
+            if is_json {
+                println!("{}", json!({ "code": 0, "data": meta, "error": serde_json::Value::Null }));
+            } else {
+                println!("Secret stored successfully:");
+                println!("  ID:          {}", meta.id);
+                println!("  Name:        {}", meta.name);
+                println!("  Kind:        {}", meta.kind);
+                println!("  Scope:       {}", meta.scope);
+                println!("  Version:     {}", meta.version);
+                println!("  Fingerprint: {}", meta.fingerprint);
+            }
+            0
+        }
+        Some("get") => {
+            let id = match parse_flag(rest, "--id") {
+                Some(i) => i,
+                None => {
+                    let msg = "missing required flag: --id <id>";
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_FLAG", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(msg));
+                    }
+                    return 2;
+                }
+            };
+
+            let scope_type = parse_flag(rest, "--scope").unwrap_or_else(|| "global".to_string());
+            let target_opt = parse_flag(rest, "--target");
+            let caller_scope = match aiosh_core::secret_data_model::SecretScope::parse_scope(&scope_type, target_opt.as_deref()) {
+                Ok(s) => s,
+                Err(e) => {
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_SCOPE", "message": e } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&e));
+                    }
+                    return 2;
+                }
+            };
+
+            let meta = match service.get_metadata(&id) {
+                Ok(m) => m,
+                Err(e) => {
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "NOT_FOUND", "message": e } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&e));
+                    }
+                    return 1;
+                }
+            };
+
+            let val = match service.get_secret(&id, &caller_scope) {
+                Ok(v) => v,
+                Err(e) => {
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "ACCESS_DENIED", "message": e } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&e));
+                    }
+                    return 1;
+                }
+            };
+
+            let expose = has_flag(rest, "--expose");
+            let display_val = if expose {
+                val.as_str().unwrap_or("[BINARY]").to_string()
+            } else {
+                val.masked_display()
+            };
+
+            classify_and_emit(
+                &mut ctx, "secret", "get", json!({ "id": &id, "exposed": expose }),
+                "success", None, Some("Retrieved secret from vault"), "operator", None,
+            );
+
+            if is_json {
+                println!("{}", json!({
+                    "code": 0,
+                    "data": {
+                        "metadata": meta,
+                        "value": display_val,
+                        "exposed": expose
+                    },
+                    "error": serde_json::Value::Null
+                }));
+            } else {
+                println!("Secret '{}':", meta.id);
+                println!("  Name:    {}", meta.name);
+                println!("  Kind:    {}", meta.kind);
+                println!("  Scope:   {}", meta.scope);
+                println!("  State:   {}", meta.state);
+                println!("  Value:   {}", display_val);
+            }
+            0
+        }
+        Some("list") => {
+            let filter_kind = parse_flag(rest, "--kind").and_then(|k| aiosh_core::secret_data_model::SecretKind::parse_kind(&k));
+            let filter_scope = if let Some(st) = parse_flag(rest, "--scope") {
+                let target = parse_flag(rest, "--target");
+                aiosh_core::secret_data_model::SecretScope::parse_scope(&st, target.as_deref()).ok()
+            } else {
+                None
+            };
+
+            let secrets = service.list_metadata(filter_kind, filter_scope.as_ref());
+
+            classify_and_emit(
+                &mut ctx, "secret", "list", json!({ "count": secrets.len() }),
+                "success", None, Some("Listed secret metadata"), "operator", None,
+            );
+
+            if is_json {
+                println!("{}", json!({ "code": 0, "data": secrets, "error": serde_json::Value::Null }));
+            } else {
+                println!("Secrets Vault ({} total):", secrets.len());
+                if secrets.is_empty() {
+                    println!("  (no secrets found)");
+                } else {
+                    for s in &secrets {
+                        println!("  - [{}] {} ({}, scope: {}, state: {})", s.id, s.name, s.kind, s.scope, s.state);
+                    }
+                }
+            }
+            0
+        }
+        Some("rotate") => {
+            let id = match parse_flag(rest, "--id") {
+                Some(i) => i,
+                None => {
+                    let msg = "missing required flag: --id <id>";
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_FLAG", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(msg));
+                    }
+                    return 2;
+                }
+            };
+            let new_val = match parse_flag(rest, "--value") {
+                Some(v) => v,
+                None => {
+                    let msg = "missing required flag: --value <new_value>";
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_FLAG", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(msg));
+                    }
+                    return 2;
+                }
+            };
+
+            if let Err(e) = service.rotate_secret(&id, new_val.as_bytes()) {
+                if is_json {
+                    println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "ROTATE_ERROR", "message": e } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(&e));
+                }
+                return 1;
+            }
+
+            let _ = service.save_to_path(store_path);
+            let meta = service.get_metadata(&id).unwrap();
+
+            classify_and_emit(
+                &mut ctx, "secret", "rotate", json!({ "id": &id, "version": meta.version }),
+                "success", None, Some("Rotated secret payload"), "operator", None,
+            );
+
+            if is_json {
+                println!("{}", json!({ "code": 0, "data": meta, "error": serde_json::Value::Null }));
+            } else {
+                println!("Secret '{}' rotated to version {}.", id, meta.version);
+            }
+            0
+        }
+        Some("revoke") => {
+            let id = match parse_flag(rest, "--id") {
+                Some(i) => i,
+                None => {
+                    let msg = "missing required flag: --id <id>";
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_FLAG", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(msg));
+                    }
+                    return 2;
+                }
+            };
+
+            if let Err(e) = service.revoke_secret(&id) {
+                if is_json {
+                    println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "REVOKE_ERROR", "message": e } }));
+                } else {
+                    eprintln!("{}", sanitize_terminal(&e));
+                }
+                return 1;
+            }
+
+            let _ = service.save_to_path(store_path);
+
+            classify_and_emit(
+                &mut ctx, "secret", "revoke", json!({ "id": &id }),
+                "success", None, Some("Revoked secret"), "operator", None,
+            );
+
+            if is_json {
+                println!("{}", json!({ "code": 0, "data": { "id": id, "state": "revoked" }, "error": serde_json::Value::Null }));
+            } else {
+                println!("Secret '{}' successfully revoked.", id);
+            }
+            0
+        }
+        Some("--help") | Some("-h") | None => {
+            println!("aiosh secret — Secrets Handling & Runtime Vault Control\n\nUsage: aiosh secret <store|get|list|rotate|revoke> [OPTIONS]\n\nCommands:\n  store   Store a secret (--id <ID> --name <NAME> --kind <KIND> [--scope <SCOPE>] [--target <TARGET>] [--value <VAL>] [--store <PATH>])\n  get     Retrieve a secret (--id <ID> [--scope <SCOPE>] [--target <TARGET>] [--expose] [--store <PATH>])\n  list    List vaulted secret metadata ([--kind <KIND>] [--scope <SCOPE>] [--target <TARGET>] [--store <PATH>])\n  rotate  Rotate secret payload (--id <ID> --value <NEW_VAL> [--store <PATH>])\n  revoke  Revoke a secret (--id <ID> [--store <PATH>])");
+            0
+        }
+        Some(unknown) => {
+            let msg = format!("unknown secret subcommand: {}", unknown);
+            classify_and_emit(
+                &mut ctx, "secret", unknown, json!({ "error": &msg }),
+                "failure", None, Some("Unknown subcommand"), "operator", None,
+            );
+            if is_json {
+                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "UNKNOWN_SUBCOMMAND", "message": msg } }));
+            } else {
+                eprintln!("{}", sanitize_terminal(&msg));
+            }
+            2
+        }
+    }
+}
+
 #[cfg(test)]
 mod update_cli_tests {
     use super::*;
@@ -18465,6 +18878,79 @@ mod privilege_cli_tests {
         let _ = std::fs::remove_dir_all(&tmp_dir);
     }
 }
+
+#[cfg(test)]
+mod secret_cli_tests {
+    use super::*;
+
+    fn s(v: &[&str]) -> Vec<String> {
+        v.iter().map(|x| x.to_string()).collect()
+    }
+
+    #[test]
+    fn test_secret_cli_help_and_unknown() {
+        assert_eq!(cmd_secret(&[]), 0);
+        assert_eq!(cmd_secret(&s(&["--help"])), 0);
+        assert_eq!(cmd_secret(&s(&["-h"])), 0);
+        assert_eq!(cmd_secret(&s(&["unknown_cmd"])), 2);
+    }
+
+    #[test]
+    fn test_secret_cli_path_hygiene() {
+        assert_eq!(cmd_secret(&s(&["list", "--store", "../forbidden/vault.json"])), 2);
+    }
+
+    #[test]
+    fn test_secret_cli_lifecycle() {
+        let tmp_dir = std::env::temp_dir().join(format!("aiosh_secret_cli_test_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&tmp_dir);
+        let store = tmp_dir.join("vault.json").to_string_lossy().to_string();
+
+        // 1. Missing required flags on store -> 2
+        assert_eq!(cmd_secret(&s(&["store", "--name", "Foo", "--store", &store])), 2);
+
+        // 2. Store valid secret -> 0
+        assert_eq!(cmd_secret(&s(&[
+            "store",
+            "--id", "sec_cli_key",
+            "--name", "CLI API Key",
+            "--kind", "api_key",
+            "--scope", "global",
+            "--value", "secret_value_12345678",
+            "--store", &store,
+        ])), 0);
+
+        // 3. Get secret (masked by default) -> 0
+        assert_eq!(cmd_secret(&s(&["get", "--id", "sec_cli_key", "--store", &store])), 0);
+        assert_eq!(cmd_secret(&s(&["get", "--id", "sec_cli_key", "--expose", "--store", &store])), 0);
+        assert_eq!(cmd_secret(&s(&["get", "--id", "sec_cli_key", "--json", "--store", &store])), 0);
+
+        // 4. Get non-existent secret -> 1
+        assert_eq!(cmd_secret(&s(&["get", "--id", "non_existent", "--store", &store])), 1);
+
+        // 5. List secrets -> 0
+        assert_eq!(cmd_secret(&s(&["list", "--store", &store])), 0);
+        assert_eq!(cmd_secret(&s(&["list", "--kind", "api_key", "--store", &store])), 0);
+        assert_eq!(cmd_secret(&s(&["list", "--store", &store, "--json"])), 0);
+
+        // 6. Rotate secret -> 0
+        assert_eq!(cmd_secret(&s(&[
+            "rotate",
+            "--id", "sec_cli_key",
+            "--value", "rotated_secret_87654321",
+            "--store", &store,
+        ])), 0);
+
+        // 7. Revoke secret -> 0
+        assert_eq!(cmd_secret(&s(&["revoke", "--id", "sec_cli_key", "--store", &store])), 0);
+
+        // 8. Get revoked secret fails with 1
+        assert_eq!(cmd_secret(&s(&["get", "--id", "sec_cli_key", "--store", &store])), 1);
+
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+    }
+}
+
 
 
 
