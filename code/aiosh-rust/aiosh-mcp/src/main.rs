@@ -101,7 +101,10 @@ impl Server {
             json!({"name": "aios.privilege.config", "description": "Inspect Privilege Escalation Prevention configuration parameters, limits, and defaults", "inputSchema": {"type": "object", "properties": {"config_path": {"type": "string"}}, "additionalProperties": false}}),
             json!({"name": "aios.privilege.policy", "description": "Inspect or evaluate Privilege Escalation Prevention security policy", "inputSchema": {"type": "object", "properties": {"policy_path": {"type": "string"}, "mode": {"type": "string", "enum": ["enforcing", "permissive", "disabled"]}}, "additionalProperties": false}}),
             json!({"name": "aios.privilege.stats", "description": "Retrieve comprehensive Privilege Escalation Prevention telemetry and observability report", "inputSchema": {"type": "object", "properties": {"config_path": {"type": "string"}}, "additionalProperties": false}}),
-            json!({"name": "aios.privilege.observability", "description": "Retrieve comprehensive Privilege Escalation Prevention telemetry and observability report", "inputSchema": {"type": "object", "properties": {"config_path": {"type": "string"}}, "additionalProperties": false}})
+            json!({"name": "aios.privilege.observability", "description": "Retrieve comprehensive Privilege Escalation Prevention telemetry and observability report", "inputSchema": {"type": "object", "properties": {"config_path": {"type": "string"}}, "additionalProperties": false}}),
+            json!({"name": "aios.privilege.doc", "description": "Offline reference manual and search index for Privilege Escalation Prevention", "inputSchema": {"type": "object", "properties": {"action": {"type": "string", "enum": ["list", "get", "search"]}, "topic_id": {"type": "string"}, "query": {"type": "string"}}, "additionalProperties": false}}),
+            json!({"name": "aios.privilege.validate", "description": "Diagnostically validate the Privilege Escalation Prevention state store file", "inputSchema": {"type": "object", "properties": {"store_path": {"type": "string"}}, "additionalProperties": false}}),
+            json!({"name": "aios.privilege.repair", "description": "Non-destructively recover and repair the Privilege Escalation Prevention state store file", "inputSchema": {"type": "object", "properties": {"store_path": {"type": "string"}}, "additionalProperties": false}})
         ];
 
         for (name, desc) in [
@@ -6077,6 +6080,110 @@ fn validate_and_open_grant_service(path_str: Option<&str>) -> Result<(std::path:
                 dispatch::recorded_call(
                     &mut self.ring, &self.pep,
                     "aios.privilege.stats", "privilege.stats",
+                    &arguments,
+                    None, None, false,
+                    dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.privilege.doc" => {
+                let action = arguments
+                    .get("action")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("list")
+                    .to_string();
+                let topic_id_opt = arguments.get("topic_id").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let query_opt = arguments.get("query").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+                let f = move || -> Result<Value, String> {
+                    let index = aiosh_core::privilege_doc::PrivilegeDocIndex::new();
+                    match action.as_str() {
+                        "list" => {
+                            let topics = index.list_topics();
+                            let topic_summaries: Vec<Value> = topics
+                                .iter()
+                                .map(|t| json!({
+                                    "id": t.id,
+                                    "title": t.title,
+                                    "category": t.category.as_str(),
+                                    "summary": t.summary,
+                                    "tags": t.tags
+                                }))
+                                .collect();
+                            Ok(json!({
+                                "ok": true,
+                                "tool": "aios.privilege.doc",
+                                "action": "list",
+                                "count": topic_summaries.len(),
+                                "topics": topic_summaries
+                            }))
+                        }
+                        "get" => {
+                            let topic_id = topic_id_opt.as_deref().ok_or_else(|| "missing required parameter: topic_id".to_string())?;
+                            let topic = index.get_topic(topic_id).ok_or_else(|| format!("topic not found: {}", topic_id))?;
+                            let markdown = index.render_markdown(topic_id)?;
+                            Ok(json!({
+                                "ok": true,
+                                "tool": "aios.privilege.doc",
+                                "action": "get",
+                                "topic": topic,
+                                "markdown": markdown
+                            }))
+                        }
+                        "search" => {
+                            let query = query_opt.as_deref().ok_or_else(|| "missing required parameter: query".to_string())?;
+                            let results = index.search(query)?;
+                            Ok(json!({
+                                "ok": true,
+                                "tool": "aios.privilege.doc",
+                                "action": "search",
+                                "query": query,
+                                "count": results.len(),
+                                "results": results
+                            }))
+                        }
+                        other => Err(format!("unknown action '{}'", other)),
+                    }
+                };
+
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.privilege.doc", "privilege.doc",
+                    &arguments,
+                    None, None, false,
+                    dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.privilege.validate" => {
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = move || -> Result<Value, String> {
+                    let path = match store_path_opt {
+                        Some(ref p) => std::path::PathBuf::from(p),
+                        None => get_privilege_store_path(),
+                    };
+                    let report = aiosh_core::privilege_recovery::PrivilegeRecoveryManager::validate_store_file(&path)?;
+                    Ok(json!({"ok": true, "tool": "aios.privilege.validate", "report": report}))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.privilege.validate", "privilege.validate",
+                    &arguments,
+                    None, None, false,
+                    dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.privilege.repair" => {
+                let store_path_opt = arguments.get("store_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = move || -> Result<Value, String> {
+                    let path = match store_path_opt {
+                        Some(ref p) => std::path::PathBuf::from(p),
+                        None => get_privilege_store_path(),
+                    };
+                    let result = aiosh_core::privilege_recovery::PrivilegeRecoveryManager::repair_store_file(&path)?;
+                    Ok(json!({"ok": true, "tool": "aios.privilege.repair", "result": result}))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.privilege.repair", "privilege.repair",
                     &arguments,
                     None, None, false,
                     dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,

@@ -5348,3 +5348,45 @@ Tasks completed: **T-02551 through T-02580** (30 consecutive tasks executed unde
 - Workspace compiler status: `cargo check --workspace` clean (0 warnings, 0 errors).
 - Task ledger state: 2,580 completed, 0 orphans, valid state.
 - Security status: **PASS / CLEAN / VERIFIED**. Task pointer advances to `T-02581`.
+
+
+---
+
+# ADDENDUM 38 — 2026-10-02: Privilege Escalation Prevention Documentation, Recovery & Validation Sub-Epics & Secrets Handling Data Model (T-02581..T-02610)
+
+## 1. Scope & Progress
+Tasks completed: **T-02581 through T-02610** (30 consecutive tasks executed under strict No-Skip governance):
+- **T-02581..T-02590 (Privilege Escalation Prevention Sub-Epic 9: Documentation Subsystem)**:
+  - T-02581..T-02584: Research, specification, scaffolding, and implementation of `PrivilegeDocIndex` in `code/aiosh-rust/aiosh-core/src/privilege_doc.rs`, CLI command `aiosh privilege doc [list|get|search]`, and MCP tool `aios.privilege.doc`.
+  - T-02585..T-02586: Unit testing (`test_privilege_doc.rs` 6/6 pass) and cross-layer integration testing.
+  - T-02587..T-02588: Security review and hardening: query length bounds ($\le 128$ chars), control character rejection, topic ID traversal rejection (`..`), snippet length clamping ($\le 200$ chars), and result count caps ($\le 10$).
+  - T-02589..T-02590: Documentation in `docs/SPEC-PRIVILEGE-DOC.md` and Sub-Epic 9 milestone closure (`T-02590-documentation-verification-evidenc.md`).
+- **T-02591..T-02600 (Privilege Escalation Prevention Sub-Epic 10: Recovery & Validation Subsystem — Full Epic Closure)**:
+  - T-02591..T-02594: Research, specification, scaffolding, and implementation of `PrivilegeRecoveryManager` in `code/aiosh-rust/aiosh-core/src/privilege_recovery.rs`, CLI commands `aiosh privilege validate` / `aiosh privilege repair`, and MCP tools `aios.privilege.validate` / `aios.privilege.repair`.
+  - T-02595..T-02596: Unit testing (`test_privilege_recovery.rs` 6/6 pass) and cross-layer integration testing.
+  - T-02597..T-02598: Security review and hardening: store size bounding (1 MiB max), symlink rejection via `symlink_metadata`, path traversal prevention, context capacity enforcement ($\le 16,384$ entries), fatal flagging and demotion of illegal `SystemKernel` tiers, timestamped backup creation (`.bak.<ts>`), and corrupted store quarantine (`.quarantine.<ts>`).
+  - T-02599..T-02600: Documentation in `docs/SPEC-PRIVILEGE-RECOVERY.md` and Sub-Epic 10 / Epic milestone closure (`T-02600-recovery-validation-verification-evidenc.md`).
+- **T-02601..T-02610 (Secrets Handling Sub-Epic 1: Data Model Subsystem)**:
+  - T-02601..T-02604: Research, specification, scaffolding, and implementation of `code/aiosh-rust/aiosh-core/src/secret_data_model.rs` defining `SecretKind`, `SecretScope`, `SecretState`, `SecretMetadata`, `SecretValue`, and `SecretEntry`.
+  - T-02605..T-02606: Unit testing (`test_secret_data_model.rs` 7/7 pass) and cross-crate integration testing (`test_secret_data_model_integration.rs` 2/2 pass).
+  - T-02607..T-02608: Security review and hardening: volatile memory zeroization flanked by atomic compiler fences on `Drop`, constant-time equality check (`constant_time_eq`), safe masked redaction, payload bounding ($\le 64\text{ KiB}$), and strict label bounds (max 32 entries, max 64 chars per key, max 256 chars per value).
+  - T-02609..T-02610: Documentation in `docs/SPEC-SECRETS-DATA-MODEL.md` and Sub-Epic 1 milestone closure (`T-02610-data-model-verification-evidenc.md`).
+
+## 2. Invariants & Controls Audited
+1. **Canonical Topic Protection & Query Bounds (`PRIVDOC1`..`PRIVDOC5`)**: All 6 privilege topics indexed; queries clamped to 128 characters without control characters or traversal tokens.
+2. **Privilege Store Self-Healing & Demotion (`PRIVRECV1`..`PRIVRECV8`)**: Validation flags and demotes illegal `SystemKernel` tiers to `User`; corrupt payloads quarantined to timestamped files; symlink rejection prevents traversal exploits.
+3. **Volatile Memory Zeroization & Compiler Barrier (`SECDATA4`)**: Sensitive secret buffers are volatile-zeroized upon `Drop` with `compiler_fence(Ordering::SeqCst)` preventing dead-store elimination.
+4. **Side-Channel Timing Attack Mitigation (`SECDATA7`)**: `SecretValue::constant_time_eq` accumulates bitwise XOR differences across entire buffer length.
+5. **Safe Masked Redaction (`SECDATA6`)**: Secret values masked showing only edge fragments or pure redactions, preventing entropy disclosure.
+6. **Denial of Service (DoS) Protections (`SECDATA3`, `SECDATA8`, `PRIVRECV7`)**: Strict bounds on secret payload size (64 KiB), context capacity (16,384), label count (32), and store size (1 MiB).
+7. **Zero Compiler Warnings**: Workspace builds with strictly 0 warnings and 0 errors across all 4 crates (`aiosh-core`, `aiosh-cli`, `aiosh-mcp`, `aiosh-sandbox`).
+
+## 3. Audit Certification
+- `test_privilege_doc.rs`: 7/7 PASS
+- `test_privilege_recovery.rs`: 7/7 PASS
+- `test_secret_data_model.rs`: 8/8 PASS
+- `test_secret_data_model_integration.rs`: 2/2 PASS
+- Workspace compiler status: `cargo check --workspace` clean (0 warnings, 0 errors).
+- Task ledger state: 2,610 completed, 0 orphans, valid state.
+- Security status: **PASS / CLEAN / VERIFIED**. Task pointer advances to `T-02611`.
+

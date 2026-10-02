@@ -120,6 +120,9 @@ pub mod privilege_service;
 pub mod privilege_config;
 pub mod privilege_policy;
 pub mod privilege_observability;
+pub mod privilege_doc;
+pub mod privilege_recovery;
+pub mod secret_data_model;
 pub mod release;
 pub mod release_config;
 pub mod repo_health;
@@ -433,6 +436,26 @@ pub use privilege_observability::{
     PrivilegeObservabilityReport, MAX_OUTCOME_DISTRIBUTION_ENTRIES as PRIVILEGE_MAX_OUTCOME_DISTRIBUTION_ENTRIES,
     MAX_TELEMETRY_TEXT_LEN as PRIVILEGE_MAX_TELEMETRY_TEXT_LEN, PRIVESCOBS_ERR_VALIDATION,
 };
+pub use privilege_doc::{
+    PrivilegeDocCategory, PrivilegeDocIndex, PrivilegeDocSearchResult, PrivilegeDocSection,
+    PrivilegeDocTopic, MAX_PRIVILEGE_DOC_QUERY_LEN, MAX_PRIVILEGE_DOC_SEARCH_RESULTS,
+    MAX_PRIVILEGE_DOC_SNIPPET_LEN, PRIVDOC_ERR_NOT_FOUND, PRIVDOC_ERR_QUERY_BOUNDS,
+};
+pub use privilege_recovery::{
+    PrivilegeIssueCode, PrivilegeIssueSeverity, PrivilegeRecoveryManager,
+    PrivilegeRecoveryResult, PrivilegeRepairAction, PrivilegeValidationIssue,
+    PrivilegeValidationReport, MAX_PRIVILEGE_STORE_SIZE, PRIVRECV_ERR_FILE_SIZE,
+    PRIVRECV_ERR_IO, PRIVRECV_ERR_PARSE, PRIVRECV_ERR_PATH_TRAVERSAL, PRIVRECV_ERR_VALIDATION,
+};
+pub use secret_data_model::{
+    SecretEntry, SecretKind, SecretMetadata, SecretScope, SecretState, SecretValue,
+    MAX_SECRET_ID_LEN, MAX_SECRET_LABELS_COUNT, MAX_SECRET_LABEL_KEY_LEN,
+    MAX_SECRET_LABEL_VAL_LEN, MAX_SECRET_NAME_LEN, MAX_SECRET_PAYLOAD_SIZE,
+    SECDATA_ERR_EMPTY_ID, SECDATA_ERR_EMPTY_NAME, SECDATA_ERR_INVALID_ID,
+    SECDATA_ERR_INVALID_SCOPE, SECDATA_ERR_INVALID_STATE, SECDATA_ERR_LABEL_BOUNDS,
+    SECDATA_ERR_NAME_TOO_LONG, SECDATA_ERR_PAYLOAD_TOO_LARGE, SECDATA_ERR_STATE_TRANSITION,
+};
+
 
 
 

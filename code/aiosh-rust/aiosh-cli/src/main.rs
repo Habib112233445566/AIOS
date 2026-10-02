@@ -17701,8 +17701,196 @@ fn cmd_privilege(args: &[String]) -> i32 {
             }
             0
         }
+        Some("doc") => {
+            let doc_sub = rest.first().map(|s| s.as_str()).unwrap_or("list");
+            let index = aiosh_core::privilege_doc::PrivilegeDocIndex::new();
+            match doc_sub {
+                "list" => {
+                    let topics = index.list_topics();
+                    classify_and_emit(
+                        &mut ctx, "privilege", "doc.list", json!({ "count": topics.len() }),
+                        "success", None, Some("Listed privilege documentation topics"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 0, "data": topics, "error": serde_json::Value::Null }));
+                    } else {
+                        println!("Privilege Escalation Prevention Documentation Topics ({}):", topics.len());
+                        for t in topics {
+                            println!("  [{}] {} ({}) - {}", t.id, t.title, t.category.as_str(), t.summary);
+                        }
+                    }
+                    0
+                }
+                "get" => {
+                    let topic_id = parse_flag(rest, "--id").or_else(|| if rest.len() > 1 && !rest[1].starts_with("--") { Some(rest[1].clone()) } else { None });
+                    let topic_id = match topic_id {
+                        Some(id) => id,
+                        None => {
+                            let msg = "missing required parameter: topic ID (use `aiosh privilege doc get <topic_id>`)";
+                            if is_json {
+                                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_ARGUMENT", "message": msg } }));
+                            } else {
+                                eprintln!("{}", sanitize_terminal(msg));
+                            }
+                            return 2;
+                        }
+                    };
+                    match index.get_topic(&topic_id) {
+                        Some(t) => {
+                            let md = index.render_markdown(&topic_id).unwrap_or_default();
+                            classify_and_emit(
+                                &mut ctx, "privilege", "doc.get", json!({ "topic_id": &topic_id }),
+                                "success", None, Some("Retrieved privilege documentation topic"), "operator", None,
+                            );
+                            if is_json {
+                                println!("{}", json!({ "code": 0, "data": { "topic": t, "markdown": md }, "error": serde_json::Value::Null }));
+                            } else {
+                                println!("{}", md);
+                            }
+                            0
+                        }
+                        None => {
+                            let msg = format!("topic not found: {}", topic_id);
+                            if is_json {
+                                println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "TOPIC_NOT_FOUND", "message": msg } }));
+                            } else {
+                                eprintln!("ERROR: {}", sanitize_terminal(&msg));
+                            }
+                            1
+                        }
+                    }
+                }
+                "search" => {
+                    let query = parse_flag(rest, "--query").or_else(|| if rest.len() > 1 && !rest[1].starts_with("--") { Some(rest[1..].join(" ")) } else { None });
+                    let query = match query {
+                        Some(q) => q,
+                        None => {
+                            let msg = "missing required parameter: query (use `aiosh privilege doc search <query>`)";
+                            if is_json {
+                                println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "MISSING_ARGUMENT", "message": msg } }));
+                            } else {
+                                eprintln!("{}", sanitize_terminal(msg));
+                            }
+                            return 2;
+                        }
+                    };
+                    match index.search(&query) {
+                        Ok(results) => {
+                            classify_and_emit(
+                                &mut ctx, "privilege", "doc.search", json!({ "query": &query, "count": results.len() }),
+                                "success", None, Some("Searched privilege documentation"), "operator", None,
+                            );
+                            if is_json {
+                                println!("{}", json!({ "code": 0, "data": results, "error": serde_json::Value::Null }));
+                            } else {
+                                println!("Search Results for '{}' ({} found):", query, results.len());
+                                for r in &results {
+                                    println!("  * [{}] {} (score: {}) - {}", r.topic_id, r.title, r.score, r.snippet);
+                                }
+                            }
+                            0
+                        }
+                        Err(e) => {
+                            if is_json {
+                                println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "SEARCH_ERROR", "message": e } }));
+                            } else {
+                                eprintln!("ERROR: {}", sanitize_terminal(&e));
+                            }
+                            1
+                        }
+                    }
+                }
+                _ => {
+                    let msg = format!("unknown privilege doc action: {}", doc_sub);
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "UNKNOWN_ACTION", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    2
+                }
+            }
+        }
+        Some("validate") => {
+            let report = match aiosh_core::privilege_recovery::PrivilegeRecoveryManager::validate_store_file(store_path) {
+                Ok(rep) => rep,
+                Err(e) => {
+                    let msg = format!("validation error: {}", e);
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "VALIDATION_ERROR", "message": msg } }));
+                    } else {
+                        eprintln!("ERROR: {}", sanitize_terminal(&msg));
+                    }
+                    return 1;
+                }
+            };
+
+            classify_and_emit(
+                &mut ctx, "privilege", "validate", json!({ "report": &report }),
+                if report.is_valid { "success" } else { "failure" }, None, Some("Validated privilege store file"), "operator", None,
+            );
+
+            if is_json {
+                println!("{}", json!({ "code": if report.is_valid { 0 } else { 1 }, "data": report, "error": serde_json::Value::Null }));
+            } else {
+                println!("Privilege Escalation Prevention Store Validation Report:");
+                println!("  Store File:        {}", store_path.display());
+                println!("  Total Contexts:    {}", report.total_contexts);
+                println!("  Healthy Contexts:  {}", report.healthy_contexts);
+                println!("  Store Valid:       {}", if report.is_valid { "YES" } else { "NO" });
+                println!("  Can Auto-Repair:   {}", if report.can_auto_repair { "YES" } else { "NO" });
+                if !report.issues.is_empty() {
+                    println!("  Issues Found ({}):", report.issues.len());
+                    for issue in &report.issues {
+                        println!("    - [{:?}] [{:?}] {}: {}", issue.severity, issue.code, issue.actor_id.as_deref().unwrap_or("store"), issue.message);
+                    }
+                }
+            }
+            if report.is_valid { 0 } else { 1 }
+        }
+        Some("repair") => {
+            let result = match aiosh_core::privilege_recovery::PrivilegeRecoveryManager::repair_store_file(store_path) {
+                Ok(res) => res,
+                Err(e) => {
+                    let msg = format!("repair error: {}", e);
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "REPAIR_ERROR", "message": msg } }));
+                    } else {
+                        eprintln!("ERROR: {}", sanitize_terminal(&msg));
+                    }
+                    return 1;
+                }
+            };
+
+            classify_and_emit(
+                &mut ctx, "privilege", "repair", json!({ "result": &result }),
+                if result.ok { "success" } else { "failure" }, None, Some("Repaired privilege store file"), "operator", None,
+            );
+
+            if is_json {
+                println!("{}", json!({ "code": if result.ok { 0 } else { 1 }, "data": result, "error": serde_json::Value::Null }));
+            } else {
+                println!("Privilege Escalation Prevention Store Recovery Result:");
+                println!("  Store File:        {}", store_path.display());
+                println!("  Success:           {}", if result.ok { "YES" } else { "NO" });
+                if let Some(ref bp) = result.backup_path {
+                    println!("  Backup Created:    {}", bp);
+                }
+                if let Some(ref qp) = result.quarantine_path {
+                    println!("  Quarantine File:   {}", qp);
+                }
+                println!("  Repaired Count:    {}", result.repaired_count);
+                if !result.actions.is_empty() {
+                    println!("  Actions Applied ({}):", result.actions.len());
+                    for act in &result.actions {
+                        println!("    - [{}] {}: {}", act.actor_id, act.action, act.reason);
+                    }
+                }
+            }
+            if result.ok { 0 } else { 1 }
+        }
         Some("--help") | Some("-h") | None => {
-            println!("aiosh privilege — Privilege Escalation Prevention & Context Control\n\nUsage: aiosh privilege <status|elevate|drop|revoke|check|list|config|policy|stats> [options]\n\nCommands:\n  status                     Display active privilege context for an actor\n  elevate                    Request dynamic privilege elevation with grant token\n  drop                       Safely de-escalate privilege level\n  revoke                     Restore baseline privilege level and revoke elevation\n  check                      Check if active context holds a specific capability\n  list                       List registered actors and privilege tiers\n  config                     Inspect privilege configuration parameters and limits\n  policy                     Inspect and configure privilege security policy\n  stats                      Display privilege telemetry and observability report\n\nOptions:\n  --actor <ID>               Target actor identifier (default: current actor)\n  --to <TIER>                Target privilege level (guest, user, operator, admin)\n  --grant <TOKEN>            PEP authorization grant token required for elevation\n  --caps <LIST>              Comma-separated list of capabilities to request\n  --cap <CAPABILITY>         Capability to test\n  --config <PATH>            Custom config file path\n  --policy-file <PATH>       Custom security policy file path\n  --mode <MODE>              Policy enforcement mode (enforcing, permissive, disabled)\n  --json                     Output structured JSON envelope\n  -h, --help                 Display this help message");
+            println!("aiosh privilege — Privilege Escalation Prevention & Context Control\n\nUsage: aiosh privilege <status|elevate|drop|revoke|check|list|config|policy|stats|doc|validate|repair> [options]\n\nCommands:\n  status                     Display active privilege context for an actor\n  elevate                    Request dynamic privilege elevation with grant token\n  drop                       Safely de-escalate privilege level\n  revoke                     Restore baseline privilege level and revoke elevation\n  check                      Check if active context holds a specific capability\n  list                       List registered actors and privilege tiers\n  config                     Inspect privilege configuration parameters and limits\n  policy                     Inspect and configure privilege security policy\n  stats                      Display privilege telemetry and observability report\n  doc                        Browse and search offline privilege documentation\n  validate                   Inspect and validate privilege store integrity\n  repair                     Repair and salvage damaged privilege store file\n\nOptions:\n  --actor <ID>               Target actor identifier (default: current actor)\n  --to <TIER>                Target privilege level (guest, user, operator, admin)\n  --grant <TOKEN>            PEP authorization grant token required for elevation\n  --caps <LIST>              Comma-separated list of capabilities to request\n  --cap <CAPABILITY>         Capability to test\n  --store <PATH>             Custom privilege store file path\n  --config <PATH>            Custom config file path\n  --policy-file <PATH>       Custom security policy file path\n  --mode <MODE>              Policy enforcement mode (enforcing, permissive, disabled)\n  --json                     Output structured JSON envelope\n  -h, --help                 Display this help message");
             0
         }
         Some(unknown) => {
