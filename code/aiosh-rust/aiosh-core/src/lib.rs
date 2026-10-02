@@ -118,6 +118,8 @@ pub mod pep_grant_recovery;
 pub mod privilege_data_model;
 pub mod privilege_service;
 pub mod privilege_config;
+pub mod privilege_policy;
+pub mod privilege_observability;
 pub mod release;
 pub mod release_config;
 pub mod repo_health;
@@ -420,6 +422,16 @@ pub use privilege_service::{
 pub use privilege_config::{
     PrivilegeConfig, DEFAULT_PRIVILEGE_CONFIG_PATH, DEFAULT_PRIVILEGE_STORE_PATH,
     PRIVESCCONF_ERR_BOUNDS, PRIVESCCONF_ERR_IO, PRIVESCCONF_ERR_PARSE, PRIVESCCONF_ERR_VALIDATION,
+};
+pub use privilege_policy::{
+    PrivilegePolicyMode, PrivilegePolicyVerdict, PrivilegeSecurityPolicy,
+    MAX_PRIVILEGE_POLICY_VERSION_LEN, MAX_PRIVILEGE_SECURITY_POLICY_BYTES,
+    PRIVESCPOL_ERR_DENIED, PRIVESCPOL_ERR_IO, PRIVESCPOL_ERR_PARSE, PRIVESCPOL_ERR_VALIDATION,
+};
+pub use privilege_observability::{
+    sanitize_telemetry_text as sanitize_privilege_telemetry_text,
+    PrivilegeObservabilityReport, MAX_OUTCOME_DISTRIBUTION_ENTRIES as PRIVILEGE_MAX_OUTCOME_DISTRIBUTION_ENTRIES,
+    MAX_TELEMETRY_TEXT_LEN as PRIVILEGE_MAX_TELEMETRY_TEXT_LEN, PRIVESCOBS_ERR_VALIDATION,
 };
 
 

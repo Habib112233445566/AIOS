@@ -6,11 +6,14 @@
 use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
+use crate::audit::AuditRing;
 use crate::privilege_data_model::{
     PrivilegeCapability, PrivilegeContext, PrivilegeEscalationVerdict, PrivilegeLevel,
     PrivilegeTransitionRequest, PRIVESC_ERR_INVALID_ACTOR,
     PRIVESC_ERR_KERNEL_TIER_IMMUTABLE, PRIVESC_ERR_UNAUTHORIZED_ELEVATION,
 };
+use crate::privilege_observability::PrivilegeObservabilityReport;
+use crate::privilege_policy::{PrivilegePolicyVerdict, PrivilegeSecurityPolicy};
 
 /// Minimum allowed maximum active contexts ceiling.
 pub const MIN_MAX_ACTIVE_CONTEXTS: usize = 1;
@@ -36,6 +39,8 @@ pub struct PrivilegeService {
     contexts: HashMap<String, PrivilegeContext>,
     base_levels: HashMap<String, PrivilegeLevel>,
     max_contexts: usize,
+    #[serde(default)]
+    pub policy: PrivilegeSecurityPolicy,
 }
 
 impl Default for PrivilegeService {
@@ -57,7 +62,35 @@ impl PrivilegeService {
             contexts: HashMap::new(),
             base_levels: HashMap::new(),
             max_contexts: bounded,
+            policy: PrivilegeSecurityPolicy::default(),
         }
+    }
+
+    /// Returns a reference to the active security policy.
+    pub fn policy(&self) -> &PrivilegeSecurityPolicy {
+        &self.policy
+    }
+
+    /// Updates the active security policy.
+    pub fn set_policy(&mut self, policy: PrivilegeSecurityPolicy) -> Result<(), String> {
+        policy.validate()?;
+        self.policy = policy;
+        Ok(())
+    }
+
+    /// Returns the configured maximum active contexts ceiling.
+    pub fn max_contexts(&self) -> usize {
+        self.max_contexts
+    }
+
+    /// Generates an observability report for the privilege subsystem.
+    pub fn generate_observability_report(&self) -> Result<PrivilegeObservabilityReport, String> {
+        PrivilegeObservabilityReport::generate(self, None)
+    }
+
+    /// Generates an observability report including historical events from AuditRing.
+    pub fn generate_observability_report_with_ring(&self, ring: Option<&AuditRing>) -> Result<PrivilegeObservabilityReport, String> {
+        PrivilegeObservabilityReport::generate(self, ring)
     }
 
     /// Returns the number of currently active contexts.
@@ -118,6 +151,14 @@ impl PrivilegeService {
         // Kernel tier cannot be targeted from userspace
         if req.target_level == PrivilegeLevel::SystemKernel && context.active_level != PrivilegeLevel::SystemKernel {
             return Err(format!("{}: transition to SystemKernel is forbidden", PRIVESC_ERR_KERNEL_TIER_IMMUTABLE));
+        }
+
+        // Security policy evaluation
+        match self.policy.evaluate_transition(&req) {
+            PrivilegePolicyVerdict::Deny { reason, code } => {
+                return Err(format!("{}: {}", code, reason));
+            }
+            PrivilegePolicyVerdict::PermitWithWarning { .. } | PrivilegePolicyVerdict::Permit => {}
         }
 
         match req.evaluate() {

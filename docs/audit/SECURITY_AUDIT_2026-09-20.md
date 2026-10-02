@@ -5305,3 +5305,46 @@ Tasks completed: **T-02521 through T-02550** (30 consecutive tasks executed unde
 - Task ledger state: 2,550 completed, 0 orphans, valid state.
 - Security status: **PASS / CLEAN / VERIFIED**. Task pointer advances to `T-02551`.
 
+
+---
+
+# ADDENDUM 37 — 2026-10-02: Privilege Escalation Prevention Automated Tests, Security Policy & Observability Sub-Epics (T-02551..T-02580)
+
+## 1. Scope & Progress
+Tasks completed: **T-02551 through T-02580** (30 consecutive tasks executed under strict No-Skip governance):
+- **T-02551..T-02560 (Privilege Escalation Prevention Sub-Epic 6: Automated Tests Subsystem)**:
+  - T-02551..T-02554: Research, specification, scaffolding, and implementation of multi-vector automated testing suite across Rust (`test_privilege_automated.rs` [9 vectors]), CLI (`test_privilege_automated.py`), and MCP (`test_privilege_automated_smoke.py`).
+  - T-02555..T-02556: Unit testing (9/9 pass) and multi-process integration testing.
+  - T-02557..T-02558: Threat modeling and security hardening covering store corruption resilience (`test_autopriv9_corrupted_store_handling`), concurrency safety, and capacity limits.
+  - T-02559..T-02560: Documentation in `docs/SPEC-PRIVILEGE-AUTOMATED-TESTS.md` and Sub-Epic 6 milestone closure (`T-02560-automated-tests-verification-evidenc.md`).
+- **T-02561..T-02570 (Privilege Escalation Prevention Sub-Epic 7: Security Policy Subsystem)**:
+  - T-02561..T-02564: Research, specification, scaffolding, and implementation of `PrivilegeSecurityPolicy` in `code/aiosh-rust/aiosh-core/src/privilege_policy.rs`, CLI command `aiosh privilege policy`, and MCP tool `aios.privilege.policy`.
+  - T-02565..T-02566: Unit testing (`test_privilege_policy.rs` 6/6 pass) and cross-layer integration testing.
+  - T-02567..T-02568: Security review and hardening: immutable SystemKernel tier lockout (`PRIVESC_ERR_KERNEL_TIER_IMMUTABLE`), actor tier ceilings, 64 KiB file limits, path traversal checks (`..`), and environment overrides (`AIOS_PRIVILEGE_POLICY_MODE`).
+  - T-02569..T-02570: Documentation in `docs/SPEC-PRIVILEGE-POLICY.md` and Sub-Epic 7 milestone closure (`T-02570-security-policy-verification-evidenc.md`).
+- **T-02571..T-02580 (Privilege Escalation Prevention Sub-Epic 8: Observability Subsystem)**:
+  - T-02571..T-02574: Research, specification, scaffolding, and implementation of `PrivilegeObservabilityReport` in `code/aiosh-rust/aiosh-core/src/privilege_observability.rs`, CLI command `aiosh privilege stats`, and MCP tool suite `aios.privilege.stats` / `aios.privilege.observability`.
+  - T-02575..T-02576: Unit testing (`test_privilege_observability.rs` 7/7 pass) and CLI/MCP integration smoke verification.
+  - T-02577..T-02578: Security review and hardening: textual telemetry sanitization (ANSI escape and control character stripping), cardinality limits (`MAX_OUTCOME_DISTRIBUTION_ENTRIES = 128`), tail limits (`MAX_AUDIT_LOG_TAIL_ITEMS = 1000`), and context count consistency validation.
+  - T-02579..T-02580: Documentation in `docs/SPEC-PRIVILEGE-OBSERVABILITY.md` and Sub-Epic 8 milestone closure (`T-02580-observability-verification-evidenc.md`).
+
+## 2. Invariants & Controls Audited
+1. **Full Lifecycle & Isolation (`PRIVESC_AUTOTEST1`)**: Distinct actors maintain hermetic isolation without state bleeding across sequential or concurrent operations.
+2. **Immutable SystemKernel Lockout (`PRIVESCPOL1`)**: Both policy definitions and runtime elevation requests reject `SystemKernel` targets fail-fast.
+3. **Tri-State Policy Governance (`PRIVESCPOL2`, `PRIVESCPOL3`)**: Enforces explicit ceilings and prohibited capabilities under `Enforcing` mode, with complete telemetry under `Audit` mode.
+4. **Telemetry Sanitization (`PRIVESCOBS2`)**: Output strings pass through `sanitize_telemetry_text()`, stripping control characters, bell, backspace, and ANSI terminal codes.
+5. **Bounded Cardinality & DoS Resistance (`PRIVESCOBS3`, `PRIVESCOBS5`)**: Maps clamped to 128 items, tail window capped at 1,000 log items, and policy files capped at 64 KiB.
+6. **Path Traversal Shielding (`PRIVESCPOL6`)**: Paths containing `..` are strictly rejected across policy files, state stores, and configuration inputs.
+7. **Zero Compiler Warnings**: Workspace builds with strictly 0 warnings and 0 errors across all workspace crates.
+
+## 3. Audit Certification
+- `test_privilege_automated.rs`: 9/9 PASS
+- `test_privilege_policy.rs`: 6/6 PASS
+- `test_privilege_observability.rs`: 7/7 PASS
+- `test_privilege_service.rs`: 5/5 PASS
+- `test_privilege_cli.py`: 100% PASS
+- `test_privilege_automated.py`: 100% PASS
+- `test_privilege_automated_smoke.py`: 100% PASS
+- Workspace compiler status: `cargo check --workspace` clean (0 warnings, 0 errors).
+- Task ledger state: 2,580 completed, 0 orphans, valid state.
+- Security status: **PASS / CLEAN / VERIFIED**. Task pointer advances to `T-02581`.

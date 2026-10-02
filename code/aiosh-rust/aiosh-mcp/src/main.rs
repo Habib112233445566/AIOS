@@ -98,7 +98,10 @@ impl Server {
             json!({"name": "aios.privilege.drop", "description": "De-escalate privilege level to a lower tier, shedding higher capabilities and clearing active grants", "inputSchema": {"type": "object", "properties": {"to": {"type": "string"}, "actor": {"type": "string"}}, "required": ["to"], "additionalProperties": false}}),
             json!({"name": "aios.privilege.revoke", "description": "Restore baseline privilege level, clearing dynamic grants and revoking elevated capabilities", "inputSchema": {"type": "object", "properties": {"actor": {"type": "string"}}, "additionalProperties": false}}),
             json!({"name": "aios.privilege.check", "description": "Verify whether an actor context holds a specific capability", "inputSchema": {"type": "object", "properties": {"cap": {"type": "string"}, "actor": {"type": "string"}}, "required": ["cap"], "additionalProperties": false}}),
-            json!({"name": "aios.privilege.config", "description": "Inspect Privilege Escalation Prevention configuration parameters, limits, and defaults", "inputSchema": {"type": "object", "properties": {"config_path": {"type": "string"}}, "additionalProperties": false}})
+            json!({"name": "aios.privilege.config", "description": "Inspect Privilege Escalation Prevention configuration parameters, limits, and defaults", "inputSchema": {"type": "object", "properties": {"config_path": {"type": "string"}}, "additionalProperties": false}}),
+            json!({"name": "aios.privilege.policy", "description": "Inspect or evaluate Privilege Escalation Prevention security policy", "inputSchema": {"type": "object", "properties": {"policy_path": {"type": "string"}, "mode": {"type": "string", "enum": ["enforcing", "permissive", "disabled"]}}, "additionalProperties": false}}),
+            json!({"name": "aios.privilege.stats", "description": "Retrieve comprehensive Privilege Escalation Prevention telemetry and observability report", "inputSchema": {"type": "object", "properties": {"config_path": {"type": "string"}}, "additionalProperties": false}}),
+            json!({"name": "aios.privilege.observability", "description": "Retrieve comprehensive Privilege Escalation Prevention telemetry and observability report", "inputSchema": {"type": "object", "properties": {"config_path": {"type": "string"}}, "additionalProperties": false}})
         ];
 
         for (name, desc) in [
@@ -6026,6 +6029,54 @@ fn validate_and_open_grant_service(path_str: Option<&str>) -> Result<(std::path:
                 dispatch::recorded_call(
                     &mut self.ring, &self.pep,
                     "aios.privilege.config", "privilege.config",
+                    &arguments,
+                    None, None, false,
+                    dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.privilege.policy" => {
+                let pol_path = arguments.get("policy_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let mode_str = arguments.get("mode").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = move || -> Result<Value, String> {
+                    let mut pol = match pol_path {
+                        Some(ref p) => aiosh_core::privilege_policy::PrivilegeSecurityPolicy::load_from_path(p)?,
+                        None => aiosh_core::privilege_policy::PrivilegeSecurityPolicy::default(),
+                    };
+                    if let Some(ref m) = mode_str {
+                        match m.to_lowercase().as_str() {
+                            "enforcing" => pol.mode = aiosh_core::privilege_policy::PrivilegePolicyMode::Enforcing,
+                            "permissive" => pol.mode = aiosh_core::privilege_policy::PrivilegePolicyMode::Permissive,
+                            "disabled" => pol.mode = aiosh_core::privilege_policy::PrivilegePolicyMode::Disabled,
+                            _ => return Err(format!("invalid mode '{}' (expected: enforcing, permissive, disabled)", m)),
+                        }
+                    }
+                    Ok(json!({"ok": true, "policy": pol}))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.privilege.policy", "privilege.policy",
+                    &arguments,
+                    None, None, false,
+                    dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
+            "aios.privilege.stats" | "aios.privilege.observability" => {
+                let cfg_path = arguments.get("config_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = move || -> Result<Value, String> {
+                    let cfg = match cfg_path {
+                        Some(ref p) => aiosh_core::privilege_config::PrivilegeConfig::load_from_path(p)?,
+                        None => aiosh_core::privilege_config::PrivilegeConfig::load_with_env_overrides(),
+                    };
+                    let service = match aiosh_core::privilege_service::PrivilegeService::load_from_path(&cfg.store_path) {
+                        Ok(s) => s,
+                        Err(_) => aiosh_core::privilege_service::PrivilegeService::with_capacity(cfg.max_active_contexts),
+                    };
+                    let report = service.generate_observability_report()?;
+                    Ok(json!({"ok": true, "report": report}))
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.privilege.stats", "privilege.stats",
                     &arguments,
                     None, None, false,
                     dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,

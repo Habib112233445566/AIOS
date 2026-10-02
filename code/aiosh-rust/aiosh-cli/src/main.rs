@@ -17209,7 +17209,10 @@ fn cmd_privilege(args: &[String]) -> i32 {
     let rest = if args.len() > 1 { &args[1..] } else { &[] };
     let is_json = has_flag(rest, "--json");
 
-    let store_path_str = parse_flag(rest, "--store").unwrap_or_else(|| format!("{}/privileges.json", ai_home()));
+    let store_path_str = parse_flag(rest, "--store")
+        .or_else(|| std::env::var("AIOS_PRIVILEGE_STORE_PATH").ok())
+        .or_else(|| std::env::var("AIOS_PRIVILEGE_STORE").ok())
+        .unwrap_or_else(|| format!("{}/privileges.json", ai_home()));
     let store_path = std::path::Path::new(&store_path_str);
 
     if store_path_str.len() > 1024 || store_path_str.contains("..") || store_path_str.chars().any(|c| c.is_control()) {
@@ -17609,8 +17612,97 @@ fn cmd_privilege(args: &[String]) -> i32 {
             }
             0
         }
+        Some("policy") => {
+            let policy_path = parse_flag(rest, "--policy-file");
+            let mode_arg = parse_flag(rest, "--mode");
+            let mut pol = match policy_path {
+                Some(ref p) => match aiosh_core::privilege_policy::PrivilegeSecurityPolicy::load_from_path(p) {
+                    Ok(pol) => pol,
+                    Err(e) => {
+                        let msg = format!("failed to load policy from {}: {}", p, e);
+                        if is_json {
+                            println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "POLICY_ERROR", "message": msg } }));
+                        } else {
+                            eprintln!("ERROR: {}", sanitize_terminal(&msg));
+                        }
+                        return 1;
+                    }
+                },
+                None => aiosh_core::privilege_policy::PrivilegeSecurityPolicy::default(),
+            };
+
+            if let Some(m) = mode_arg {
+                match m.to_lowercase().as_str() {
+                    "enforcing" => pol.mode = aiosh_core::privilege_policy::PrivilegePolicyMode::Enforcing,
+                    "permissive" => pol.mode = aiosh_core::privilege_policy::PrivilegePolicyMode::Permissive,
+                    "disabled" => pol.mode = aiosh_core::privilege_policy::PrivilegePolicyMode::Disabled,
+                    _ => {
+                        let msg = format!("invalid policy mode '{}' (expected: enforcing, permissive, disabled)", m);
+                        if is_json {
+                            println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "INVALID_ARGUMENT", "message": msg } }));
+                        } else {
+                            eprintln!("ERROR: {}", sanitize_terminal(&msg));
+                        }
+                        return 1;
+                    }
+                }
+            }
+
+            classify_and_emit(
+                &mut ctx, "privilege", "policy", json!({ "policy": &pol }),
+                "success", None, Some("Inspected privilege security policy"), "operator", None,
+            );
+
+            if is_json {
+                println!("{}", json!({ "code": 0, "data": pol, "error": serde_json::Value::Null }));
+            } else {
+                println!("Privilege Escalation Prevention Security Policy:");
+                println!("  Version:                     {}", pol.version);
+                println!("  Mode:                        {:?}", pol.mode);
+                println!("  Disallowed Elevation Tiers:  {:?}", pol.disallowed_elevation_targets);
+                println!("  Prohibited Capabilities:     {:?}", pol.prohibited_capabilities);
+                println!("  Require Grant Token:         {}", pol.require_grant_token);
+                println!("  Max Grant Duration (s):      {}", pol.max_grant_duration_seconds);
+                println!("  Actor Tier Ceilings:         {:?}", pol.actor_tier_ceilings);
+            }
+            0
+        }
+        Some("stats") | Some("observability") => {
+            let report = match service.generate_observability_report() {
+                Ok(rep) => rep,
+                Err(e) => {
+                    let msg = format!("failed to generate observability report: {}", e);
+                    if is_json {
+                        println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "OBSERVABILITY_ERROR", "message": msg } }));
+                    } else {
+                        eprintln!("ERROR: {}", sanitize_terminal(&msg));
+                    }
+                    return 1;
+                }
+            };
+
+            classify_and_emit(
+                &mut ctx, "privilege", "stats", json!({ "report": &report }),
+                "success", None, Some("Generated privilege observability report"), "operator", None,
+            );
+
+            if is_json {
+                println!("{}", json!({ "code": 0, "data": report, "error": serde_json::Value::Null }));
+            } else {
+                println!("Privilege Escalation Prevention Observability Report:");
+                println!("  Generated At (UTC):          {}", report.generated_at_utc);
+                println!("  Total Registered Actors:     {}", report.total_registered_actors);
+                println!("  Active Contexts:             {}", report.active_contexts_count);
+                println!("  Total Transitions Recorded:  {}", report.total_transitions_recorded);
+                println!("  Policy Mode:                 {}", report.policy_mode);
+                println!("  Health Status:               {}", if report.is_healthy { "HEALTHY" } else { "DEGRADED" });
+                println!("  Actors by Tier:              {:?}", report.actors_by_tier);
+                println!("  Transitions by Outcome:      {:?}", report.transitions_by_outcome);
+            }
+            0
+        }
         Some("--help") | Some("-h") | None => {
-            println!("aiosh privilege — Privilege Escalation Prevention & Context Control\n\nUsage: aiosh privilege <status|elevate|drop|revoke|check|list|config> [options]\n\nCommands:\n  status                     Display active privilege context for an actor\n  elevate                    Request dynamic privilege elevation with grant token\n  drop                       Safely de-escalate privilege level\n  revoke                     Restore baseline privilege level and revoke elevation\n  check                      Check if active context holds a specific capability\n  list                       List registered actors and privilege tiers\n  config                     Inspect privilege configuration parameters and limits\n\nOptions:\n  --actor <ID>               Target actor identifier (default: current actor)\n  --to <TIER>                Target privilege level (guest, user, operator, admin)\n  --grant <TOKEN>            PEP authorization grant token required for elevation\n  --caps <LIST>              Comma-separated list of capabilities to request\n  --cap <CAPABILITY>         Capability to test\n  --config <PATH>            Custom config file path\n  --json                     Output structured JSON envelope\n  -h, --help                 Display this help message");
+            println!("aiosh privilege — Privilege Escalation Prevention & Context Control\n\nUsage: aiosh privilege <status|elevate|drop|revoke|check|list|config|policy|stats> [options]\n\nCommands:\n  status                     Display active privilege context for an actor\n  elevate                    Request dynamic privilege elevation with grant token\n  drop                       Safely de-escalate privilege level\n  revoke                     Restore baseline privilege level and revoke elevation\n  check                      Check if active context holds a specific capability\n  list                       List registered actors and privilege tiers\n  config                     Inspect privilege configuration parameters and limits\n  policy                     Inspect and configure privilege security policy\n  stats                      Display privilege telemetry and observability report\n\nOptions:\n  --actor <ID>               Target actor identifier (default: current actor)\n  --to <TIER>                Target privilege level (guest, user, operator, admin)\n  --grant <TOKEN>            PEP authorization grant token required for elevation\n  --caps <LIST>              Comma-separated list of capabilities to request\n  --cap <CAPABILITY>         Capability to test\n  --config <PATH>            Custom config file path\n  --policy-file <PATH>       Custom security policy file path\n  --mode <MODE>              Policy enforcement mode (enforcing, permissive, disabled)\n  --json                     Output structured JSON envelope\n  -h, --help                 Display this help message");
             0
         }
         Some(unknown) => {
