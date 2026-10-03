@@ -5434,3 +5434,47 @@ Tasks completed: **T-02611 through T-02640** (30 consecutive tasks executed unde
 - Workspace compiler status: `cargo check --workspace` clean (0 warnings, 0 errors).
 - Task ledger state: 2,640 completed, 0 orphans, valid state.
 - Security status: **PASS / CLEAN / VERIFIED**. Task pointer advances to `T-02641`.
+
+
+---
+
+# ADDENDUM 40 — 2026-10-03: Secrets Handling Configuration, Automated Tests & Security Policy Sub-Epics (T-02641..T-02670)
+
+## 1. Scope & Progress
+Tasks completed: **T-02641 through T-02670** (30 consecutive tasks executed under strict No-Skip governance):
+- **T-02641..T-02650 (Secrets Handling Sub-Epic 5: Configuration Subsystem)**:
+  - T-02641..T-02644: Research, specification, scaffolding, and implementation of `SecretConfig` in `code/aiosh-rust/aiosh-core/src/secret_config.rs`, CLI command `aiosh secret config [show|check]`, and MCP tool `aios.secret.config`.
+  - T-02645..T-02646: Unit testing (`test_secret_config.rs` 5/5 pass) and service integration testing (`test_secret_config_integration.rs` 2/2 pass).
+  - T-02647..T-02648: Security review and hardening: store path traversal and control character rejection, bounded file reads ($\le 16\text{ MiB}$), capacity and payload boundaries, atomic persistence with error cleanup, and environment overrides (`AIOS_SECRETS_CONFIG`, `AIOS_SECRETS_STORE`, `AIOS_SECRETS_MAX_PAYLOAD`, etc.).
+  - T-02649..T-02650: Documentation in `docs/SPEC-SECRETS-CONFIG.md` and Sub-Epic 5 milestone closure (`T-02650-configuration-verification-evidenc.md`).
+- **T-02651..T-02660 (Secrets Handling Sub-Epic 6: Automated Tests Subsystem)**:
+  - T-02651..T-02654: Research, specification, scaffolding, and implementation of automated testing framework in `code/aiosh-rust/aiosh-core/tests/test_secret_automated.rs` covering 10 formal security vectors (`AUTOSEC1`..`AUTOSEC10`).
+  - T-02655..T-02656: Unit testing (10/10 automated tests pass) and cross-layer integration testing.
+  - T-02657..T-02658: Security review and hardening: added vectors `AUTOSEC9` (partial file truncation & empty vault recovery) and `AUTOSEC10` (100 rapid rotation churn stress testing), with verified zero credential leakage in traces and zero race conditions under 16 concurrent threads.
+  - T-02659..T-02660: Documentation in `docs/SPEC-SECRETS-AUTOMATED-TESTS.md` and Sub-Epic 6 milestone closure (`T-02660-automated-tests-verification-evidenc.md`).
+- **T-02661..T-02670 (Secrets Handling Sub-Epic 7: Security Policy Subsystem — Milestone Closure)**:
+  - T-02661..T-02664: Research, specification, scaffolding, and implementation of `SecretSecurityPolicy`, `SecretPolicyMode` (`Enforcing`, `Permissive`, `Disabled`), and `SecretPolicyVerdict` in `code/aiosh-rust/aiosh-core/src/secret_policy.rs`, integrated into `SecretService` (`store_secret`, `rotate_secret`), CLI command `aiosh secret policy [show|check|set-mode]`, and MCP tool `aios.secret.policy`.
+  - T-02665..T-02666: Unit testing (`test_secret_policy.rs` 6/6 pass) and end-to-end integration testing (`test_secret_policy_integration.rs` 2/2 pass).
+  - T-02667..T-02668: Security review and hardening: 64 KiB file limit (`MAX_SECRET_SECURITY_POLICY_BYTES`), path traversal and control character filtering, prohibited kinds ceiling ($\le 64$), atomic tempfile-to-destination persistence, and extended environment variable overrides (`AIOS_SECRETS_POLICY_*`).
+  - T-02669..T-02670: Documentation in `docs/SPEC-SECRETS-POLICY.md` and Sub-Epic 7 milestone closure (`T-02670-security-policy-verification-evidenc.md`).
+
+## 2. Invariants & Controls Audited
+1. **Config Boundary Enforcements (`SECCONF1`..`SECCONF5`)**: Strict path hygiene, DoS file caps (16 MiB), and capacity clamping prevent malformed configuration ingestion.
+2. **Exhaustive Automated Security Vectors (`AUTOSEC1`..`AUTOSEC10`)**: 10 distinct vectors rigorously prove lifecycle isolation, multi-tenant boundaries, zero disclosure in logs/metadata, monotonic version progression, multi-threaded concurrency safety, and truncated file fault recovery.
+3. **Declarative Policy Governance (`SECPOL1`..`SECPOL6`)**: Fail-closed gatekeeping over global secret proliferation, prohibited credential kinds, and payload limits across Enforcing, Permissive, and Disabled modes.
+4. **Information Disclosure Shielding (`SECPOL4`, `AUTOSEC4`)**: Unmasked secret retrieval strictly requires explicit expose opt-in flags; listing operations strictly omit payload bytes.
+5. **Atomic Storage Persistence**: Configuration, vault data, and security policies write to adjacent temporary files before atomic renaming, guaranteeing zero partial writes or file corruption upon failure.
+6. **Zero Compiler Warnings**: Workspace compiles cleanly with strictly 0 warnings and 0 errors across all 4 crates (`aiosh-core`, `aiosh-cli`, `aiosh-mcp`, `aiosh-sandbox`).
+
+## 3. Audit Certification
+- `test_secret_policy.rs`: 6/6 PASS
+- `test_secret_policy_integration.rs`: 2/2 PASS
+- `test_secret_automated.rs`: 10/10 PASS
+- `test_secret_config.rs`: 5/5 PASS
+- `test_secret_config_integration.rs`: 2/2 PASS
+- `test_secret_service.rs`: 9/9 PASS
+- `test_secret_data_model.rs`: 8/8 PASS
+- Total Rust tests verified: 42 passed, 0 failed, 0 warnings.
+- Workspace compiler status: `cargo check --workspace` clean (0 warnings, 0 errors).
+- Task ledger state: 2,670 completed, 0 orphans, valid state.
+- Security status: **PASS / CLEAN / VERIFIED**. Task pointer advances to `T-02671`.
