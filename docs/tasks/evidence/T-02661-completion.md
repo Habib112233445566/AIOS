@@ -1,0 +1,7 @@
+# T-02661 — Phase 2 — Security Kernel & PEP Fabric / Secrets Handling / security policy: Research
+
+Completed: 2026-10-03T05:31:58Z
+
+Acceptance criteria:
+- [x] Evidence file exists and separates facts from assumptions.
+- [x] No code changed; decisions needed are listed explicitly.
