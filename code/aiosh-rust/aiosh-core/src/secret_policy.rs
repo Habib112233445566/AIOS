@@ -91,6 +91,9 @@ impl SecretSecurityPolicy {
         if self.max_lifetime_seconds == 0 || self.max_lifetime_seconds > 86400 * 365 {
             return Err(format!("{}: max_lifetime_seconds must be between 1 and 31536000", SECPOL_ERR_VALIDATION));
         }
+        if self.prohibited_kinds.len() > 64 {
+            return Err(format!("{}: prohibited_kinds count exceeds maximum 64", SECPOL_ERR_VALIDATION));
+        }
         Ok(())
     }
 
@@ -186,6 +189,9 @@ impl SecretSecurityPolicy {
         if path_str.contains("..") {
             return Err(format!("{}: path traversal is prohibited", SECPOL_ERR_VALIDATION));
         }
+        if path_str.chars().any(|c| c.is_control() || c == '\0') {
+            return Err(format!("{}: path contains invalid control characters", SECPOL_ERR_VALIDATION));
+        }
 
         let metadata = fs::metadata(p).map_err(|e| format!("{}: cannot stat file: {}", SECPOL_ERR_IO, e))?;
         if metadata.len() > MAX_SECRET_SECURITY_POLICY_BYTES {
@@ -200,7 +206,17 @@ impl SecretSecurityPolicy {
 
     /// Loads policy with environment variable overrides.
     pub fn load_with_env_overrides() -> Self {
-        let mut policy = Self::default();
+        let mut policy = if let Ok(path_str) = std::env::var("AIOS_SECRETS_POLICY_PATH") {
+            let trimmed = path_str.trim();
+            if !trimmed.is_empty() && !trimmed.contains("..") {
+                Self::load_from_path(trimmed).unwrap_or_default()
+            } else {
+                Self::default()
+            }
+        } else {
+            Self::default()
+        };
+
         if let Ok(mode_str) = std::env::var("AIOS_SECRETS_POLICY_MODE") {
             match mode_str.trim().to_lowercase().as_str() {
                 "enforcing" => policy.mode = SecretPolicyMode::Enforcing,
@@ -209,10 +225,35 @@ impl SecretSecurityPolicy {
                 _ => {}
             }
         }
+
+        if let Ok(disallow_str) = std::env::var("AIOS_SECRETS_POLICY_DISALLOW_GLOBAL") {
+            match disallow_str.trim().to_lowercase().as_str() {
+                "1" | "true" | "yes" => policy.disallow_global_secrets = true,
+                "0" | "false" | "no" => policy.disallow_global_secrets = false,
+                _ => {}
+            }
+        }
+
+        if let Ok(max_payload_str) = std::env::var("AIOS_SECRETS_POLICY_MAX_PAYLOAD") {
+            if let Ok(val) = max_payload_str.trim().parse::<usize>() {
+                if val >= 1 && val <= 1048576 {
+                    policy.max_payload_bytes = val;
+                }
+            }
+        }
+
+        if let Ok(req_exp_str) = std::env::var("AIOS_SECRETS_POLICY_REQUIRE_EXPOSE") {
+            match req_exp_str.trim().to_lowercase().as_str() {
+                "1" | "true" | "yes" => policy.require_expose_flag = true,
+                "0" | "false" | "no" => policy.require_expose_flag = false,
+                _ => {}
+            }
+        }
+
         policy
     }
 
-    /// Saves the SecretSecurityPolicy to a JSON file.
+    /// Saves the SecretSecurityPolicy to a JSON file atomically.
     pub fn save_to_path(&self, path: impl AsRef<Path>) -> Result<(), String> {
         self.validate()?;
         let p = path.as_ref();
@@ -220,13 +261,23 @@ impl SecretSecurityPolicy {
         if path_str.contains("..") {
             return Err(format!("{}: path traversal is prohibited", SECPOL_ERR_VALIDATION));
         }
+        if path_str.chars().any(|c| c.is_control() || c == '\0') {
+            return Err(format!("{}: path contains invalid control characters", SECPOL_ERR_VALIDATION));
+        }
 
         if let Some(parent) = p.parent() {
             let _ = fs::create_dir_all(parent);
         }
 
         let data = serde_json::to_string_pretty(self).map_err(|e| format!("{}: serialize failed: {}", SECPOL_ERR_PARSE, e))?;
-        fs::write(p, data).map_err(|e| format!("{}: write failed: {}", SECPOL_ERR_IO, e))?;
+
+        // Write atomically via temporary file
+        let tmp_path = p.with_extension(format!("tmp.{}", std::process::id()));
+        fs::write(&tmp_path, data).map_err(|e| format!("{}: write failed: {}", SECPOL_ERR_IO, e))?;
+        if let Err(e) = fs::rename(&tmp_path, p) {
+            let _ = fs::remove_file(&tmp_path);
+            return Err(format!("{}: atomic rename failed: {}", SECPOL_ERR_IO, e));
+        }
         Ok(())
     }
 }
