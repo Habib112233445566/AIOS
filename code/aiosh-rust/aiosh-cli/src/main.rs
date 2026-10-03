@@ -18391,8 +18391,136 @@ fn cmd_secret(args: &[String]) -> i32 {
                 }
             }
         }
+        Some("policy") => {
+            let act = rest.first().map(|s| s.as_str()).unwrap_or("show");
+            let pol_rest = if rest.len() > 1 { &rest[1..] } else { &[] };
+            let pol_path_opt = parse_flag(pol_rest, "--policy");
+            let mode_override_opt = parse_flag(pol_rest, "--mode");
+
+            let mut policy = if let Some(ref pp) = pol_path_opt {
+                if pp.contains("..") {
+                    let msg = "policy path cannot contain directory traversal '..'";
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_PATH", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(msg));
+                    }
+                    return 2;
+                }
+                match aiosh_core::secret_policy::SecretSecurityPolicy::load_from_path(pp) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        if is_json {
+                            println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "POLICY_LOAD_FAILED", "message": e } }));
+                        } else {
+                            eprintln!("Failed to load policy: {}", sanitize_terminal(&e));
+                        }
+                        return 1;
+                    }
+                }
+            } else {
+                aiosh_core::secret_policy::SecretSecurityPolicy::load_with_env_overrides()
+            };
+
+            if let Some(m) = mode_override_opt {
+                match m.trim().to_lowercase().as_str() {
+                    "enforcing" => policy.mode = aiosh_core::secret_policy::SecretPolicyMode::Enforcing,
+                    "permissive" => policy.mode = aiosh_core::secret_policy::SecretPolicyMode::Permissive,
+                    "disabled" => policy.mode = aiosh_core::secret_policy::SecretPolicyMode::Disabled,
+                    other => {
+                        let msg = format!("invalid policy mode: {} (expected: enforcing, permissive, disabled)", other);
+                        if is_json {
+                            println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_MODE", "message": msg } }));
+                        } else {
+                            eprintln!("{}", sanitize_terminal(&msg));
+                        }
+                        return 2;
+                    }
+                }
+            }
+
+            match act {
+                "show" => {
+                    classify_and_emit(
+                        &mut ctx, "secret", "policy_show", json!({ "policy": &policy }),
+                        "success", None, Some("Inspected secrets security policy"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 0, "data": policy, "error": serde_json::Value::Null }));
+                    } else {
+                        println!("Secrets Security Policy (version {}):", policy.version);
+                        println!("  mode:                     {:?}", policy.mode);
+                        println!("  disallow_global_secrets:  {}", policy.disallow_global_secrets);
+                        println!("  max_payload_bytes:        {}", policy.max_payload_bytes);
+                        println!("  require_expose_flag:      {}", policy.require_expose_flag);
+                        println!("  max_lifetime_seconds:     {}", policy.max_lifetime_seconds);
+                        println!("  prohibited_kinds count:   {}", policy.prohibited_kinds.len());
+                    }
+                    0
+                }
+                "check" => {
+                    match policy.validate() {
+                        Ok(()) => {
+                            classify_and_emit(
+                                &mut ctx, "secret", "policy_check", json!({ "valid": true }),
+                                "success", None, Some("Validated secrets security policy"), "operator", None,
+                            );
+                            if is_json {
+                                println!("{}", json!({ "code": 0, "data": { "valid": true }, "error": serde_json::Value::Null }));
+                            } else {
+                                println!("[+] Secrets security policy is valid.");
+                            }
+                            0
+                        }
+                        Err(e) => {
+                            classify_and_emit(
+                                &mut ctx, "secret", "policy_check", json!({ "valid": false, "error": &e }),
+                                "failure", None, Some("Secrets security policy validation failed"), "operator", None,
+                            );
+                            if is_json {
+                                println!("{}", json!({ "code": 1, "data": { "valid": false }, "error": { "code": "VALIDATION_FAILED", "message": e } }));
+                            } else {
+                                eprintln!("[-] Secrets policy validation error: {}", sanitize_terminal(&e));
+                            }
+                            1
+                        }
+                    }
+                }
+                "set-mode" => {
+                    if let Some(ref pp) = pol_path_opt {
+                        if let Err(e) = policy.save_to_path(pp) {
+                            if is_json {
+                                println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "SAVE_FAILED", "message": e } }));
+                            } else {
+                                eprintln!("Failed to save updated policy: {}", sanitize_terminal(&e));
+                            }
+                            return 1;
+                        }
+                    }
+                    classify_and_emit(
+                        &mut ctx, "secret", "policy_set_mode", json!({ "mode": format!("{:?}", policy.mode) }),
+                        "success", None, Some("Updated secrets policy mode"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 0, "data": { "mode": format!("{:?}", policy.mode) }, "error": serde_json::Value::Null }));
+                    } else {
+                        println!("Policy mode set to: {:?}", policy.mode);
+                    }
+                    0
+                }
+                unknown => {
+                    let msg = format!("unknown secret policy action: {} (expected: show, check, set-mode)", unknown);
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "UNKNOWN_ACTION", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    2
+                }
+            }
+        }
         Some("--help") | Some("-h") | None => {
-            println!("aiosh secret — Secrets Handling & Runtime Vault Control\n\nUsage: aiosh secret <store|get|list|rotate|revoke|config> [OPTIONS]\n\nCommands:\n  store   Store a secret (--id <ID> --name <NAME> --kind <KIND> [--scope <SCOPE>] [--target <TARGET>] [--value <VAL>] [--store <PATH>])\n  get     Retrieve a secret (--id <ID> [--scope <SCOPE>] [--target <TARGET>] [--expose] [--store <PATH>])\n  list    List vaulted secret metadata ([--kind <KIND>] [--scope <SCOPE>] [--target <TARGET>] [--store <PATH>])\n  rotate  Rotate secret payload (--id <ID> --value <NEW_VAL> [--store <PATH>])\n  revoke  Revoke a secret (--id <ID> [--store <PATH>])\n  config  Inspect or validate secrets configuration (aiosh secret config <show|check> [--config <PATH>])");
+            println!("aiosh secret — Secrets Handling & Runtime Vault Control\n\nUsage: aiosh secret <store|get|list|rotate|revoke|config|policy> [OPTIONS]\n\nCommands:\n  store   Store a secret (--id <ID> --name <NAME> --kind <KIND> [--scope <SCOPE>] [--target <TARGET>] [--value <VAL>] [--store <PATH>])\n  get     Retrieve a secret (--id <ID> [--scope <SCOPE>] [--target <TARGET>] [--expose] [--store <PATH>])\n  list    List vaulted secret metadata ([--kind <KIND>] [--scope <SCOPE>] [--target <TARGET>] [--store <PATH>])\n  rotate  Rotate secret payload (--id <ID> --value <NEW_VAL> [--store <PATH>])\n  revoke  Revoke a secret (--id <ID> [--store <PATH>])\n  config  Inspect or validate secrets configuration (aiosh secret config <show|check> [--config <PATH>])\n  policy  Inspect or validate secrets security policy (aiosh secret policy <show|check|set-mode> [--policy <PATH>] [--mode <MODE>])");
             0
         }
         Some(unknown) => {

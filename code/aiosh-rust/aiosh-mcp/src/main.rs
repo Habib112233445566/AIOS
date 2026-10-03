@@ -134,7 +134,8 @@ impl Server {
             json!({"name": "aios.secret.list", "description": "List vaulted secret metadata without disclosing plaintext values", "inputSchema": {"type": "object", "properties": {"kind": {"type": "string"}, "scope": {"type": "string"}, "target": {"type": "string"}, "store_path": {"type": "string"}}, "additionalProperties": false}}),
             json!({"name": "aios.secret.rotate", "description": "Rotate an existing secret's payload, updating its version and SHA-256 fingerprint", "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}, "value": {"type": "string"}, "store_path": {"type": "string"}}, "required": ["id", "value"], "additionalProperties": false}}),
             json!({"name": "aios.secret.revoke", "description": "Revoke an active secret, disabling future retrieval", "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}, "store_path": {"type": "string"}}, "required": ["id"], "additionalProperties": false}}),
-            json!({"name": "aios.secret.config", "description": "Inspect or validate runtime secrets configuration", "inputSchema": {"type": "object", "properties": {"action": {"type": "string", "enum": ["show", "check"]}, "config_path": {"type": "string"}}, "additionalProperties": false}})
+            json!({"name": "aios.secret.config", "description": "Inspect or validate runtime secrets configuration", "inputSchema": {"type": "object", "properties": {"action": {"type": "string", "enum": ["show", "check"]}, "config_path": {"type": "string"}}, "additionalProperties": false}}),
+            json!({"name": "aios.secret.policy", "description": "Inspect, validate, or update runtime secrets security policy", "inputSchema": {"type": "object", "properties": {"action": {"type": "string", "enum": ["show", "check", "set-mode"]}, "policy_path": {"type": "string"}, "mode": {"type": "string", "enum": ["enforcing", "permissive", "disabled"]}}, "additionalProperties": false}})
         ];
 
         for (name, desc) in [
@@ -6478,6 +6479,69 @@ fn validate_and_open_grant_service(path_str: Option<&str>) -> Result<(std::path:
                     dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
                 )
             }
+            "aios.secret.policy" => {
+                let action_opt = arguments.get("action").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let policy_path_opt = arguments.get("policy_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let mode_opt = arguments.get("mode").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = move || -> Result<Value, String> {
+                    let action = action_opt.as_deref().unwrap_or("show");
+                    if let Some(ref pp) = policy_path_opt {
+                        if pp.contains("..") {
+                            return Err("ERR_SECRET_PATH_TRAVERSAL: policy_path contains invalid traversal components".into());
+                        }
+                    }
+
+                    let mut policy = if let Some(ref pp) = policy_path_opt {
+                        aiosh_core::secret_policy::SecretSecurityPolicy::load_from_path(pp)
+                            .map_err(|e| format!("ERR_SECRET_POLICY_LOAD: {}", e))?
+                    } else {
+                        aiosh_core::secret_policy::SecretSecurityPolicy::load_with_env_overrides()
+                    };
+
+                    if let Some(ref m) = mode_opt {
+                        match m.trim().to_lowercase().as_str() {
+                            "enforcing" => policy.mode = aiosh_core::secret_policy::SecretPolicyMode::Enforcing,
+                            "permissive" => policy.mode = aiosh_core::secret_policy::SecretPolicyMode::Permissive,
+                            "disabled" => policy.mode = aiosh_core::secret_policy::SecretPolicyMode::Disabled,
+                            other => return Err(format!("ERR_SECRET_INVALID_INPUT: invalid mode '{}'", other)),
+                        }
+                    }
+
+                    match action {
+                        "show" => Ok(json!({
+                            "ok": true,
+                            "action": "show",
+                            "policy": policy,
+                        })),
+                        "check" => {
+                            policy.validate().map_err(|e| format!("ERR_SECRET_POLICY_VALIDATION: {}", e))?;
+                            Ok(json!({
+                                "ok": true,
+                                "action": "check",
+                                "valid": true,
+                            }))
+                        }
+                        "set-mode" => {
+                            if let Some(ref pp) = policy_path_opt {
+                                policy.save_to_path(pp).map_err(|e| format!("ERR_SECRET_POLICY_SAVE: {}", e))?;
+                            }
+                            Ok(json!({
+                                "ok": true,
+                                "action": "set-mode",
+                                "mode": format!("{:?}", policy.mode),
+                            }))
+                        }
+                        other => Err(format!("ERR_SECRET_INVALID_INPUT: unknown policy action '{}'", other)),
+                    }
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.secret.policy", "secret.policy",
+                    &arguments,
+                    None, None, false,
+                    dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
             "aios.pentest.nmap" => {
                 let target = arguments.get("target").and_then(|v| v.as_str()).unwrap_or("");
                 let timeout = arguments.get("timeout_s").and_then(|v| v.as_u64()).unwrap_or(60);
@@ -12061,6 +12125,7 @@ mod tests {
             "aios.secret.rotate",
             "aios.secret.revoke",
             "aios.secret.config",
+            "aios.secret.policy",
         ] {
             assert!(tool_names.contains(expected), "manifest missing {}", expected);
         }
@@ -12183,6 +12248,24 @@ mod tests {
             "config_path": "../forbidden/config.json"
         }));
         assert_eq!(res_cfg_traversal.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 13. aios.secret.policy show, check, traversal
+        let res_pol_show = server.call_tool("aios.secret.policy", &json!({
+            "action": "show"
+        }));
+        assert_eq!(res_pol_show.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_pol_show.get("action").and_then(|v| v.as_str()), Some("show"));
+
+        let res_pol_check = server.call_tool("aios.secret.policy", &json!({
+            "action": "check"
+        }));
+        assert_eq!(res_pol_check.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_pol_check.get("valid").and_then(|v| v.as_bool()), Some(true));
+
+        let res_pol_traversal = server.call_tool("aios.secret.policy", &json!({
+            "policy_path": "../forbidden/policy.json"
+        }));
+        assert_eq!(res_pol_traversal.get("ok").and_then(|v| v.as_bool()), Some(false));
 
         let _ = std::fs::remove_dir_all(&tmp_dir);
     }

@@ -12,6 +12,7 @@ use crate::secret_data_model::{
     SecretEntry, SecretKind, SecretMetadata, SecretScope, SecretValue,
 };
 use crate::secret_config::SecretConfig;
+use crate::secret_policy::{SecretPolicyVerdict, SecretSecurityPolicy};
 
 pub const SECSVC_ERR_NOT_FOUND: &str = "SECSVC_ERR_NOT_FOUND";
 pub const SECSVC_ERR_ACCESS_DENIED: &str = "SECSVC_ERR_ACCESS_DENIED";
@@ -62,6 +63,7 @@ pub fn hex_decode(s: &str) -> Result<Vec<u8>, String> {
 pub struct SecretService {
     entries: HashMap<String, SecretEntry>,
     config: SecretConfig,
+    policy: SecretSecurityPolicy,
 }
 
 impl Default for SecretService {
@@ -75,6 +77,7 @@ impl std::fmt::Debug for SecretService {
         f.debug_struct("SecretService")
             .field("entries_count", &self.entries.len())
             .field("config", &self.config)
+            .field("policy", &self.policy)
             .finish()
         }
 }
@@ -84,6 +87,7 @@ impl SecretService {
         Self {
             entries: HashMap::new(),
             config: SecretConfig::default(),
+            policy: SecretSecurityPolicy::default(),
         }
     }
 
@@ -91,6 +95,7 @@ impl SecretService {
         Self {
             entries: HashMap::new(),
             config,
+            policy: SecretSecurityPolicy::default(),
         }
     }
 
@@ -100,6 +105,18 @@ impl SecretService {
 
     pub fn config_mut(&mut self) -> &mut SecretConfig {
         &mut self.config
+    }
+
+    pub fn policy(&self) -> &SecretSecurityPolicy {
+        &self.policy
+    }
+
+    pub fn policy_mut(&mut self) -> &mut SecretSecurityPolicy {
+        &mut self.policy
+    }
+
+    pub fn set_policy(&mut self, policy: SecretSecurityPolicy) {
+        self.policy = policy;
     }
 
     pub fn len(&self) -> usize {
@@ -124,9 +141,15 @@ impl SecretService {
         Ok(())
     }
 
-    /// Stores a new secret or updates existing, verifying capacity bounds.
+    /// Stores a new secret or updates existing, verifying capacity bounds and policy.
     pub fn store_secret(&mut self, entry: SecretEntry) -> Result<(), String> {
         entry.metadata.validate()?;
+        match self.policy.evaluate_store(&entry) {
+            SecretPolicyVerdict::Deny { reason, code } => {
+                return Err(format!("{}: {}", code, reason));
+            }
+            _ => {}
+        }
         let val_len = entry.value.as_bytes().len();
         if val_len > self.config.max_payload_bytes {
             return Err(format!(
@@ -271,11 +294,17 @@ impl SecretService {
         results
     }
 
-    /// Rotates the secret value for target id.
+    /// Rotates the secret value for target id, verifying security policy.
     pub fn rotate_secret(&mut self, id: &str, new_value: &[u8]) -> Result<(), String> {
         let entry = self.entries.get_mut(id).ok_or_else(|| {
             format!("{}: secret with id '{}' not found", SECSVC_ERR_NOT_FOUND, id)
         })?;
+        match self.policy.evaluate_rotate(entry, new_value.len()) {
+            SecretPolicyVerdict::Deny { reason, code } => {
+                return Err(format!("{}: {}", code, reason));
+            }
+            _ => {}
+        }
         entry.rotate(new_value)
     }
 
