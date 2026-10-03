@@ -64,8 +64,15 @@ impl SecretConfig {
         if self.version.is_empty() || !self.version.starts_with("1.") {
             return Err(format!("{}: invalid version '{}'", SECCONF_ERR_VALIDATION, self.version));
         }
-        if self.store_path.to_string_lossy().contains("..") {
+        let store_str = self.store_path.to_string_lossy();
+        if store_str.trim().is_empty() {
+            return Err(format!("{}: store_path cannot be empty", SECCONF_ERR_VALIDATION));
+        }
+        if store_str.contains("..") {
             return Err(format!("{}: store_path cannot contain directory traversal '..'", SECCONF_ERR_VALIDATION));
+        }
+        if store_str.chars().any(|c| c.is_control()) || store_str.len() > 1024 {
+            return Err(format!("{}: store_path contains invalid control characters or exceeds 1024 bytes", SECCONF_ERR_VALIDATION));
         }
         if self.max_secrets_capacity < MIN_MAX_SECRETS_CAPACITY || self.max_secrets_capacity > MAX_MAX_SECRETS_CAPACITY {
             return Err(format!(
@@ -129,9 +136,10 @@ impl SecretConfig {
 
     /// Loads configuration with environment variable overrides.
     pub fn from_env() -> Self {
-        let mut config = if let Ok(custom_path) = std::env::var("AIOS_SECRETS_CONFIG") {
-            if !custom_path.contains("..") {
-                Self::load_from_path(&custom_path).unwrap_or_default()
+        let mut config = if let Ok(custom_path_raw) = std::env::var("AIOS_SECRETS_CONFIG") {
+            let custom_path = custom_path_raw.trim();
+            if !custom_path.is_empty() && !custom_path.contains("..") && !custom_path.chars().any(|c| c.is_control()) && custom_path.len() <= 1024 {
+                Self::load_from_path(custom_path).unwrap_or_default()
             } else {
                 Self::default()
             }
@@ -141,21 +149,42 @@ impl SecretConfig {
             Self::default()
         };
 
-        if let Ok(store) = std::env::var("AIOS_SECRETS_STORE") {
-            if !store.contains("..") {
+        if let Ok(store_raw) = std::env::var("AIOS_SECRETS_STORE") {
+            let store = store_raw.trim();
+            if !store.is_empty() && !store.contains("..") && !store.chars().any(|c| c.is_control()) && store.len() <= 1024 {
                 config.store_path = PathBuf::from(store);
             }
         }
         if let Ok(cap_str) = std::env::var("AIOS_SECRETS_MAX_CAPACITY") {
-            if let Ok(cap) = cap_str.parse::<usize>() {
+            if let Ok(cap) = cap_str.trim().parse::<usize>() {
                 if (MIN_MAX_SECRETS_CAPACITY..=MAX_MAX_SECRETS_CAPACITY).contains(&cap) {
                     config.max_secrets_capacity = cap;
                 }
             }
         }
+        if let Ok(payload_str) = std::env::var("AIOS_SECRETS_MAX_PAYLOAD") {
+            if let Ok(pay) = payload_str.trim().parse::<usize>() {
+                if (MIN_MAX_PAYLOAD_BYTES..=MAX_MAX_PAYLOAD_BYTES).contains(&pay) {
+                    config.max_payload_bytes = pay;
+                }
+            }
+        }
+        if let Ok(file_size_str) = std::env::var("AIOS_SECRETS_MAX_STORE_FILE") {
+            if let Ok(fsz) = file_size_str.trim().parse::<u64>() {
+                if (MIN_MAX_STORE_FILE_BYTES..=MAX_MAX_STORE_FILE_BYTES).contains(&fsz) {
+                    config.max_store_file_bytes = fsz;
+                }
+            }
+        }
         if let Ok(expose_str) = std::env::var("AIOS_SECRETS_REQUIRE_EXPOSE") {
-            if let Ok(val) = expose_str.parse::<bool>() {
+            if let Ok(val) = expose_str.trim().parse::<bool>() {
                 config.require_expose_flag = val;
+            }
+        }
+        if let Ok(audit_str) = std::env::var("AIOS_SECRETS_AUDIT_ALL") {
+            if let Ok(val) = audit_str.trim().parse::<bool>() {
+                config.audit_all_reads = val;
+                config.audit_all_writes = val;
             }
         }
 
