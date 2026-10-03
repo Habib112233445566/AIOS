@@ -20,6 +20,8 @@ The Secrets Handling automated test suite provides deterministic verification of
 | `AUTOSEC6` | Capacity & Numerical Bounds | Enforces configured limits on vault entry capacity, secret payload size, and file size limits | `SECCONF1`, `SECCONF3` |
 | `AUTOSEC7` | Atomic Persistence & Tamper Rejection | Verifies atomic disk writes, symlink rejection, path traversal rejection, and corrupted JSON fail-closed behavior | `SECSVC7`, `SECCONF2` |
 | `AUTOSEC8` | Multi-Threaded Concurrency Safety | Verifies thread-safety and race-free state transitions under concurrent multi-actor read/rotate operations | Kernel Thread Safety |
+| `AUTOSEC9` | Truncated State & Empty Vault Recovery | Tests fail-closed handling of zero-byte files, truncated JSON, and clean loading of valid empty vaults | `SECSVC7` |
+| `AUTOSEC10` | Rapid Rotation Churn & Monotonicity | Tests 30 rapid sequential rotations verifying monotonic version incrementation and fingerprint updates | `SECSVC6` |
 
 ## 3. Test Suites & Execution
 
@@ -31,6 +33,11 @@ cargo test --manifest-path code/aiosh-rust/Cargo.toml -p aiosh-core --test test_
 
 ### 3.2 Cross-Surface Regression Verification
 ```bash
+# Rust CLI & MCP unit tests
 cargo test --manifest-path code/aiosh-rust/Cargo.toml -p aiosh-cli secret_cli_tests
 cargo test --manifest-path code/aiosh-rust/Cargo.toml -p aiosh-mcp test_mcp_secret_tools_execution
+
+# Python end-to-end integration smoke suites
+python code/aiosh-cli/tests/test_secret_cli.py
+python code/aiosh-mcp/tests/test_secret_mcp.py
 ```
