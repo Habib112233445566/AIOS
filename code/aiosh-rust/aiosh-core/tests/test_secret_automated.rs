@@ -293,3 +293,51 @@ fn test_autosec8_concurrency_safety() {
         assert!(meta.version >= 1);
     }
 }
+
+/// AUTOSEC9: Partial File and Corrupt Vault Recovery
+#[test]
+fn test_autosec9_partial_file_and_empty_vault_recovery() {
+    let dir = tempdir().unwrap();
+
+    // 1. Zero-byte file returns parse error fail-closed
+    let empty_file = dir.path().join("empty.json");
+    std::fs::write(&empty_file, b"").unwrap();
+    assert!(SecretService::load_from_path(&empty_file).is_err());
+
+    // 2. Truncated JSON returns parse error fail-closed
+    let trunc_file = dir.path().join("trunc.json");
+    std::fs::write(&trunc_file, b"{\"version\": \"1.0.0\", \"secrets\": {").unwrap();
+    assert!(SecretService::load_from_path(&trunc_file).is_err());
+
+    // 3. Valid empty secrets map succeeds
+    let valid_empty = dir.path().join("valid_empty.json");
+    std::fs::write(&valid_empty, b"{\"version\": \"1.0.0\", \"secrets\": {}}").unwrap();
+    let srv = SecretService::load_from_path(&valid_empty).unwrap();
+    assert_eq!(srv.len(), 0);
+}
+
+/// AUTOSEC10: Rapid Rotation Churn & Monotonic Versioning
+#[test]
+fn test_autosec10_rapid_rotation_churn() {
+    let mut vault = SecretService::new();
+    let entry = SecretEntry::new(
+        "churn_sec", "Churn Secret", SecretKind::ApiKey, SecretScope::Global, b"init_0"
+    ).unwrap();
+    vault.store_secret(entry).unwrap();
+
+    let mut last_fp = vault.get_metadata("churn_sec").unwrap().fingerprint;
+    for rot in 1..=30 {
+        let payload = format!("churn_payload_{}", rot);
+        assert!(vault.rotate_secret("churn_sec", payload.as_bytes()).is_ok());
+
+        let meta = vault.get_metadata("churn_sec").unwrap();
+        assert_eq!(meta.version, rot + 1);
+        assert_eq!(meta.state, SecretState::Rotated);
+        assert_ne!(meta.fingerprint, last_fp);
+        last_fp = meta.fingerprint;
+    }
+
+    let final_val = vault.get_secret("churn_sec", &SecretScope::Global).unwrap();
+    assert_eq!(final_val.as_bytes(), b"churn_payload_30");
+}
+
