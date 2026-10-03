@@ -125,6 +125,7 @@ pub mod privilege_recovery;
 pub mod secret_data_model;
 pub mod secret_service;
 pub mod secret_config;
+pub mod secret_policy;
 pub mod release;
 pub mod release_config;
 pub mod repo_health;
@@ -471,6 +472,13 @@ pub use secret_config::{
     DEFAULT_MAX_STORE_FILE_BYTES, MIN_MAX_STORE_FILE_BYTES, MAX_MAX_STORE_FILE_BYTES,
     MAX_CONFIG_FILE_BYTES, SECCONF_ERR_BOUNDS, SECCONF_ERR_IO, SECCONF_ERR_PARSE,
     SECCONF_ERR_VALIDATION,
+};
+pub use secret_policy::{
+    SecretPolicyMode, SecretPolicyVerdict, SecretSecurityPolicy,
+    SECPOL_ERR_DENIED, SECPOL_ERR_EXPOSE_REQUIRED, SECPOL_ERR_GLOBAL_DISALLOWED,
+    SECPOL_ERR_IO, SECPOL_ERR_KIND_PROHIBITED, SECPOL_ERR_PARSE,
+    SECPOL_ERR_PAYLOAD_TOO_LARGE, SECPOL_ERR_VALIDATION,
+    MAX_SECRET_POLICY_VERSION_LEN, MAX_SECRET_SECURITY_POLICY_BYTES,
 };
 
 
