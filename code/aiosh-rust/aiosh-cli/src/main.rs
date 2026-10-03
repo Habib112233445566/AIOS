@@ -18302,8 +18302,97 @@ fn cmd_secret(args: &[String]) -> i32 {
             }
             0
         }
+        Some("config") => {
+            let act = rest.first().map(|s| s.as_str()).unwrap_or("show");
+            let config_rest = if rest.len() > 1 { &rest[1..] } else { &[] };
+            let cfg_path_opt = parse_flag(config_rest, "--config");
+            let conf = if let Some(ref cp) = cfg_path_opt {
+                if cp.contains("..") {
+                    let msg = "config path cannot contain directory traversal '..'";
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "INVALID_PATH", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(msg));
+                    }
+                    return 2;
+                }
+                match aiosh_core::secret_config::SecretConfig::load_from_path(cp) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        if is_json {
+                            println!("{}", json!({ "code": 1, "data": serde_json::Value::Null, "error": { "code": "CONFIG_LOAD_FAILED", "message": e } }));
+                        } else {
+                            eprintln!("Failed to load config: {}", sanitize_terminal(&e));
+                        }
+                        return 1;
+                    }
+                }
+            } else {
+                aiosh_core::secret_config::SecretConfig::from_env()
+            };
+
+            match act {
+                "show" => {
+                    classify_and_emit(
+                        &mut ctx, "secret", "config_show", json!({ "config": &conf }),
+                        "success", None, Some("Inspected secrets configuration"), "operator", None,
+                    );
+                    if is_json {
+                        println!("{}", json!({ "code": 0, "data": conf, "error": serde_json::Value::Null }));
+                    } else {
+                        println!("Secrets Subsystem Configuration (version {}):", conf.version);
+                        println!("  store_path:                 {}", conf.store_path.display());
+                        println!("  max_secrets_capacity:       {}", conf.max_secrets_capacity);
+                        println!("  max_payload_bytes:          {}", conf.max_payload_bytes);
+                        println!("  max_store_file_bytes:       {}", conf.max_store_file_bytes);
+                        println!("  require_expose_flag:        {}", conf.require_expose_flag);
+                        println!("  enforce_scope_containment:  {}", conf.enforce_scope_containment);
+                        println!("  audit_all_reads:            {}", conf.audit_all_reads);
+                        println!("  audit_all_writes:           {}", conf.audit_all_writes);
+                    }
+                    0
+                }
+                "check" => {
+                    match conf.validate() {
+                        Ok(()) => {
+                            classify_and_emit(
+                                &mut ctx, "secret", "config_check", json!({ "valid": true }),
+                                "success", None, Some("Secrets configuration validated"), "operator", None,
+                            );
+                            if is_json {
+                                println!("{}", json!({ "code": 0, "data": { "valid": true }, "error": serde_json::Value::Null }));
+                            } else {
+                                println!("[+] Secrets configuration is valid.");
+                            }
+                            0
+                        }
+                        Err(e) => {
+                            classify_and_emit(
+                                &mut ctx, "secret", "config_check", json!({ "valid": false, "error": &e }),
+                                "failure", None, Some("Secrets configuration validation failed"), "operator", None,
+                            );
+                            if is_json {
+                                println!("{}", json!({ "code": 1, "data": { "valid": false }, "error": { "code": "VALIDATION_FAILED", "message": e } }));
+                            } else {
+                                eprintln!("[-] Secrets configuration error: {}", sanitize_terminal(&e));
+                            }
+                            1
+                        }
+                    }
+                }
+                unknown => {
+                    let msg = format!("unknown secret config action: {} (expected: show, check)", unknown);
+                    if is_json {
+                        println!("{}", json!({ "code": 2, "data": serde_json::Value::Null, "error": { "code": "UNKNOWN_ACTION", "message": msg } }));
+                    } else {
+                        eprintln!("{}", sanitize_terminal(&msg));
+                    }
+                    2
+                }
+            }
+        }
         Some("--help") | Some("-h") | None => {
-            println!("aiosh secret — Secrets Handling & Runtime Vault Control\n\nUsage: aiosh secret <store|get|list|rotate|revoke> [OPTIONS]\n\nCommands:\n  store   Store a secret (--id <ID> --name <NAME> --kind <KIND> [--scope <SCOPE>] [--target <TARGET>] [--value <VAL>] [--store <PATH>])\n  get     Retrieve a secret (--id <ID> [--scope <SCOPE>] [--target <TARGET>] [--expose] [--store <PATH>])\n  list    List vaulted secret metadata ([--kind <KIND>] [--scope <SCOPE>] [--target <TARGET>] [--store <PATH>])\n  rotate  Rotate secret payload (--id <ID> --value <NEW_VAL> [--store <PATH>])\n  revoke  Revoke a secret (--id <ID> [--store <PATH>])");
+            println!("aiosh secret — Secrets Handling & Runtime Vault Control\n\nUsage: aiosh secret <store|get|list|rotate|revoke|config> [OPTIONS]\n\nCommands:\n  store   Store a secret (--id <ID> --name <NAME> --kind <KIND> [--scope <SCOPE>] [--target <TARGET>] [--value <VAL>] [--store <PATH>])\n  get     Retrieve a secret (--id <ID> [--scope <SCOPE>] [--target <TARGET>] [--expose] [--store <PATH>])\n  list    List vaulted secret metadata ([--kind <KIND>] [--scope <SCOPE>] [--target <TARGET>] [--store <PATH>])\n  rotate  Rotate secret payload (--id <ID> --value <NEW_VAL> [--store <PATH>])\n  revoke  Revoke a secret (--id <ID> [--store <PATH>])\n  config  Inspect or validate secrets configuration (aiosh secret config <show|check> [--config <PATH>])");
             0
         }
         Some(unknown) => {
@@ -18948,6 +19037,16 @@ mod secret_cli_tests {
         assert_eq!(cmd_secret(&s(&["get", "--id", "sec_cli_key", "--store", &store])), 1);
 
         let _ = std::fs::remove_dir_all(&tmp_dir);
+    }
+
+    #[test]
+    fn test_secret_cli_config() {
+        assert_eq!(cmd_secret(&s(&["config", "show"])), 0);
+        assert_eq!(cmd_secret(&s(&["config", "show", "--json"])), 0);
+        assert_eq!(cmd_secret(&s(&["config", "check"])), 0);
+        assert_eq!(cmd_secret(&s(&["config", "check", "--json"])), 0);
+        assert_eq!(cmd_secret(&s(&["config", "unknown_act"])), 2);
+        assert_eq!(cmd_secret(&s(&["config", "show", "--config", "../forbidden/config.json"])), 2);
     }
 }
 

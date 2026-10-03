@@ -133,7 +133,8 @@ impl Server {
             json!({"name": "aios.secret.get", "description": "Retrieve secret metadata and payload. Masked by default unless expose=true.", "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}, "scope": {"type": "string"}, "target": {"type": "string"}, "expose": {"type": "boolean"}, "store_path": {"type": "string"}}, "required": ["id"], "additionalProperties": false}}),
             json!({"name": "aios.secret.list", "description": "List vaulted secret metadata without disclosing plaintext values", "inputSchema": {"type": "object", "properties": {"kind": {"type": "string"}, "scope": {"type": "string"}, "target": {"type": "string"}, "store_path": {"type": "string"}}, "additionalProperties": false}}),
             json!({"name": "aios.secret.rotate", "description": "Rotate an existing secret's payload, updating its version and SHA-256 fingerprint", "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}, "value": {"type": "string"}, "store_path": {"type": "string"}}, "required": ["id", "value"], "additionalProperties": false}}),
-            json!({"name": "aios.secret.revoke", "description": "Revoke an active secret, disabling future retrieval", "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}, "store_path": {"type": "string"}}, "required": ["id"], "additionalProperties": false}})
+            json!({"name": "aios.secret.revoke", "description": "Revoke an active secret, disabling future retrieval", "inputSchema": {"type": "object", "properties": {"id": {"type": "string"}, "store_path": {"type": "string"}}, "required": ["id"], "additionalProperties": false}}),
+            json!({"name": "aios.secret.config", "description": "Inspect or validate runtime secrets configuration", "inputSchema": {"type": "object", "properties": {"action": {"type": "string", "enum": ["show", "check"]}, "config_path": {"type": "string"}}, "additionalProperties": false}})
         ];
 
         for (name, desc) in [
@@ -6434,6 +6435,49 @@ fn validate_and_open_grant_service(path_str: Option<&str>) -> Result<(std::path:
                     dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
                 )
             }
+            "aios.secret.config" => {
+                let action_opt = arguments.get("action").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let config_path_opt = arguments.get("config_path").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let f = move || -> Result<Value, String> {
+                    let action = action_opt.as_deref().unwrap_or("show");
+                    if let Some(ref cp) = config_path_opt {
+                        if cp.contains("..") {
+                            return Err("ERR_SECRET_PATH_TRAVERSAL: config_path contains invalid traversal components".into());
+                        }
+                    }
+
+                    let config = if let Some(ref cp) = config_path_opt {
+                        aiosh_core::secret_config::SecretConfig::load_from_path(cp)
+                            .map_err(|e| format!("ERR_SECRET_CONFIG_LOAD: {}", e))?
+                    } else {
+                        aiosh_core::secret_config::SecretConfig::from_env()
+                    };
+
+                    match action {
+                        "show" => Ok(json!({
+                            "ok": true,
+                            "action": "show",
+                            "config": config,
+                        })),
+                        "check" => {
+                            config.validate().map_err(|e| format!("ERR_SECRET_CONFIG_VALIDATION: {}", e))?;
+                            Ok(json!({
+                                "ok": true,
+                                "action": "check",
+                                "valid": true,
+                            }))
+                        }
+                        other => Err(format!("ERR_SECRET_INVALID_INPUT: unknown config action '{}'", other)),
+                    }
+                };
+                dispatch::recorded_call(
+                    &mut self.ring, &self.pep,
+                    "aios.secret.config", "secret.config",
+                    &arguments,
+                    None, None, false,
+                    dispatch::DEFAULT_ACTOR_ID, dispatch::DEFAULT_ACTOR, f,
+                )
+            }
             "aios.pentest.nmap" => {
                 let target = arguments.get("target").and_then(|v| v.as_str()).unwrap_or("");
                 let timeout = arguments.get("timeout_s").and_then(|v| v.as_u64()).unwrap_or(60);
@@ -12016,6 +12060,7 @@ mod tests {
             "aios.secret.list",
             "aios.secret.rotate",
             "aios.secret.revoke",
+            "aios.secret.config",
         ] {
             assert!(tool_names.contains(expected), "manifest missing {}", expected);
         }
@@ -12120,6 +12165,24 @@ mod tests {
             "store_path": store_str
         }));
         assert_eq!(res_get_revoked.get("ok").and_then(|v| v.as_bool()), Some(false));
+
+        // 12. aios.secret.config show and check
+        let res_cfg_show = server.call_tool("aios.secret.config", &json!({
+            "action": "show"
+        }));
+        assert_eq!(res_cfg_show.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_cfg_show.get("action").and_then(|v| v.as_str()), Some("show"));
+
+        let res_cfg_check = server.call_tool("aios.secret.config", &json!({
+            "action": "check"
+        }));
+        assert_eq!(res_cfg_check.get("ok").and_then(|v| v.as_bool()), Some(true));
+        assert_eq!(res_cfg_check.get("valid").and_then(|v| v.as_bool()), Some(true));
+
+        let res_cfg_traversal = server.call_tool("aios.secret.config", &json!({
+            "config_path": "../forbidden/config.json"
+        }));
+        assert_eq!(res_cfg_traversal.get("ok").and_then(|v| v.as_bool()), Some(false));
 
         let _ = std::fs::remove_dir_all(&tmp_dir);
     }

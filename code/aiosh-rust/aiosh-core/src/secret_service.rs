@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::secret_data_model::{
     SecretEntry, SecretKind, SecretMetadata, SecretScope, SecretValue,
 };
+use crate::secret_config::SecretConfig;
 
 pub const SECSVC_ERR_NOT_FOUND: &str = "SECSVC_ERR_NOT_FOUND";
 pub const SECSVC_ERR_ACCESS_DENIED: &str = "SECSVC_ERR_ACCESS_DENIED";
@@ -60,6 +61,7 @@ pub fn hex_decode(s: &str) -> Result<Vec<u8>, String> {
 /// Core runtime vault service.
 pub struct SecretService {
     entries: HashMap<String, SecretEntry>,
+    config: SecretConfig,
 }
 
 impl Default for SecretService {
@@ -72,15 +74,32 @@ impl std::fmt::Debug for SecretService {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("SecretService")
             .field("entries_count", &self.entries.len())
+            .field("config", &self.config)
             .finish()
-    }
+        }
 }
 
 impl SecretService {
     pub fn new() -> Self {
         Self {
             entries: HashMap::new(),
+            config: SecretConfig::default(),
         }
+    }
+
+    pub fn new_with_config(config: SecretConfig) -> Self {
+        Self {
+            entries: HashMap::new(),
+            config,
+        }
+    }
+
+    pub fn config(&self) -> &SecretConfig {
+        &self.config
+    }
+
+    pub fn config_mut(&mut self) -> &mut SecretConfig {
+        &mut self.config
     }
 
     pub fn len(&self) -> usize {
@@ -108,10 +127,17 @@ impl SecretService {
     /// Stores a new secret or updates existing, verifying capacity bounds.
     pub fn store_secret(&mut self, entry: SecretEntry) -> Result<(), String> {
         entry.metadata.validate()?;
-        if !self.entries.contains_key(&entry.metadata.id) && self.entries.len() >= MAX_SECRETS_VAULT_CAPACITY {
+        let val_len = entry.value.as_bytes().len();
+        if val_len > self.config.max_payload_bytes {
+            return Err(format!(
+                "{}: secret payload size {} exceeds configured maximum {}",
+                SECSVC_ERR_FILE_SIZE, val_len, self.config.max_payload_bytes
+            ));
+        }
+        if !self.entries.contains_key(&entry.metadata.id) && self.entries.len() >= self.config.max_secrets_capacity {
             return Err(format!(
                 "{}: vault capacity of {} reached",
-                SECSVC_ERR_CAPACITY_EXCEEDED, MAX_SECRETS_VAULT_CAPACITY
+                SECSVC_ERR_CAPACITY_EXCEEDED, self.config.max_secrets_capacity
             ));
         }
         self.entries.insert(entry.metadata.id.clone(), entry);
@@ -307,22 +333,27 @@ impl SecretService {
         Ok(())
     }
 
-    /// Loads vault state from disk with size bounds checking.
+    /// Loads vault state from disk using default configuration.
     pub fn load_from_path(path: &Path) -> Result<Self, String> {
+        Self::load_from_path_with_config(path, SecretConfig::default())
+    }
+
+    /// Loads vault state from disk with size bounds checking governed by `config`.
+    pub fn load_from_path_with_config(path: &Path, config: SecretConfig) -> Result<Self, String> {
         Self::validate_path(path)?;
 
         if !path.exists() {
-            return Ok(Self::new());
+            return Ok(Self::new_with_config(config));
         }
 
         let meta = fs::symlink_metadata(path).map_err(|e| format!("{}: {}", SECSVC_ERR_IO, e))?;
         if meta.file_type().is_symlink() {
             return Err(format!("{}: symbolic links are not permitted for secrets store files", SECSVC_ERR_PATH_TRAVERSAL));
         }
-        if meta.len() > MAX_SECRETS_STORE_SIZE {
+        if meta.len() > config.max_store_file_bytes {
             return Err(format!(
                 "{}: vault file size {} exceeds limit of {} bytes",
-                SECSVC_ERR_FILE_SIZE, meta.len(), MAX_SECRETS_STORE_SIZE
+                SECSVC_ERR_FILE_SIZE, meta.len(), config.max_store_file_bytes
             ));
         }
 
@@ -332,7 +363,7 @@ impl SecretService {
         let payload: VaultPayload = serde_json::from_str(&content)
             .map_err(|e| format!("{}: {}", SECSVC_ERR_PARSE, e))?;
 
-        let mut service = Self::new();
+        let mut service = Self::new_with_config(config);
         for (_, rec) in payload.secrets {
             let raw_bytes = hex_decode(&rec.payload_hex)
                 .map_err(|e| format!("{}: {}", SECSVC_ERR_PARSE, e))?;
